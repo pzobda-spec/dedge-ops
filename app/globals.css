@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Inter, system-ui, sans-serif;
+}
+
+/* Email thread content — overrides Zoho inline styles */
+.email-content * {
+  font-family: inherit !important;
+  font-size: inherit !important;
+}
+
+.email-content blockquote,
+.email-content .gmail_quote {
+  border-left: 3px solid #e2e8f0;
+  padding-left: 12px;
+  margin: 8px 0;
+  color: #64748b;
+}
+
+.email-content a {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+/* Hide quoted sections by default; JS toggles this class */
+.email-content.hide-quotes blockquote,
+.email-content.hide-quotes .gmail_quote {
+  display: none;
+}
