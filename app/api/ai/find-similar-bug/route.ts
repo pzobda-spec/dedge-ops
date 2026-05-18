@@ -7,10 +7,11 @@ export const dynamic = 'force-dynamic'
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { subject, description, productArea } = body as {
+    const { subject, description, productArea, conversationHistory } = body as {
       subject: string
       description?: string
       productArea?: string
+      conversationHistory?: string
     }
 
     if (!subject?.trim()) {
@@ -70,7 +71,7 @@ export async function POST(req: NextRequest) {
         {
           role: 'user',
           content: JSON.stringify({
-            currentTicket: { subject, description: description || null, productArea: productArea || null },
+            currentTicket: { subject, description: description || null, productArea: productArea || null, conversationHistory: conversationHistory || null },
             linearIssues: issuesForPrompt,
           }),
         },

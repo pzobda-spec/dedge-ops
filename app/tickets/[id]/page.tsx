@@ -36,7 +36,25 @@ const sourceLabels: Record<string, string> = {
   phone: '📞 Téléphone',
 }
 
-type AiAction = 'summarize' | 'reply' | 'escalation' | 'kb'
+type AiAction = 'summarize' | 'reply' | 'escalation' | 'kb' | 'similar_bug'
+
+type SimilarIssue = {
+  identifier: string
+  title: string
+  status: string
+  assigneeName?: string | null
+  url: string
+  cause?: string
+  solution?: string
+  whySimilar: string
+}
+
+type FindSimilarResult = {
+  verySimilar: SimilarIssue[]
+  potentiallyRelated: SimilarIssue[]
+  toCheck: SimilarIssue[]
+  recommendation: string
+}
 
 interface EscalationResult {
   title?: string
@@ -259,6 +277,108 @@ function ConversationThread({ ticketId, conversations }: ConversationThreadProps
   )
 }
 
+// ─── Similar bug result renderer ────────────────────────────────────────────
+
+const STATUS_COLORS: Record<string, string> = {
+  'In Progress': 'text-blue-600',
+  'Todo': 'text-slate-500',
+  'Backlog': 'text-slate-400',
+  'Done': 'text-green-600',
+  'Solved': 'text-green-600',
+  'Cancelled': 'text-slate-400',
+}
+
+function IssueCard({ issue, icon, dimmed }: { issue: SimilarIssue; icon: string; dimmed?: boolean }) {
+  const statusColor = STATUS_COLORS[issue.status] ?? 'text-slate-500'
+  return (
+    <div className={`rounded-lg border p-3 ${dimmed ? 'border-slate-200 bg-white' : 'border-orange-200 bg-orange-50'}`}>
+      <div className="flex items-start gap-2">
+        <span className="text-sm flex-shrink-0 mt-0.5">{icon}</span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <a href={issue.url} target="_blank" rel="noopener noreferrer"
+              className="text-xs font-mono text-blue-600 hover:underline flex-shrink-0">
+              {issue.identifier}
+            </a>
+            <span className="text-sm font-medium text-slate-900 truncate">{issue.title}</span>
+            <span className={`text-xs font-medium flex-shrink-0 ${statusColor}`}>{issue.status}</span>
+          </div>
+          <p className="text-xs text-slate-600 mb-1">{issue.whySimilar}</p>
+          {issue.cause && issue.cause !== 'non documenté' && (
+            <p className="text-xs text-slate-500"><span className="font-medium">Cause :</span> {issue.cause}</p>
+          )}
+          {issue.solution && issue.solution !== 'non documenté' && (
+            <p className="text-xs text-slate-500"><span className="font-medium">Solution :</span> {issue.solution}</p>
+          )}
+          {issue.assigneeName && (
+            <p className="text-xs text-slate-400 mt-1">{issue.assigneeName}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SimilarBugResultView({ result }: { result: FindSimilarResult }) {
+  const hasResults =
+    result.verySimilar?.length > 0 ||
+    result.potentiallyRelated?.length > 0 ||
+    result.toCheck?.length > 0
+
+  if (!hasResults) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm text-slate-500">Aucun bug similaire trouvé dans le board Linear BUGS.</p>
+        {result.recommendation && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <p className="text-sm text-blue-900">{result.recommendation}</p>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {result.verySimilar?.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Très similaire</p>
+          <div className="space-y-2">
+            {result.verySimilar.map((issue, i) => (
+              <IssueCard key={i} issue={issue} icon="🎯" />
+            ))}
+          </div>
+        </div>
+      )}
+      {result.potentiallyRelated?.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Potentiellement lié</p>
+          <div className="space-y-2">
+            {result.potentiallyRelated.map((issue, i) => (
+              <IssueCard key={i} issue={issue} icon="🔍" dimmed />
+            ))}
+          </div>
+        </div>
+      )}
+      {result.toCheck?.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">À vérifier</p>
+          <div className="space-y-2">
+            {result.toCheck.map((issue, i) => (
+              <IssueCard key={i} issue={issue} icon="💡" dimmed />
+            ))}
+          </div>
+        </div>
+      )}
+      {result.recommendation && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+          <p className="text-sm text-blue-900">{result.recommendation}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main page ──────────────────────────────────────────────────────────────
 
 export default function TicketDetailPage() {
@@ -382,6 +502,13 @@ export default function TicketDetailPage() {
           resolution: '',
           conversationSummary: conversationSummary || ticket.subject,
         }
+      } else if (action === 'similar_bug') {
+        endpoint = '/api/ai/find-similar-bug'
+        body = {
+          subject: ticket.subject,
+          productArea: ticket.productArea,
+          conversationHistory: conversationSummary || ticket.subject,
+        }
       }
 
       const res = await fetch(endpoint, {
@@ -476,6 +603,7 @@ export default function TicketDetailPage() {
     reply: 'Réponse client générée',
     escalation: 'Ticket d\'escalade créé',
     kb: 'Fiche KB générée',
+    similar_bug: 'Bugs similaires dans Linear',
   }
 
   if (loadingTicket) {
@@ -590,6 +718,12 @@ export default function TicketDetailPage() {
               loading={aiLoading && activeAction === 'kb'}
               variant="secondary"
             />
+            <ActionButton
+              label="Find similar bug"
+              onClick={() => handleAction('similar_bug')}
+              loading={aiLoading && activeAction === 'similar_bug'}
+              variant="secondary"
+            />
           </div>
         </div>
 
@@ -606,9 +740,13 @@ export default function TicketDetailPage() {
               </div>
             ) : aiResult ? (
               <div className="space-y-4">
-                <pre className="text-xs bg-slate-50 rounded p-3 overflow-auto max-h-64 text-slate-700 whitespace-pre-wrap">
-                  {JSON.stringify(aiResult, null, 2)}
-                </pre>
+                {activeAction === 'similar_bug' ? (
+                  <SimilarBugResultView result={aiResult as unknown as FindSimilarResult} />
+                ) : (
+                  <pre className="text-xs bg-slate-50 rounded p-3 overflow-auto max-h-64 text-slate-700 whitespace-pre-wrap">
+                    {JSON.stringify(aiResult, null, 2)}
+                  </pre>
+                )}
                 {activeAction === 'reply' && replyBody && (
                   <div>
                     <div className="flex items-center justify-between mb-2">
