@@ -6,8 +6,6 @@
  * (plus the standard ZOHO_* auth vars in .env.local)
  */
 
-import 'dotenv/config'
-
 const ZOHO_DESK_BASE = 'https://desk.zoho.eu/api/v1'
 const ZOHO_TOKEN_URL = 'https://accounts.zoho.eu/oauth/v2/token'
 
@@ -37,15 +35,17 @@ async function main() {
     process.exit(1)
   }
 
-  const webhookUrl = `${appUrl}/api/webhooks/zoho-desk`
+  // Secret embedded as query param — Zoho doesn't support custom headers
+  const webhookUrl = `${appUrl}/api/webhooks/zoho-desk?token=${encodeURIComponent(secret)}`
   const token = await getToken()
 
   const body = {
-    name: 'Dedge Ops RAG Webhook',
+    name: 'Dedge Ops RAG',
     url: webhookUrl,
-    events: ['ticket.created', 'ticket.statusChanged'],
-    headers: [{ name: 'x-zoho-webhook-token', value: secret }],
-    departmentId: process.env.ZOHO_SUPPORT_DEPT_ID ?? '5861000000007061',
+    subscriptions: {
+      Ticket_Add: { departmentIds: ['5861000000007061'] },
+      Ticket_Update: { departmentIds: ['5861000000007061'], includePrevState: true },
+    },
   }
 
   const res = await fetch(`${ZOHO_DESK_BASE}/webhooks`, {

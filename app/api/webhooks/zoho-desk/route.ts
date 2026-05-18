@@ -4,11 +4,16 @@ import { ingestSingleTicket } from '@/lib/rag/ingest'
 
 export const dynamic = 'force-dynamic'
 
-const TRIGGER_STATUSES = new Set(['Closed', 'Solved', 'Fermé'])
+// Zoho validates the URL with a GET before saving
+export async function GET() {
+  return NextResponse.json({ ok: true })
+}
+
+const CLOSED_STATUSES = new Set(['Closed', 'Solved', 'Fermé'])
 
 export async function POST(req: NextRequest) {
-  // Verify webhook token
-  const token = req.headers.get('x-zoho-webhook-token')
+  // Verify webhook token (query param — Zoho doesn't support custom headers)
+  const token = req.headers.get('x-zoho-webhook-token') ?? req.nextUrl.searchParams.get('token')
   if (!token || token !== process.env.ZOHO_WEBHOOK_SECRET) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -20,8 +25,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
+  // Zoho sends eventType as "Ticket_Add" or "Ticket_Update"
   const eventType = payload.eventType as string | undefined
-  const ticketId = (payload.ticketId ?? (payload.ticket as Record<string, unknown>)?.id) as string | undefined
+  const ticketId = (
+    payload.ticketId ??
+    (payload.ticket as Record<string, unknown>)?.id
+  ) as string | undefined
 
   // Log event (fire-and-forget)
   void supabaseAdmin.from('webhook_events').insert({
@@ -34,9 +43,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, skipped: 'no ticketId' })
   }
 
+  const newStatus = payload.newStatus as string | undefined
   const shouldIngest =
-    eventType === 'ticket.created' ||
-    (eventType === 'ticket.statusChanged' && TRIGGER_STATUSES.has(payload.newStatus as string))
+    eventType === 'Ticket_Add' ||
+    (eventType === 'Ticket_Update' && newStatus && CLOSED_STATUSES.has(newStatus))
 
   if (!shouldIngest) {
     return NextResponse.json({ ok: true, skipped: 'event not handled' })
