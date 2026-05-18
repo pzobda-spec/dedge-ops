@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import type { ZohoMappedTicket } from '@/lib/zoho/mapper'
 import Badge from '@/components/ui/Badge'
@@ -72,25 +72,32 @@ export default function TicketsPage() {
   const [filterPriority, setFilterPriority] = useState('')
   const [filterSearch, setFilterSearch] = useState('')
   const [sortBy, setSortBy] = useState('riskScore')
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
 
-  useEffect(() => {
-    async function loadTickets() {
-      try {
-        setLoading(true)
-        setError(null)
-        const res = await fetch('/api/zoho/tickets?limit=100')
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const data = await res.json()
-        setTickets(data.tickets || [])
-      } catch (err) {
-        console.error('Failed to load tickets:', err)
-        setError('Erreur de chargement des tickets')
-      } finally {
-        setLoading(false)
-      }
+  const loadTickets = useCallback(async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const res = await fetch('/api/zoho/tickets?limit=100')
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setTickets(data.tickets || [])
+      setLastRefreshed(new Date())
+    } catch (err) {
+      console.error('Failed to load tickets:', err)
+      setError('Erreur de chargement des tickets')
+    } finally {
+      setLoading(false)
     }
-    loadTickets()
   }, [])
+
+  // Initial load + auto-refresh every 3 minutes
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  useEffect(() => {
+    loadTickets()
+    intervalRef.current = setInterval(loadTickets, 3 * 60 * 1000)
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
+  }, [loadTickets])
 
   const searchLower = filterSearch.toLowerCase()
   const filtered = tickets
@@ -111,11 +118,38 @@ export default function TicketsPage() {
 
   return (
     <div>
-      <div className="bg-white border-b border-slate-200 px-6 py-4">
-        <h1 className="text-xl font-semibold text-slate-900">Tickets</h1>
-        <p className="text-sm text-slate-500 mt-0.5">
-          {loading ? 'Chargement...' : `${tickets.length} tickets · ${filtered.length} affichés`}
-        </p>
+      <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">Tickets</h1>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {loading
+              ? 'Chargement...'
+              : `${tickets.length} tickets · ${filtered.length} affichés${lastRefreshed ? ` · mis à jour ${lastRefreshed.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : ''}`}
+          </p>
+        </div>
+        <button
+          onClick={loadTickets}
+          disabled={loading}
+          className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-colors"
+          title="Rafraîchir les tickets"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={loading ? 'animate-spin' : ''}
+          >
+            <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
+            <path d="M21 3v5h-5"/>
+          </svg>
+          Rafraîchir
+        </button>
       </div>
 
       <div className="p-6">

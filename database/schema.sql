@@ -148,7 +148,32 @@ CREATE TABLE IF NOT EXISTS ai_actions (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Ticket chunks (RAG — vector embeddings for AI search)
+CREATE TABLE IF NOT EXISTS ticket_chunks (
+  id BIGSERIAL PRIMARY KEY,
+  ticket_id TEXT NOT NULL,
+  chunk_type TEXT NOT NULL CHECK (chunk_type IN ('subject_and_description', 'thread', 'resolution')),
+  content TEXT NOT NULL,
+  embedding vector(1536),
+  zoho_status TEXT,
+  product_area TEXT,
+  segment TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Webhook events log
+CREATE TABLE IF NOT EXISTS webhook_events (
+  id BIGSERIAL PRIMARY KEY,
+  event_type TEXT NOT NULL,
+  ticket_id TEXT,
+  payload JSONB,
+  processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Indexes
+CREATE INDEX IF NOT EXISTS idx_ticket_chunks_ticket_id ON ticket_chunks(ticket_id);
+CREATE INDEX IF NOT EXISTS idx_webhook_events_processed_at ON webhook_events(processed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tickets_client_id ON tickets(client_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
 CREATE INDEX IF NOT EXISTS idx_tickets_risk_score ON tickets(risk_score DESC);

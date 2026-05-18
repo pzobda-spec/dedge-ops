@@ -1,5 +1,7 @@
 'use client'
 
+import { useState, useEffect } from 'react'
+
 const apiKeys = [
   { name: 'OPENAI_API_KEY', label: 'OpenAI API Key', description: 'Clé pour les fonctionnalités IA (GPT-4o)' },
   { name: 'NEXT_PUBLIC_SUPABASE_URL', label: 'Supabase URL', description: 'URL de la base de données Supabase' },
@@ -17,6 +19,83 @@ const integrations = [
   { name: 'SalesIQ', description: 'Chat en direct', icon: '💭' },
   { name: 'Ringover', description: 'Téléphonie cloud', icon: '📞' },
 ]
+
+interface WebhookStats {
+  lastReceived: string | null
+  dailyCount: number
+}
+
+function WebhookStatusBlock() {
+  const [stats, setStats] = useState<WebhookStats | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/webhooks/zoho-desk/stats')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => setStats(data))
+      .catch(() => setStats(null))
+      .finally(() => setLoading(false))
+  }, [])
+
+  async function handleTest() {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const res = await fetch('/api/webhooks/zoho-desk/test', { method: 'POST' })
+      const data = await res.json()
+      setTestResult(data.ok ? 'Webhook OK' : `Erreur : ${data.error}`)
+    } catch {
+      setTestResult('Erreur réseau')
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <section>
+      <h2 className="text-base font-semibold text-slate-800 mb-4">Webhook temps réel (RAG)</h2>
+      <div className="bg-white rounded-lg border border-slate-200 p-4">
+        {loading ? (
+          <p className="text-sm text-slate-400">Chargement...</p>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-700">Dernier événement reçu</span>
+              <span className="text-sm font-mono text-slate-500">
+                {stats?.lastReceived
+                  ? new Date(stats.lastReceived).toLocaleString('fr-FR')
+                  : '—'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-700">Événements aujourd&apos;hui</span>
+              <span className="text-sm font-mono text-slate-500">{stats?.dailyCount ?? 0}</span>
+            </div>
+            <div className="flex items-center gap-3 pt-2 border-t border-slate-100">
+              <button
+                onClick={handleTest}
+                disabled={testing}
+                className="text-sm px-3 py-1.5 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition-colors"
+              >
+                {testing ? 'Test en cours...' : 'Tester le webhook'}
+              </button>
+              {testResult && (
+                <span className={`text-xs font-medium ${testResult.startsWith('Erreur') ? 'text-red-600' : 'text-green-600'}`}>
+                  {testResult}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+        <p className="text-xs text-slate-400 mt-3">
+          Enregistrez le webhook via <code className="font-mono">npx tsx scripts/register-zoho-webhook.ts</code>
+        </p>
+      </div>
+    </section>
+  )
+}
 
 export default function SettingsPage() {
   return (
@@ -87,6 +166,8 @@ export default function SettingsPage() {
             Les intégrations seront disponibles à partir du Sprint 2.
           </p>
         </section>
+
+        <WebhookStatusBlock />
 
         {/* Preferences section */}
         <section>

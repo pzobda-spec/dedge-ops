@@ -69,6 +69,15 @@ Score 0–100 :
 
 ### À faire
 
+- [ ] **Webhook RAG temps réel**
+  - Webhook Zoho Desk → ingestion automatique à la création/fermeture de ticket
+  - Table `ticket_chunks` (Supabase pgvector, `text-embedding-3-small`)
+  - Route : `app/api/webhooks/zoho-desk/route.ts` — auth via `x-zoho-webhook-token`
+  - Ingestion : `lib/rag/ingest.ts::ingestSingleTicket(zohoTicketId)`
+  - Enregistrement : `npx tsx scripts/register-zoho-webhook.ts`
+  - Vars requises : `ZOHO_WEBHOOK_SECRET`, `ZOHO_WEBHOOK_ID`, `NEXT_PUBLIC_APP_URL`
+  - ⚠️ Activer l'extension `pgvector` dans Supabase avant de créer la table
+
 - [ ] **Page Stats Zoho Desk**
   - Volume tickets : créés vs fermés sur 7j / 30j
   - Répartition par statut (Open, Pending, Escalated…)
