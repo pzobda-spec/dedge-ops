@@ -289,13 +289,23 @@ function ReplyResultView({
   setReplyBody,
   copied,
   setCopied,
+  onRegenerate,
+  onUseReply,
+  regenerating,
 }: {
   result: Record<string, unknown>
   replyBody: string
   setReplyBody: (v: string) => void
   copied: boolean
   setCopied: (v: boolean) => void
+  onRegenerate: (critique: string, userDraft: string) => void
+  onUseReply: (body: string) => void
+  regenerating: boolean
 }) {
+  const [feedback, setFeedback] = useState<'good' | 'bad' | null>(null)
+  const [critique, setCritique] = useState('')
+  const [userDraft, setUserDraft] = useState('')
+
   const ctx = (result._context ?? {}) as ReplyContext
   const sources = result.sources as string[] | undefined
   const totalSources = (ctx.zohoKBCount ?? 0) + (ctx.localKBCount ?? 0) + (ctx.similarTicketsCount ?? 0)
@@ -327,7 +337,6 @@ function ReplyResultView({
         <p className="text-xs text-slate-400 italic">Aucune source KB trouvée — réponse générée sans contexte documentaire.</p>
       )}
 
-      {/* Sources list */}
       {sources && sources.length > 0 && (
         <div className="text-xs text-slate-500 bg-slate-50 rounded p-2">
           <span className="font-medium">Sources : </span>{sources.join(' · ')}
@@ -356,6 +365,66 @@ function ReplyResultView({
           className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm text-slate-700 font-mono"
         />
       </div>
+
+      {/* Feedback row */}
+      {feedback === null && (
+        <div className="flex items-center gap-3 pt-1 border-t border-slate-100">
+          <span className="text-xs text-slate-500">Ce draft convient ?</span>
+          <button
+            onClick={() => { setFeedback('good'); onUseReply(replyBody) }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 border border-green-200 text-green-700 rounded-md text-xs font-medium hover:bg-green-100 transition-colors"
+          >
+            👍 Oui, l&apos;utiliser
+          </button>
+          <button
+            onClick={() => setFeedback('bad')}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 border border-red-200 text-red-700 rounded-md text-xs font-medium hover:bg-red-100 transition-colors"
+          >
+            👎 Non, améliorer
+          </button>
+        </div>
+      )}
+
+      {feedback === 'good' && (
+        <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+          <span className="text-green-600 text-xs font-medium">✓ Réponse copiée dans la zone d&apos;envoi</span>
+          <button onClick={() => setFeedback(null)} className="text-xs text-slate-400 hover:underline">Annuler</button>
+        </div>
+      )}
+
+      {feedback === 'bad' && (
+        <div className="space-y-2 pt-2 border-t border-slate-100">
+          <p className="text-xs font-medium text-slate-700">Qu&apos;est-ce qui ne va pas ?</p>
+          <textarea
+            value={critique}
+            onChange={e => setCritique(e.target.value)}
+            placeholder="Ex : trop formel, solution incorrecte, manque de détails sur..."
+            rows={2}
+            className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm text-slate-700 placeholder-slate-400 resize-none"
+          />
+          <p className="text-xs font-medium text-slate-700">
+            Votre réponse au client <span className="text-slate-400 font-normal">(optionnel — servira de référence pour régénérer)</span>
+          </p>
+          <textarea
+            value={userDraft}
+            onChange={e => setUserDraft(e.target.value)}
+            placeholder="Rédigez votre réponse ici..."
+            rows={5}
+            className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm text-slate-700 placeholder-slate-400 resize-none font-mono"
+          />
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => { onRegenerate(critique, userDraft); setFeedback(null); setCritique(''); setUserDraft('') }}
+              disabled={regenerating || (!critique.trim() && !userDraft.trim())}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-md text-xs font-medium hover:bg-slate-700 disabled:opacity-50 transition-colors"
+            >
+              {regenerating && <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+              {regenerating ? 'Régénération...' : 'Régénérer en tenant compte'}
+            </button>
+            <button onClick={() => setFeedback(null)} className="text-xs text-slate-400 hover:underline">Annuler</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -494,6 +563,8 @@ export default function TicketDetailPage() {
   const [replyBody, setReplyBody] = useState('')
   const [copied, setCopied] = useState(false)
 
+  const [regeneratingReply, setRegeneratingReply] = useState(false)
+
   const [creatingLinear, setCreatingLinear] = useState(false)
   const [linearIssue, setLinearIssue] = useState<{ identifier: string; url: string } | null>(null)
   const [linearError, setLinearError] = useState<string | null>(null)
@@ -537,6 +608,41 @@ export default function TicketDetailPage() {
     loadTicket()
     loadConversations()
   }, [ticketId])
+
+  async function handleRegenerateReply(critique: string, userDraftReply: string) {
+    if (!ticket) return
+    setRegeneratingReply(true)
+    setAiResult(null)
+    setReplyBody('')
+    const conversationSummary = conversations
+      .map(c => `[${c.authorType === 'client' ? 'Client' : 'Agent'} - ${c.authorName}]: ${c.summary}`)
+      .join('\n')
+    try {
+      const res = await fetch('/api/ai/generate-client-reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ticketId: ticket.zohoInternalId,
+          subject: ticket.subject,
+          clientName: ticket.clientName,
+          segment: ticket.segment ?? 'N/A',
+          productArea: ticket.productArea,
+          issueDescription: conversationSummary || ticket.subject,
+          tone: 'professionnel et empathique',
+          feedback: critique || undefined,
+          userDraftReply: userDraftReply || undefined,
+        }),
+      })
+      const data = await res.json()
+      setActiveAction('reply')
+      setAiResult(data)
+      if (data.body) setReplyBody(data.body as string)
+    } catch {
+      setAiResult({ error: 'Erreur lors de la régénération.' })
+    } finally {
+      setRegeneratingReply(false)
+    }
+  }
 
   async function handleAction(action: AiAction) {
     if (!ticket) return
@@ -840,7 +946,16 @@ export default function TicketDetailPage() {
                 {activeAction === 'similar_bug' ? (
                   <SimilarBugResultView result={aiResult as unknown as FindSimilarResult} />
                 ) : activeAction === 'reply' ? (
-                  <ReplyResultView result={aiResult} replyBody={replyBody} setReplyBody={setReplyBody} copied={copied} setCopied={setCopied} />
+                  <ReplyResultView
+                    result={aiResult}
+                    replyBody={replyBody}
+                    setReplyBody={setReplyBody}
+                    copied={copied}
+                    setCopied={setCopied}
+                    onRegenerate={handleRegenerateReply}
+                    onUseReply={(body) => setReplyContent(body)}
+                    regenerating={regeneratingReply}
+                  />
                 ) : (
                   <pre className="text-xs bg-slate-50 rounded p-3 overflow-auto max-h-64 text-slate-700 whitespace-pre-wrap">
                     {JSON.stringify(aiResult, null, 2)}

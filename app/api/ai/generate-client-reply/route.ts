@@ -9,7 +9,7 @@ const SUPPORT_DEPT_ID = '5861000000007061'
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
-  const { ticketId, subject, clientName, segment, productArea, issueDescription, tone } = body
+  const { ticketId, subject, clientName, segment, productArea, issueDescription, tone, feedback, userDraftReply } = body
 
   // Gather context from 3 sources in parallel
   const [zohoKBRes, localKBRes, resolvedTicketsRes] = await Promise.allSettled([
@@ -98,6 +98,10 @@ export async function POST(req: NextRequest) {
     ? `\n\nCONTEXTE BASE DE CONNAISSANCES :\n${contextParts.join('\n\n')}`
     : ''
 
+  const feedbackContext = (feedback || userDraftReply)
+    ? `\n\nRETOUR SUR LE DRAFT PRÉCÉDENT :\n${feedback ? `Problème identifié : ${feedback}\n` : ''}${userDraftReply ? `Réponse rédigée par l'agent (à utiliser comme référence de style et de contenu) :\n${userDraftReply}` : ''}`
+    : ''
+
   const completion = await openai.chat.completions.create({
     model: 'gpt-4o',
     messages: [
@@ -108,6 +112,7 @@ Tu dois rédiger un draft de réponse client basé sur :
 1. Les articles de la knowledge base Zoho Desk (source principale)
 2. Les fiches KB internes (source principale)
 3. Les conversations de tickets similaires déjà résolus (pour s'inspirer du ton et des solutions appliquées)
+${feedbackContext ? '4. Le retour de l\'agent sur le draft précédent (PRIORITÉ ABSOLUE — intègre impérativement les corrections demandées et inspire-toi de la réponse de référence si fournie)' : ''}
 
 Règles :
 - Baser la réponse sur les articles et tickets similaires fournis — ne pas inventer de solutions
@@ -117,6 +122,7 @@ Règles :
 - Ton professionnel mais humain
 - Répondre dans la langue du ticket (français ou anglais)
 - Si des templates de réponse KB existent, s'en inspirer
+${feedbackContext ? '- Le retour de l\'agent a priorité sur tout le reste : intègre chaque correction demandée' : ''}
 
 Retourne un objet JSON :
 - subject: string (objet email si nécessaire)
@@ -129,6 +135,7 @@ Retourne un objet JSON :
         content: JSON.stringify({
           ticket: { ticketId, subject, clientName, segment, productArea, issueDescription, tone },
           knowledgeContext,
+          ...(feedbackContext && { feedbackContext }),
         }),
       },
     ],
