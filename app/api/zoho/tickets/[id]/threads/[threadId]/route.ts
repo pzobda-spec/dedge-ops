@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { fetchThreadContent } from '@/lib/zoho/client'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string; threadId: string } }

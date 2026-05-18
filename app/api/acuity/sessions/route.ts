@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { fetchSessions, fetchUpcomingSessions, fetchRecentSessions } from '@/lib/acuity/client'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createMeetEvent, sendMeetEmail } from '@/lib/google/calendarClient'
 
+export const dynamic = 'force-dynamic'
+
 interface Participant {
   email: string
   name: string

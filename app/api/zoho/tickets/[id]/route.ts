@@ -3,6 +3,8 @@ import { fetchTicket } from '@/lib/zoho/client'
 import { mapZohoTicket } from '@/lib/zoho/mapper'
 import { getCRMAccountsMap, matchAccountByName } from '@/lib/zoho/accountCache'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } }

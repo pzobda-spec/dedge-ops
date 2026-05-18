@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { fetchIssues } from '@/lib/linear/client'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     const issues = await fetchIssues()

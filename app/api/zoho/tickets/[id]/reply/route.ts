@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { postTicketReply } from '@/lib/zoho/client'
 
+export const dynamic = 'force-dynamic'
+
 export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }

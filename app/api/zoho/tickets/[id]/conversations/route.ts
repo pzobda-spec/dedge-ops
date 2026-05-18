@@ -3,6 +3,8 @@ import { fetchTicketConversations } from '@/lib/zoho/client'
 import { mapZohoConversation } from '@/lib/zoho/mapper'
 import type { ZohoRawConversation } from '@/lib/zoho/mapper'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } }
