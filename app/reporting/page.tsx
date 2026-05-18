@@ -1,9 +1,19 @@
 'use client'
 
-import { useState } from 'react'
-import { monthlyMetrics } from '@/lib/mockData'
+import { useState, useEffect, useCallback } from 'react'
 import { formatMonth } from '@/lib/utils/formatting'
 import ActionButton from '@/components/ui/ActionButton'
+
+type StatsData = {
+  month: number
+  year: number
+  totalTickets: number
+  topProducts: { name: string; count: number }[]
+  priorityCounts: Record<string, number>
+  segmentCounts: Record<string, number>
+  openedVsResolved: { opened: number; resolved: number }
+  note?: string
+}
 
 type AiAnalysis = {
   executiveSummary?: string
@@ -15,37 +25,34 @@ type AiAnalysis = {
 }
 
 export default function ReportingPage() {
-  const [selectedMonth, setSelectedMonth] = useState(5)
-  const [selectedYear, setSelectedYear] = useState(2026)
+  const now = new Date()
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1)
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear())
+  const [stats, setStats] = useState<StatsData | null>(null)
+  const [loading, setLoading] = useState(true)
   const [aiAnalysis, setAiAnalysis] = useState<AiAnalysis | null>(null)
   const [loadingAi, setLoadingAi] = useState(false)
 
-  const currentMetrics = monthlyMetrics.find(
-    m => m.month === selectedMonth && m.year === selectedYear
-  )
-  const previousMetrics = monthlyMetrics.find(
-    m =>
-      (m.month === selectedMonth - 1 && m.year === selectedYear) ||
-      (selectedMonth === 1 && m.month === 12 && m.year === selectedYear - 1)
-  )
+  const loadStats = useCallback(async () => {
+    setLoading(true)
+    setStats(null)
+    try {
+      const res = await fetch(`/api/zoho/stats?month=${selectedMonth}&year=${selectedYear}`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setStats(await res.json())
+    } catch (err) {
+      console.error('Stats error:', err)
+    } finally {
+      setLoading(false)
+    }
+  }, [selectedMonth, selectedYear])
 
-  function diff(current: number, previous: number | undefined): string {
-    if (!previous) return ''
-    const delta = current - previous
-    const pct = ((delta / previous) * 100).toFixed(1)
-    return delta >= 0 ? `+${pct}%` : `${pct}%`
-  }
+  useEffect(() => { loadStats() }, [loadStats])
 
-  function diffColor(current: number, previous: number | undefined, lowerIsBetter = false): string {
-    if (!previous) return 'text-slate-400'
-    const delta = current - previous
-    if (delta === 0) return 'text-slate-400'
-    const isGood = lowerIsBetter ? delta < 0 : delta > 0
-    return isGood ? 'text-green-600' : 'text-red-600'
-  }
+  const maxProduct = stats?.topProducts[0]?.count || 1
 
   async function handleAiAnalysis() {
-    if (!currentMetrics) return
+    if (!stats) return
     setLoadingAi(true)
     setAiAnalysis(null)
     try {
@@ -55,49 +62,49 @@ export default function ReportingPage() {
         body: JSON.stringify({
           month: selectedMonth,
           year: selectedYear,
-          metrics: currentMetrics,
-          comparisonMetrics: previousMetrics,
-          topProducts: currentMetrics.topProducts,
-          channelBreakdown: currentMetrics.byChannel,
+          metrics: {
+            totalTickets: stats.totalTickets,
+            totalCalls: 0,
+            totalChats: 0,
+            avgFirstResponseHours: null,
+            fcrRate: stats.totalTickets > 0
+              ? stats.openedVsResolved.resolved / stats.totalTickets
+              : 0,
+            topProducts: stats.topProducts,
+            byChannel: { tickets: stats.totalTickets, calls: 0, chats: 0 },
+            openedVsResolved: stats.openedVsResolved,
+          },
+          topProducts: stats.topProducts,
         }),
       })
-      const data = await res.json()
-      setAiAnalysis(data)
+      setAiAnalysis(await res.json())
     } catch {
-      setAiAnalysis({ error: 'Erreur lors de la génération. Vérifiez la clé API OpenAI.' })
+      setAiAnalysis({ error: 'Erreur lors de la génération.' })
     } finally {
       setLoadingAi(false)
     }
   }
 
   function handleExportMarkdown() {
-    if (!currentMetrics) return
+    if (!stats) return
     const md = `# Reporting ${formatMonth(selectedMonth, selectedYear)}
 
 ## Métriques clés
 
 | Métrique | Valeur |
 |----------|--------|
-| Total tickets | ${currentMetrics.totalTickets} |
-| Total appels | ${currentMetrics.totalCalls} |
-| Total chats | ${currentMetrics.totalChats} |
-| Première réponse moy. | ${currentMetrics.avgFirstResponseHours}h |
-| Taux FCR | ${(currentMetrics.fcrRate * 100).toFixed(0)}% |
+| Total tickets | ${stats.totalTickets} |
+| Résolus | ${stats.openedVsResolved.resolved} |
+| Taux résolution | ${stats.totalTickets > 0 ? ((stats.openedVsResolved.resolved / stats.totalTickets) * 100).toFixed(0) : 0}% |
 
 ## Par produit
 
-${currentMetrics.topProducts.map(p => `- ${p.name}: ${p.count}`).join('\n')}
-
-## Par canal
-
-- Tickets: ${currentMetrics.byChannel.tickets}
-- Appels: ${currentMetrics.byChannel.calls}
-- Chats: ${currentMetrics.byChannel.chats}
+${stats.topProducts.map(p => `- ${p.name}: ${p.count}`).join('\n')}
 
 ## Ouvertures vs Résolutions
 
-- Ouverts: ${currentMetrics.openedVsResolved.opened}
-- Résolus: ${currentMetrics.openedVsResolved.resolved}
+- Ouverts : ${stats.openedVsResolved.opened}
+- Résolus : ${stats.openedVsResolved.resolved}
 `
     const blob = new Blob([md], { type: 'text/markdown' })
     const url = URL.createObjectURL(blob)
@@ -108,13 +115,11 @@ ${currentMetrics.topProducts.map(p => `- ${p.name}: ${p.count}`).join('\n')}
     URL.revokeObjectURL(url)
   }
 
-  const maxProduct = currentMetrics?.topProducts[0]?.count || 1
-
   return (
     <div>
       <div className="bg-white border-b border-slate-200 px-6 py-4">
         <h1 className="text-xl font-semibold text-slate-900">Reporting</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Analyse mensuelle de l&apos;activité support</p>
+        <p className="text-sm text-slate-500 mt-0.5">Analyse de l&apos;activité support — données Zoho Desk en temps réel</p>
       </div>
 
       <div className="p-6 space-y-6">
@@ -127,7 +132,7 @@ ${currentMetrics.topProducts.map(p => `- ${p.name}: ${p.count}`).join('\n')}
           >
             {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
               <option key={m} value={m}>
-                {['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'][m - 1]}
+                {['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'][m - 1]}
               </option>
             ))}
           </select>
@@ -136,152 +141,109 @@ ${currentMetrics.topProducts.map(p => `- ${p.name}: ${p.count}`).join('\n')}
             onChange={e => setSelectedYear(Number(e.target.value))}
             className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white text-slate-700"
           >
-            {[2026, 2025, 2024].map(y => (
-              <option key={y} value={y}>{y}</option>
-            ))}
+            {[2026, 2025, 2024].map(y => <option key={y} value={y}>{y}</option>)}
           </select>
-          <span className="text-sm text-slate-500">
-            {formatMonth(selectedMonth, selectedYear)}
-          </span>
+          <span className="text-sm text-slate-500">{formatMonth(selectedMonth, selectedYear)}</span>
         </div>
 
-        {!currentMetrics ? (
+        {loading ? (
+          <div className="flex items-center gap-2 py-12 text-sm text-slate-500">
+            <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+            Chargement des statistiques...
+          </div>
+        ) : !stats || stats.totalTickets === 0 ? (
           <div className="bg-white rounded-lg border border-slate-200 p-8 text-center text-slate-400 text-sm">
             Aucune donnée disponible pour cette période.
           </div>
         ) : (
           <>
-            {/* Metrics grid */}
-            <div className="grid grid-cols-5 gap-4">
+            {stats.note && (
+              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                {stats.note}
+              </p>
+            )}
+
+            {/* Metrics */}
+            <div className="grid grid-cols-4 gap-4">
               <div className="bg-white rounded-lg border border-slate-200 p-4">
-                <p className="text-xs text-slate-500 uppercase tracking-wide">Tickets</p>
-                <p className="text-2xl font-bold text-slate-900 mt-1">{currentMetrics.totalTickets}</p>
-                <p className={`text-xs mt-1 ${diffColor(currentMetrics.totalTickets, previousMetrics?.totalTickets, true)}`}>
-                  {diff(currentMetrics.totalTickets, previousMetrics?.totalTickets)} vs mois préc.
+                <p className="text-xs text-slate-500 uppercase tracking-wide">Tickets ce mois</p>
+                <p className="text-2xl font-bold text-slate-900 mt-1">{stats.totalTickets}</p>
+              </div>
+              <div className="bg-white rounded-lg border border-slate-200 p-4">
+                <p className="text-xs text-slate-500 uppercase tracking-wide">Résolus</p>
+                <p className="text-2xl font-bold text-green-700 mt-1">{stats.openedVsResolved.resolved}</p>
+              </div>
+              <div className="bg-white rounded-lg border border-slate-200 p-4">
+                <p className="text-xs text-slate-500 uppercase tracking-wide">Backlog net</p>
+                <p className={`text-2xl font-bold mt-1 ${stats.openedVsResolved.opened - stats.openedVsResolved.resolved > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                  {stats.openedVsResolved.opened - stats.openedVsResolved.resolved > 0 ? '+' : ''}
+                  {stats.openedVsResolved.opened - stats.openedVsResolved.resolved}
                 </p>
               </div>
               <div className="bg-white rounded-lg border border-slate-200 p-4">
-                <p className="text-xs text-slate-500 uppercase tracking-wide">Appels</p>
-                <p className="text-2xl font-bold text-slate-900 mt-1">{currentMetrics.totalCalls}</p>
-                <p className={`text-xs mt-1 ${diffColor(currentMetrics.totalCalls, previousMetrics?.totalCalls, true)}`}>
-                  {diff(currentMetrics.totalCalls, previousMetrics?.totalCalls)} vs mois préc.
-                </p>
-              </div>
-              <div className="bg-white rounded-lg border border-slate-200 p-4">
-                <p className="text-xs text-slate-500 uppercase tracking-wide">Chats</p>
-                <p className="text-2xl font-bold text-slate-900 mt-1">{currentMetrics.totalChats}</p>
-                <p className={`text-xs mt-1 ${diffColor(currentMetrics.totalChats, previousMetrics?.totalChats, true)}`}>
-                  {diff(currentMetrics.totalChats, previousMetrics?.totalChats)} vs mois préc.
-                </p>
-              </div>
-              <div className="bg-white rounded-lg border border-slate-200 p-4">
-                <p className="text-xs text-slate-500 uppercase tracking-wide">Première réponse</p>
-                <p className="text-2xl font-bold text-slate-900 mt-1">{currentMetrics.avgFirstResponseHours}h</p>
-                <p className={`text-xs mt-1 ${diffColor(currentMetrics.avgFirstResponseHours, previousMetrics?.avgFirstResponseHours, true)}`}>
-                  {diff(currentMetrics.avgFirstResponseHours, previousMetrics?.avgFirstResponseHours)} vs mois préc.
-                </p>
-              </div>
-              <div className="bg-white rounded-lg border border-slate-200 p-4">
-                <p className="text-xs text-slate-500 uppercase tracking-wide">Taux FCR</p>
+                <p className="text-xs text-slate-500 uppercase tracking-wide">Taux résolution</p>
                 <p className="text-2xl font-bold text-slate-900 mt-1">
-                  {(currentMetrics.fcrRate * 100).toFixed(0)}%
-                </p>
-                <p className={`text-xs mt-1 ${diffColor(currentMetrics.fcrRate, previousMetrics?.fcrRate)}`}>
-                  {diff(currentMetrics.fcrRate, previousMetrics?.fcrRate)} vs mois préc.
+                  {((stats.openedVsResolved.resolved / stats.totalTickets) * 100).toFixed(0)}%
                 </p>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              {/* Product breakdown bar chart */}
+              {/* Product breakdown */}
               <div className="bg-white rounded-lg border border-slate-200 p-4">
                 <h2 className="text-sm font-semibold text-slate-700 mb-4">Tickets par produit</h2>
                 <div className="space-y-2">
-                  {currentMetrics.topProducts.map(p => (
+                  {stats.topProducts.map(p => (
                     <div key={p.name}>
                       <div className="flex items-center justify-between mb-0.5">
                         <span className="text-xs text-slate-600">{p.name}</span>
                         <span className="text-xs font-medium text-slate-700">{p.count}</span>
                       </div>
                       <div className="h-2 bg-slate-100 rounded-full">
-                        <div
-                          className="h-2 bg-slate-700 rounded-full"
-                          style={{ width: `${(p.count / maxProduct) * 100}%` }}
-                        />
+                        <div className="h-2 bg-slate-700 rounded-full" style={{ width: `${(p.count / maxProduct) * 100}%` }} />
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Channel breakdown */}
-              <div className="bg-white rounded-lg border border-slate-200 p-4">
-                <h2 className="text-sm font-semibold text-slate-700 mb-4">Par canal</h2>
-                <div className="space-y-3">
-                  {[
-                    { label: 'Tickets email', value: currentMetrics.byChannel.tickets, color: 'bg-blue-500' },
-                    { label: 'Appels téléphone', value: currentMetrics.byChannel.calls, color: 'bg-green-500' },
-                    { label: 'Chats', value: currentMetrics.byChannel.chats, color: 'bg-purple-500' },
-                  ].map(c => {
-                    const total = currentMetrics.byChannel.tickets + currentMetrics.byChannel.calls + currentMetrics.byChannel.chats
-                    return (
-                      <div key={c.label}>
-                        <div className="flex items-center justify-between mb-0.5">
-                          <span className="text-xs text-slate-600">{c.label}</span>
-                          <span className="text-xs font-medium text-slate-700">
-                            {c.value} ({((c.value / total) * 100).toFixed(0)}%)
-                          </span>
-                        </div>
-                        <div className="h-2 bg-slate-100 rounded-full">
-                          <div
-                            className={`h-2 ${c.color} rounded-full`}
-                            style={{ width: `${(c.value / total) * 100}%` }}
-                          />
-                        </div>
+              {/* Priority + segment */}
+              <div className="bg-white rounded-lg border border-slate-200 p-4 space-y-4">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-700 mb-3">Par priorité</h2>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { key: 'urgent', label: 'Urgente', color: 'text-red-600' },
+                      { key: 'high', label: 'Haute', color: 'text-orange-600' },
+                      { key: 'medium', label: 'Moyenne', color: 'text-yellow-600' },
+                      { key: 'low', label: 'Faible', color: 'text-slate-500' },
+                    ].map(({ key, label, color }) => (
+                      <div key={key} className="bg-slate-50 rounded p-2">
+                        <p className="text-xs text-slate-500">{label}</p>
+                        <p className={`text-lg font-bold ${color}`}>{stats.priorityCounts[key] ?? 0}</p>
                       </div>
-                    )
-                  })}
+                    ))}
+                  </div>
                 </div>
-
-                <div className="mt-4 pt-3 border-t border-slate-100">
-                  <h3 className="text-xs font-semibold text-slate-600 mb-2">Ouvertures vs Résolutions</h3>
-                  <div className="flex gap-4">
-                    <div>
-                      <p className="text-xs text-slate-500">Ouverts</p>
-                      <p className="text-lg font-bold text-slate-900">{currentMetrics.openedVsResolved.opened}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500">Résolus</p>
-                      <p className="text-lg font-bold text-green-700">{currentMetrics.openedVsResolved.resolved}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500">Backlog net</p>
-                      <p className={`text-lg font-bold ${currentMetrics.openedVsResolved.opened - currentMetrics.openedVsResolved.resolved > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                        {currentMetrics.openedVsResolved.opened - currentMetrics.openedVsResolved.resolved > 0 ? '+' : ''}
-                        {currentMetrics.openedVsResolved.opened - currentMetrics.openedVsResolved.resolved}
-                      </p>
-                    </div>
+                <div className="pt-3 border-t border-slate-100">
+                  <h2 className="text-sm font-semibold text-slate-700 mb-3">Par segment</h2>
+                  <div className="space-y-1">
+                    {Object.entries(stats.segmentCounts).sort((a, b) => b[1] - a[1]).map(([seg, count]) => (
+                      <div key={seg} className="flex items-center justify-between text-xs">
+                        <span className="text-slate-600">{seg}</span>
+                        <span className="font-medium text-slate-700">{count}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Actions */}
             <div className="flex gap-3">
-              <ActionButton
-                label="Générer analyse IA"
-                onClick={handleAiAnalysis}
-                loading={loadingAi}
-                variant="primary"
-              />
-              <ActionButton
-                label="Exporter en markdown"
-                onClick={handleExportMarkdown}
-                variant="secondary"
-              />
+              <ActionButton label="Générer analyse IA" onClick={handleAiAnalysis} loading={loadingAi} variant="primary" />
+              <ActionButton label="Exporter en markdown" onClick={handleExportMarkdown} variant="secondary" />
             </div>
 
-            {/* AI Analysis panel */}
             {(loadingAi || aiAnalysis) && (
               <div className="bg-white rounded-lg border border-slate-200 p-5">
                 <h2 className="text-sm font-semibold text-slate-700 mb-4">Analyse IA</h2>
@@ -320,8 +282,7 @@ ${currentMetrics.topProducts.map(p => `- ${p.name}: ${p.count}`).join('\n')}
                         <ul className="space-y-1">
                           {aiAnalysis.attentionPoints.map((p, i) => (
                             <li key={i} className="flex items-start gap-2 text-sm text-slate-700">
-                              <span className="text-amber-500 mt-0.5">⚠</span>
-                              {p}
+                              <span className="text-amber-500 mt-0.5">⚠</span>{p}
                             </li>
                           ))}
                         </ul>

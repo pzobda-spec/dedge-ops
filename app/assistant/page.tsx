@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { tickets, getClient } from '@/lib/mockData'
+import type { ZohoMappedTicket } from '@/lib/zoho/mapper'
 import ActionButton from '@/components/ui/ActionButton'
 
 const quickActions = [
@@ -25,6 +25,14 @@ export default function AssistantPage() {
   const [output, setOutput] = useState<string | null>(null)
   const [history, setHistory] = useState<HistoryItem[]>([])
   const [copied, setCopied] = useState(false)
+  const [sampleTicket, setSampleTicket] = useState<ZohoMappedTicket | null>(null)
+
+  useEffect(() => {
+    fetch('/api/zoho/tickets?limit=1')
+      .then(r => r.json())
+      .then(data => setSampleTicket(data.tickets?.[0] ?? null))
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     try {
@@ -55,23 +63,26 @@ export default function AssistantPage() {
     setLoading(true)
     setOutput(null)
 
-    // Use the first ticket as a sample demonstration
-    const sampleTicket = tickets[0]
-    const client = getClient(sampleTicket.clientId)
+    const ticket = sampleTicket
+    if (!ticket) {
+      setOutput('Aucun ticket disponible pour le contexte.')
+      setLoading(false)
+      return
+    }
 
     try {
       const res = await fetch('/api/ai/summarize-ticket', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ticketId: sampleTicket.id,
-          subject: sampleTicket.subject,
-          clientName: client?.name || 'Client',
-          segment: client?.segment || 'Gold',
-          productArea: sampleTicket.productArea,
-          conversationHistory: `Demande : "${prompt}"\n\nContexte ticket : ${sampleTicket.summary}`,
+          ticketId: ticket.zohoInternalId,
+          subject: ticket.subject,
+          clientName: ticket.clientName,
+          segment: ticket.segment ?? 'Gold',
+          productArea: ticket.productArea,
+          conversationHistory: `Demande : "${prompt}"`,
           ageHours: Math.round(
-            (Date.now() - new Date(sampleTicket.createdAt).getTime()) / 3600000
+            (Date.now() - new Date(ticket.createdAt).getTime()) / 3600000
           ),
         }),
       })
