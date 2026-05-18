@@ -1,27 +1,64 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { fetchTickets } from '@/lib/zoho/client'
+import { mapZohoTicket } from '@/lib/zoho/mapper'
 import { fetchIssues } from '@/lib/linear/client'
 import { openai } from '@/lib/openai/client'
 
 export const dynamic = 'force-dynamic'
 
+const SUPPORT_DEPT_ID = '5861000000007061'
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { subject, description, productArea, conversationHistory } = body as {
+    const { subject, productArea, conversationHistory, zohoInternalId } = body as {
       subject: string
-      description?: string
       productArea?: string
       conversationHistory?: string
+      zohoInternalId?: string
     }
 
     if (!subject?.trim()) {
       return NextResponse.json({ error: 'subject requis' }, { status: 400 })
     }
 
-    // Fetch all Linear BUGS issues — no status filter so we get resolved ones too
-    const allIssues = await fetchIssues(150)
+    // Fetch Zoho tickets (all statuses — want resolved ones too for historical context)
+    // and Linear issues in parallel
+    const [zohoRes, linearRes] = await Promise.allSettled([
+      Promise.all([
+        fetchTickets({ limit: 100, from: 0, departmentId: SUPPORT_DEPT_ID, sortBy: 'modifiedTime' }),
+        fetchTickets({ limit: 100, from: 0, departmentId: SUPPORT_DEPT_ID, sortBy: 'modifiedTime', status: 'Solved' }),
+      ]),
+      fetchIssues(100),
+    ])
 
-    const issuesForPrompt = allIssues.map(i => ({
+    const rawZohoTickets: ReturnType<typeof mapZohoTicket>[] = []
+    if (zohoRes.status === 'fulfilled') {
+      const [open, solved] = zohoRes.value
+      const allRaw = [...(open.data ?? []), ...(solved.data ?? [])]
+      for (const t of allRaw) {
+        const mapped = mapZohoTicket(t, null)
+        // Exclude the current ticket itself
+        if (mapped.zohoInternalId !== zohoInternalId) {
+          rawZohoTickets.push(mapped)
+        }
+      }
+    }
+
+    const zohoForPrompt = rawZohoTickets
+      .map(t => ({
+        id: t.zohoInternalId,
+        externalId: t.externalId,
+        subject: t.subject,
+        productArea: t.productArea,
+        status: t.zohoStatus,
+        clientName: t.clientName,
+        segment: t.segment,
+        createdAt: t.createdAt,
+      }))
+
+    const linearIssues = linearRes.status === 'fulfilled' ? linearRes.value : []
+    const linearForPrompt = linearIssues.map(i => ({
       identifier: i.identifier,
       title: i.title,
       description: i.description ? i.description.slice(0, 300) : null,
@@ -37,42 +74,51 @@ export async function POST(req: NextRequest) {
       messages: [
         {
           role: 'system',
-          content: `Tu es un assistant chargé de trouver des bugs similaires déjà traités dans le board BUGS.
+          content: `Tu es un assistant support SaaS chargé de trouver des cas similaires déjà traités.
 
-ÉTAPES À SUIVRE :
-1. ANALYSE DU TICKET COURANT
-   - Lis le titre, la description et le produit du ticket
-   - Identifie les éléments clés : composant/module concerné, message d'erreur, comportement observé
-   - Extrais 3 à 5 mots-clés ou expressions techniques distinctifs
+SOURCES DISPONIBLES (par ordre de priorité) :
+1. TICKETS ZOHO (source principale) — historique des tickets support clients
+2. ISSUES LINEAR BUGS (source secondaire) — bugs formellement escaladés à la tech
 
-2. ÉVALUATION DE LA SIMILARITÉ
-   Pour chaque issue Linear, évalue la pertinence selon :
-   - Même composant/module touché (poids fort)
-   - Même message d'erreur ou symptôme (poids fort)
-   - Même cause racine probable (poids fort)
-   - Labels communs (poids moyen)
-   - Vocabulaire similaire (poids faible)
+ÉTAPES :
+1. Analyse le ticket courant (titre, produit, conversation) : composant touché, symptôme, comportement observé, mots-clés techniques.
 
-   Classe en 3 catégories :
+2. Cherche d'abord dans les TICKETS ZOHO :
+   - Même produit/module (poids fort)
+   - Même symptôme ou message d'erreur (poids fort)
+   - Même cause probable (poids fort)
+   - Vocabulaire similaire (poids moyen)
+
+3. Puis cherche dans les ISSUES LINEAR comme complément :
+   - Utile si un bug similaire a été escaladé et résolu côté tech
+   - Donne la cause et solution si documentées
+
+4. Classe les résultats en 3 catégories :
    - verySimilar : cause racine ou symptôme quasi-identique
    - potentiallyRelated : même zone, symptômes proches
    - toCheck : mots-clés communs mais lien à confirmer
 
-3. FORMAT DE RÉPONSE
-   Retourne un objet JSON avec :
-   - verySimilar: array (max 3) d'objets { identifier, title, status, assigneeName, updatedAt, url, cause, solution, whySimilar }
-   - potentiallyRelated: array (max 3) d'objets { identifier, title, status, url, whySimilar }
-   - toCheck: array (max 2) d'objets { identifier, title, status, url, whySimilar }
-   - recommendation: string (recommandation finale en français)
+FORMAT DE RÉPONSE — objet JSON avec :
+- verySimilar: array (max 4) d'objets :
+  { source: "zoho"|"linear", identifier: string, title: string, status: string, clientName?: string, assigneeName?: string, url?: string, cause: string, solution: string, whySimilar: string }
+- potentiallyRelated: array (max 3) mêmes champs
+- toCheck: array (max 2) mêmes champs (cause/solution peuvent être "non documenté")
+- recommendation: string (recommandation finale en français — doublon probable, solution réutilisable, ou nouveau problème)
 
-   Pour cause et solution : extrais-les de la description de l'issue (ou indique "non documenté" si absent).
-   Réponds uniquement en JSON valide, sans markdown.`,
+Pour les tickets Zoho : url = null, identifier = numéro de ticket (externalId), clientName = nom client.
+Pour les issues Linear : url = lien Linear, identifier = identifiant BUGS-XXX.
+Réponds uniquement en JSON valide, sans markdown.`,
         },
         {
           role: 'user',
           content: JSON.stringify({
-            currentTicket: { subject, description: description || null, productArea: productArea || null, conversationHistory: conversationHistory || null },
-            linearIssues: issuesForPrompt,
+            currentTicket: {
+              subject,
+              productArea: productArea || null,
+              conversationHistory: conversationHistory || null,
+            },
+            zohoTickets: zohoForPrompt,
+            linearIssues: linearForPrompt,
           }),
         },
       ],

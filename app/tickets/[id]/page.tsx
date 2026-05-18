@@ -39,11 +39,13 @@ const sourceLabels: Record<string, string> = {
 type AiAction = 'summarize' | 'reply' | 'escalation' | 'kb' | 'similar_bug'
 
 type SimilarIssue = {
+  source: 'zoho' | 'linear'
   identifier: string
   title: string
   status: string
+  clientName?: string | null
   assigneeName?: string | null
-  url: string
+  url?: string | null
   cause?: string
   solution?: string
   whySimilar: string
@@ -290,16 +292,27 @@ const STATUS_COLORS: Record<string, string> = {
 
 function IssueCard({ issue, icon, dimmed }: { issue: SimilarIssue; icon: string; dimmed?: boolean }) {
   const statusColor = STATUS_COLORS[issue.status] ?? 'text-slate-500'
+  const isZoho = issue.source === 'zoho'
+
   return (
     <div className={`rounded-lg border p-3 ${dimmed ? 'border-slate-200 bg-white' : 'border-orange-200 bg-orange-50'}`}>
       <div className="flex items-start gap-2">
         <span className="text-sm flex-shrink-0 mt-0.5">{icon}</span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-1">
-            <a href={issue.url} target="_blank" rel="noopener noreferrer"
-              className="text-xs font-mono text-blue-600 hover:underline flex-shrink-0">
-              {issue.identifier}
-            </a>
+            <span className={`text-xs px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${
+              isZoho ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
+            }`}>
+              {isZoho ? 'Zoho' : 'Linear'}
+            </span>
+            {issue.url ? (
+              <a href={issue.url} target="_blank" rel="noopener noreferrer"
+                className="text-xs font-mono text-blue-600 hover:underline flex-shrink-0">
+                {issue.identifier}
+              </a>
+            ) : (
+              <span className="text-xs font-mono text-slate-500 flex-shrink-0">#{issue.identifier}</span>
+            )}
             <span className="text-sm font-medium text-slate-900 truncate">{issue.title}</span>
             <span className={`text-xs font-medium flex-shrink-0 ${statusColor}`}>{issue.status}</span>
           </div>
@@ -310,9 +323,11 @@ function IssueCard({ issue, icon, dimmed }: { issue: SimilarIssue; icon: string;
           {issue.solution && issue.solution !== 'non documenté' && (
             <p className="text-xs text-slate-500"><span className="font-medium">Solution :</span> {issue.solution}</p>
           )}
-          {issue.assigneeName && (
-            <p className="text-xs text-slate-400 mt-1">{issue.assigneeName}</p>
-          )}
+          <p className="text-xs text-slate-400 mt-1">
+            {issue.clientName && <span>{issue.clientName}</span>}
+            {issue.clientName && issue.assigneeName && <span> · </span>}
+            {issue.assigneeName && <span>{issue.assigneeName}</span>}
+          </p>
         </div>
       </div>
     </div>
@@ -508,6 +523,7 @@ export default function TicketDetailPage() {
           subject: ticket.subject,
           productArea: ticket.productArea,
           conversationHistory: conversationSummary || ticket.subject,
+          zohoInternalId: ticket.zohoInternalId,
         }
       }
 
