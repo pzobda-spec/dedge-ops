@@ -128,6 +128,36 @@ export async function postTicketReply(ticketId: string, body: { content: string;
   })
 }
 
+export interface ZohoKBArticle {
+  id: string
+  title: string
+  summary: string | null
+  answer: string | null
+}
+
+export async function searchKBArticles(query: string, limit = 5): Promise<ZohoKBArticle[]> {
+  try {
+    const params = new URLSearchParams({ searchStr: query, type: 'Article', limit: String(limit) })
+    const res = await zohoFetch<{ data: ZohoKBArticle[] }>(`/search?${params}`)
+    return res.data ?? []
+  } catch {
+    return []
+  }
+}
+
+export async function fetchTicketConversationSummaries(ticketId: string): Promise<Array<{ direction: string; summary: string; authorName: string }>> {
+  try {
+    const res = await zohoFetch<{ data: Array<{ direction: string; summary?: string; content?: string; author?: { name?: string; firstName?: string; lastName?: string } }> }>(`/tickets/${ticketId}/conversations`)
+    return (res.data ?? []).map(c => ({
+      direction: c.direction ?? 'in',
+      summary: (c.summary || c.content || '').slice(0, 400),
+      authorName: c.author?.name || `${c.author?.firstName ?? ''} ${c.author?.lastName ?? ''}`.trim() || 'Inconnu',
+    })).filter(c => c.summary)
+  } catch {
+    return []
+  }
+}
+
 export async function updateTicket(ticketId: string, fields: Partial<Pick<ZohoTicket, 'status' | 'priority'>>): Promise<ZohoTicket> {
   return zohoFetch<ZohoTicket>(`/tickets/${ticketId}`, {
     method: 'PATCH',

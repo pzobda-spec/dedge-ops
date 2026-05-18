@@ -279,6 +279,87 @@ function ConversationThread({ ticketId, conversations }: ConversationThreadProps
   )
 }
 
+// ─── Reply result renderer ──────────────────────────────────────────────────
+
+type ReplyContext = { zohoKBCount?: number; localKBCount?: number; similarTicketsCount?: number }
+
+function ReplyResultView({
+  result,
+  replyBody,
+  setReplyBody,
+  copied,
+  setCopied,
+}: {
+  result: Record<string, unknown>
+  replyBody: string
+  setReplyBody: (v: string) => void
+  copied: boolean
+  setCopied: (v: boolean) => void
+}) {
+  const ctx = (result._context ?? {}) as ReplyContext
+  const sources = result.sources as string[] | undefined
+  const totalSources = (ctx.zohoKBCount ?? 0) + (ctx.localKBCount ?? 0) + (ctx.similarTicketsCount ?? 0)
+
+  return (
+    <div className="space-y-3">
+      {/* Sources badge */}
+      {totalSources > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-slate-500">Basé sur :</span>
+          {(ctx.zohoKBCount ?? 0) > 0 && (
+            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+              {ctx.zohoKBCount} article{(ctx.zohoKBCount ?? 0) > 1 ? 's' : ''} Zoho KB
+            </span>
+          )}
+          {(ctx.localKBCount ?? 0) > 0 && (
+            <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
+              {ctx.localKBCount} fiche{(ctx.localKBCount ?? 0) > 1 ? 's' : ''} KB interne
+            </span>
+          )}
+          {(ctx.similarTicketsCount ?? 0) > 0 && (
+            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
+              {ctx.similarTicketsCount} ticket{(ctx.similarTicketsCount ?? 0) > 1 ? 's' : ''} similaire{(ctx.similarTicketsCount ?? 0) > 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+      )}
+      {totalSources === 0 && (
+        <p className="text-xs text-slate-400 italic">Aucune source KB trouvée — réponse générée sans contexte documentaire.</p>
+      )}
+
+      {/* Sources list */}
+      {sources && sources.length > 0 && (
+        <div className="text-xs text-slate-500 bg-slate-50 rounded p-2">
+          <span className="font-medium">Sources : </span>{sources.join(' · ')}
+        </div>
+      )}
+
+      {/* Reply body */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-medium text-slate-700">Réponse (éditable)</h3>
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(replyBody)
+              setCopied(true)
+              setTimeout(() => setCopied(false), 2000)
+            }}
+            className="text-xs text-blue-600 hover:underline"
+          >
+            {copied ? 'Copié !' : 'Copier'}
+          </button>
+        </div>
+        <textarea
+          value={replyBody}
+          onChange={e => setReplyBody(e.target.value)}
+          rows={10}
+          className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm text-slate-700 font-mono"
+        />
+      </div>
+    </div>
+  )
+}
+
 // ─── Similar bug result renderer ────────────────────────────────────────────
 
 const STATUS_COLORS: Record<string, string> = {
@@ -758,33 +839,12 @@ export default function TicketDetailPage() {
               <div className="space-y-4">
                 {activeAction === 'similar_bug' ? (
                   <SimilarBugResultView result={aiResult as unknown as FindSimilarResult} />
+                ) : activeAction === 'reply' ? (
+                  <ReplyResultView result={aiResult} replyBody={replyBody} setReplyBody={setReplyBody} copied={copied} setCopied={setCopied} />
                 ) : (
                   <pre className="text-xs bg-slate-50 rounded p-3 overflow-auto max-h-64 text-slate-700 whitespace-pre-wrap">
                     {JSON.stringify(aiResult, null, 2)}
                   </pre>
-                )}
-                {activeAction === 'reply' && replyBody && (
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-sm font-medium text-slate-700">Corps de la réponse (éditable)</h3>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(replyBody)
-                          setCopied(true)
-                          setTimeout(() => setCopied(false), 2000)
-                        }}
-                        className="text-xs text-blue-600 hover:underline"
-                      >
-                        {copied ? 'Copié !' : 'Copier'}
-                      </button>
-                    </div>
-                    <textarea
-                      value={replyBody}
-                      onChange={e => setReplyBody(e.target.value)}
-                      rows={8}
-                      className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm text-slate-700 font-mono"
-                    />
-                  </div>
                 )}
                 {activeAction === 'escalation' && !('error' in aiResult) && (
                   <div className="border-t border-slate-200 pt-4">
