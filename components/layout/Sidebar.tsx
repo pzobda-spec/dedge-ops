@@ -48,7 +48,7 @@ export default function Sidebar() {
         </ul>
       </nav>
       <div className="px-4 py-3 border-t border-slate-700 text-xs text-slate-500">
-        Sprint 1 · Mock data
+        D-EDGE Ops · v2
       </div>
     </aside>
   )
