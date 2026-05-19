@@ -19,17 +19,25 @@ async function fetchPeriodStats(startISO: string, endISO: string, label: string)
   const createdTimeRange = `${startISO},${endISO}`
 
   // Paginate through all tickets created in the period
+  // Zoho Desk caps the from+limit offset — stop at 500 tickets to avoid API errors
   const allRaw = []
   let from = 0
-  while (true) {
-    const res = await fetchTickets({
-      limit: PAGE_SIZE,
-      from,
-      departmentId: SUPPORT_DEPT_ID,
-      sortBy: 'createdTime',
-      createdTimeRange,
-    })
-    const page = res.data ?? []
+  const MAX_TICKETS = 500
+  while (allRaw.length < MAX_TICKETS) {
+    let page
+    try {
+      const res = await fetchTickets({
+        limit: PAGE_SIZE,
+        from,
+        departmentId: SUPPORT_DEPT_ID,
+        sortBy: 'createdTime',
+        createdTimeRange,
+      })
+      page = res.data ?? []
+    } catch {
+      // Zoho may return 422/400 when offset exceeds their internal limit — treat as end of data
+      break
+    }
     allRaw.push(...page)
     if (page.length < PAGE_SIZE) break
     from += PAGE_SIZE
@@ -94,7 +102,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ current, yoy })
   } catch (err) {
-    console.error('[zoho/stats] error:', err)
-    return NextResponse.json({ error: 'Erreur lors du calcul des statistiques' }, { status: 500 })
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[zoho/stats] error:', msg)
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

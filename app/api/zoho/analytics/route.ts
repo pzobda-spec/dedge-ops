@@ -24,15 +24,21 @@ async function computePeriod(from: Date, to: Date, label: string): Promise<Perio
 
   const allRaw: Awaited<ReturnType<typeof fetchTickets>>['data'] = []
   let offset = 0
-  while (true) {
-    const res = await fetchTickets({
-      limit: PAGE_SIZE,
-      from: offset,
-      departmentId: SUPPORT_DEPT_ID,
-      sortBy: 'createdTime',
-      createdTimeRange,
-    })
-    const page = res.data ?? []
+  const MAX_TICKETS = 500
+  while (allRaw.length < MAX_TICKETS) {
+    let page
+    try {
+      const res = await fetchTickets({
+        limit: PAGE_SIZE,
+        from: offset,
+        departmentId: SUPPORT_DEPT_ID,
+        sortBy: 'createdTime',
+        createdTimeRange,
+      })
+      page = res.data ?? []
+    } catch {
+      break
+    }
     allRaw.push(...page)
     if (page.length < PAGE_SIZE) break
     offset += PAGE_SIZE
