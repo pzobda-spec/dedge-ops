@@ -80,9 +80,12 @@ export interface ZohoTicket {
   status: string
   priority: string
   channel: string
+  category?: string | null
   createdTime: string
   modifiedTime: string
+  closedTime?: string | null
   customerResponseTime: string | null
+  threadCount?: string | null
   departmentId?: string | null
   contact: { id: string; firstName: string; lastName: string; email: string } | null
   account: { id: string; accountName: string } | null
@@ -102,14 +105,16 @@ export async function fetchTickets(params: {
   status?: string
   sortBy?: string
   departmentId?: string
+  createdTimeRange?: string  // "ISO_START,ISO_END"
 } = {}): Promise<ZohoTicketsResponse> {
   const query = new URLSearchParams({
     limit: String(params.limit ?? 50),
     from: String(params.from ?? 0),
     ...(params.status && { status: params.status }),
     ...(params.departmentId && { departmentId: params.departmentId }),
+    ...(params.createdTimeRange && { createdTimeRange: params.createdTimeRange }),
     sortBy: params.sortBy ?? 'createdTime',
-    fields: 'id,ticketNumber,subject,status,priority,channel,createdTime,modifiedTime,customerResponseTime,contact,account,assignee,sentiment,cf',
+    fields: 'id,ticketNumber,subject,status,priority,channel,category,createdTime,modifiedTime,closedTime,customerResponseTime,threadCount,contact,account,assignee,sentiment,cf',
   })
 
   return zohoFetch<ZohoTicketsResponse>(`/tickets?${query}`)

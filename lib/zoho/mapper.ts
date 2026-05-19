@@ -17,7 +17,7 @@ export interface ZohoRawTicket {
   dueDate?: string | null
   responseDueDate?: string | null
   commentCount?: string
-  threadCount?: string
+  threadCount?: string | null
   closedTime?: string | null
   accountId?: string | null
   departmentId?: string | null
