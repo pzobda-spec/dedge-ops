@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
-import type { ZohoMappedTicket } from '@/lib/zoho/mapper'
+import type { ZohoMappedTicket, MappedConversation } from '@/lib/zoho/mapper'
 import Badge from '@/components/ui/Badge'
 import RiskScore from '@/components/ui/RiskScore'
 import { formatHoursAgo } from '@/lib/utils/dates'
@@ -59,6 +59,16 @@ const sortOptions = [
   { value: 'riskScore', label: 'Score de risque ↓' },
   { value: 'date', label: 'Dernier message client ↓' },
 ]
+
+// ─── Helpers risque ────────────────────────────────────────────────────────────
+
+function riskBand(score: number): 'high' | 'med' | 'low' {
+  if (score >= 75) return 'high'
+  if (score >= 50) return 'med'
+  return 'low'
+}
+
+const RISK_EDGE_COLOR = { high: '#b91c1c', med: '#b45309', low: '#059669' }
 
 // ─── Carte board ───────────────────────────────────────────────────────────────
 
@@ -119,9 +129,385 @@ function TicketCard({ ticket }: { ticket: ZohoMappedTicket }) {
   )
 }
 
+// ─── Inbox view ────────────────────────────────────────────────────────────────
+
+const INBOX_FOLDERS = [
+  { key: 'a-traiter',      label: 'À traiter',       statuses: ['Open', 'Escalated'] },
+  { key: 'en-cours',       label: 'En cours',         statuses: ['Managed'] },
+  { key: 'attente-client', label: 'Attente client',   statuses: ['Stuck client', 'Pending'] },
+  { key: 'attente-produit',label: 'Attente produit',  statuses: ['Stuck product'] },
+  { key: 'tous',           label: 'Tous les tickets', statuses: [] },
+]
+
+const CANNED_REPLIES = [
+  {
+    label: 'Accusé de réception',
+    icon: '⚡',
+    text: `Bonjour,\n\nMerci pour votre message. Nous prenons bien en charge votre demande et revenons vers vous dans les meilleurs délais.\n\nBien cordialement,`,
+  },
+  {
+    label: 'Escalade en cours',
+    icon: '↗',
+    text: `Bonjour,\n\nVotre demande a été escaladée auprès de notre équipe produit. Nous vous tiendrons informés de l'avancement.\n\nBien cordialement,`,
+  },
+  {
+    label: 'Demande de confirmation',
+    icon: '✓',
+    text: `Bonjour,\n\nLe problème a été résolu de notre côté. Pourriez-vous confirmer que tout fonctionne correctement pour vous ?\n\nMerci et bonne journée,`,
+  },
+]
+
+function InboxPane({ tickets, loading }: { tickets: ZohoMappedTicket[]; loading: boolean }) {
+  const [folder, setFolder] = useState('a-traiter')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const convsCache = useRef<Map<string, MappedConversation[]>>(new Map())
+  const [, forceRender] = useState(0)
+  const [convLoading, setConvLoading] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [toast, setToast] = useState<string | null>(null)
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const convPaneRef = useRef<HTMLDivElement>(null)
+
+  const folderDef = INBOX_FOLDERS.find(f => f.key === folder)!
+  const list = (
+    folderDef.statuses.length === 0
+      ? tickets.slice()
+      : tickets.filter(t => folderDef.statuses.includes(t.zohoStatus))
+  ).sort((a, b) => b.riskScore - a.riskScore)
+
+  const selected = list.find(t => t.id === selectedId) ?? list[0] ?? null
+
+  // Auto-select first ticket when folder or ticket list changes
+  useEffect(() => {
+    if (list.length > 0 && (!selectedId || !list.find(t => t.id === selectedId))) {
+      setSelectedId(list[0].id)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [folder, tickets.length])
+
+  // Load conversations on selection
+  useEffect(() => {
+    if (!selected) return
+    if (convsCache.current.has(selected.id)) return
+    setConvLoading(true)
+    fetch(`/api/zoho/tickets/${selected.zohoInternalId}/conversations`)
+      .then(r => r.json())
+      .then(d => {
+        convsCache.current.set(selected.id, d.conversations ?? [])
+        forceRender(n => n + 1)
+      })
+      .catch(() => {
+        convsCache.current.set(selected.id, [])
+        forceRender(n => n + 1)
+      })
+      .finally(() => setConvLoading(false))
+  }, [selected?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reset draft when ticket changes
+  useEffect(() => { setDraft('') }, [selectedId])
+
+  // Scroll to bottom when conversations load
+  useEffect(() => {
+    if (convPaneRef.current && !convLoading) {
+      convPaneRef.current.scrollTop = convPaneRef.current.scrollHeight
+    }
+  }, [selected?.id, convLoading])
+
+  const conversations = selected ? (convsCache.current.get(selected.id) ?? []) : []
+
+  const showToast = (msg: string) => {
+    setToast(msg)
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => setToast(null), 4000)
+  }
+
+  const handleReply = () => {
+    if (!selected || !draft.trim()) return
+    navigator.clipboard.writeText(draft).catch(() => {})
+    window.open(
+      `https://support.loungeup.com/agent/loungeup/loungeup-support-team/tickets/details/${selected.zohoInternalId}`,
+      '_blank'
+    )
+    showToast('Réponse copiée — colle-la dans Zoho (Ctrl+V)')
+  }
+
+  const foldersWithCounts = INBOX_FOLDERS.map(f => ({
+    ...f,
+    count: f.statuses.length === 0
+      ? tickets.length
+      : tickets.filter(t => f.statuses.includes(t.zohoStatus)).length,
+  }))
+
+  return (
+    <div className="flex flex-1 overflow-hidden relative">
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-sm px-5 py-2.5 rounded-full shadow-lg pointer-events-none">
+          {toast}
+        </div>
+      )}
+
+      {/* Column 1: Folder rail */}
+      <aside className="w-52 flex-shrink-0 border-r border-slate-200 bg-slate-50 flex flex-col overflow-y-auto">
+        <div className="px-3 pt-4 pb-3 space-y-0.5">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2 pb-2">
+            Vues
+          </p>
+          {foldersWithCounts.map(f => (
+            <button
+              key={f.key}
+              onClick={() => setFolder(f.key)}
+              className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
+                folder === f.key
+                  ? 'bg-slate-900 text-white font-medium'
+                  : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <span className="truncate">{f.label}</span>
+              <span className={`text-xs px-1.5 py-0.5 rounded-full tabular-nums flex-shrink-0 ${
+                folder === f.key ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-500'
+              }`}>
+                {f.count}
+              </span>
+            </button>
+          ))}
+        </div>
+      </aside>
+
+      {/* Column 2: Ticket list */}
+      <div className="w-80 flex-shrink-0 border-r border-slate-200 bg-white flex flex-col overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-100 flex-shrink-0">
+          <div className="text-sm font-semibold text-slate-900">{folderDef.label}</div>
+          <div className="text-xs text-slate-400 mt-0.5">
+            {list.length} ticket{list.length !== 1 ? 's' : ''} · trié par risque
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center py-12 text-slate-400 text-sm gap-2">
+              <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+              Chargement...
+            </div>
+          ) : list.length === 0 ? (
+            <p className="text-center text-slate-400 text-sm py-12">Aucun ticket dans cette vue</p>
+          ) : (
+            list.map(t => {
+              const band = riskBand(t.riskScore)
+              const isSelected = t.id === selected?.id
+              return (
+                <div
+                  key={t.id}
+                  onClick={() => setSelectedId(t.id)}
+                  className={`relative flex items-stretch gap-2 px-4 py-3 cursor-pointer border-b border-slate-100 transition-colors ${
+                    isSelected ? 'bg-slate-100' : 'hover:bg-slate-50'
+                  }`}
+                >
+                  {isSelected && (
+                    <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-slate-900 rounded-r" />
+                  )}
+
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-1 mb-0.5">
+                      <span className="text-xs font-bold text-slate-900 truncate">{t.clientName}</span>
+                      <span className="text-[11px] text-slate-400 flex-shrink-0 tabular-nums">
+                        {formatHoursAgo(t.lastClientMessageAt)}
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-700 truncate mb-1.5">{t.subject}</p>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[11px] text-slate-400">{t.productArea}</span>
+                      {(t.priority === 'urgent' || t.priority === 'high') && (
+                        <>
+                          <span className="text-slate-300">·</span>
+                          <span className={`text-[11px] font-semibold ${
+                            t.priority === 'urgent' ? 'text-red-600' : 'text-amber-600'
+                          }`}>
+                            {t.priority === 'urgent' ? '● Urgent' : '● Haute'}
+                          </span>
+                        </>
+                      )}
+                      {t.segment && (
+                        <>
+                          <span className="text-slate-300">·</span>
+                          <Badge
+                            label={t.segment}
+                            variant={t.segment.toLowerCase() as 'strategic' | 'gold' | 'silver' | 'bronze'}
+                          />
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Risk edge */}
+                  <span
+                    className="w-0.5 rounded-full flex-shrink-0 self-stretch"
+                    style={{ background: RISK_EDGE_COLOR[band] }}
+                    title={`Risque ${t.riskScore}`}
+                  />
+                </div>
+              )
+            })
+          )}
+        </div>
+      </div>
+
+      {/* Column 3: Conversation + composer */}
+      {!selected ? (
+        <div className="flex-1 flex items-center justify-center text-slate-400 text-sm bg-slate-50">
+          Sélectionne un ticket dans la liste
+        </div>
+      ) : (
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden bg-white">
+          {/* Header */}
+          <header className="flex-shrink-0 px-6 py-4 border-b border-slate-200 bg-white">
+            <div className="flex items-start gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                  <span className="text-[11px] text-slate-400 font-mono">#{selected.externalId}</span>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold uppercase bg-slate-100 text-slate-600 tracking-wide">
+                    {selected.zohoStatus}
+                  </span>
+                  {selected.priority === 'urgent' && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold uppercase bg-red-100 text-red-700 tracking-wide">Urgent</span>
+                  )}
+                  {selected.priority === 'high' && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold uppercase bg-amber-100 text-amber-700 tracking-wide">Haute</span>
+                  )}
+                  <RiskScore score={selected.riskScore} />
+                </div>
+                <h2 className="text-lg font-bold text-slate-900 leading-snug line-clamp-2">
+                  {selected.subject}
+                </h2>
+                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                  <span className="text-sm font-medium text-slate-700">{selected.clientName}</span>
+                  {selected.segment && (
+                    <Badge
+                      label={selected.segment}
+                      variant={selected.segment.toLowerCase() as 'strategic' | 'gold' | 'silver' | 'bronze'}
+                    />
+                  )}
+                  <span className="text-xs text-slate-400">· {selected.productArea}</span>
+                  <span className="text-xs text-slate-400">· {selected.threadCount} messages</span>
+                  {selected.assigneeName && (
+                    <span className="text-xs text-slate-400">· {selected.assigneeName}</span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Link
+                  href={`/tickets/${selected.zohoInternalId}`}
+                  target="_blank"
+                  className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-md border border-slate-300 text-slate-600 hover:bg-slate-50 transition-colors whitespace-nowrap"
+                >
+                  Voir le ticket
+                  <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                  </svg>
+                </Link>
+                <a
+                  href={`https://support.loungeup.com/agent/loungeup/loungeup-support-team/tickets/details/${selected.zohoInternalId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-md border border-slate-300 text-slate-600 hover:bg-slate-50 transition-colors whitespace-nowrap"
+                >
+                  Zoho Desk
+                  <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                  </svg>
+                </a>
+              </div>
+            </div>
+          </header>
+
+          {/* Conversations */}
+          <div ref={convPaneRef} className="flex-1 overflow-y-auto px-6 py-5 space-y-4 bg-slate-50">
+            {convLoading ? (
+              <div className="flex items-center justify-center py-10 text-slate-400 text-sm gap-2">
+                <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-500 rounded-full animate-spin" />
+                Chargement de la conversation…
+              </div>
+            ) : conversations.length === 0 ? (
+              <p className="text-center text-slate-400 text-sm py-10">Aucun message disponible</p>
+            ) : (
+              conversations.slice(-12).map(c => (
+                <div
+                  key={c.id}
+                  className={`flex gap-3 ${c.authorType === 'agent' ? 'flex-row-reverse' : ''}`}
+                  style={{ maxWidth: '88%', ...(c.authorType === 'agent' ? { marginLeft: 'auto' } : {}) }}
+                >
+                  {/* Avatar */}
+                  <div className={`w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-white mt-0.5 ${
+                    c.authorType === 'agent' ? 'bg-slate-700' : 'bg-amber-600'
+                  }`}>
+                    {c.authorName.split(' ').slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase() || '?'}
+                  </div>
+                  <div className="min-w-0">
+                    <div className={`text-[11px] text-slate-400 mb-1 ${c.authorType === 'agent' ? 'text-right' : ''}`}>
+                      {c.authorName} · {formatHoursAgo(c.createdAt)}
+                    </div>
+                    <div className={`rounded-xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words ${
+                      c.authorType === 'agent'
+                        ? 'bg-slate-900 text-white rounded-tr-sm'
+                        : 'bg-white border border-slate-200 text-slate-800 rounded-tl-sm'
+                    }`}>
+                      {c.summary || '(pas de contenu)'}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Composer */}
+          <div className="flex-shrink-0 border-t border-slate-200 bg-white p-4">
+            {/* Canned replies */}
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
+              {CANNED_REPLIES.map(c => (
+                <button
+                  key={c.label}
+                  onClick={() => setDraft(c.text)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-200 bg-slate-50 text-xs text-slate-600 hover:bg-slate-100 hover:border-slate-300 transition-colors"
+                >
+                  <span>{c.icon}</span>
+                  {c.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-end gap-3">
+              <textarea
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                placeholder={`Rédiger une réponse pour ${selected.clientName}…`}
+                rows={3}
+                className="flex-1 resize-none border border-slate-300 rounded-lg px-3 py-2.5 text-sm text-slate-900 bg-white outline-none focus:ring-2 focus:ring-slate-400 focus:border-transparent transition"
+              />
+              <button
+                onClick={handleReply}
+                disabled={!draft.trim()}
+                className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                </svg>
+                Répondre dans Zoho
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-2">
+              Le texte sera copié dans le presse-papier et Zoho s&apos;ouvrira — colle avec Ctrl+V / ⌘V
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Page principale ───────────────────────────────────────────────────────────
 
-type ViewMode = 'list' | 'board'
+type ViewMode = 'list' | 'board' | 'inbox'
 
 export default function TicketsPage() {
   const [tickets, setTickets] = useState<ZohoMappedTicket[]>([])
@@ -164,7 +550,7 @@ export default function TicketsPage() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
   }, [loadTickets])
 
-  // ─── Filtres communs ──────────────────────────────────────────────────────────
+  // ─── Filtres communs (liste + board) ─────────────────────────────────────────
 
   const assignees = Array.from(
     new Set(tickets.map(t => t.assigneeName).filter(Boolean))
@@ -191,15 +577,15 @@ export default function TicketsPage() {
   // ─── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <div>
+    <div className={view === 'inbox' ? 'h-screen flex flex-col overflow-hidden' : ''}>
       {/* Header */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
+      <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Tickets</h1>
           <p className="text-sm text-slate-500 mt-0.5 flex items-center gap-2">
             {loading
               ? 'Chargement...'
-              : `${tickets.length} tickets · ${filtered.length} affichés${lastRefreshed ? ` · mis à jour ${lastRefreshed.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : ''}`}
+              : `${tickets.length} tickets · ${view !== 'inbox' ? `${filtered.length} affichés · ` : ''}${lastRefreshed ? `mis à jour ${lastRefreshed.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : ''}`}
             {refreshing && (
               <span className="inline-block w-3 h-3 border border-slate-300 border-t-slate-500 rounded-full animate-spin" />
             )}
@@ -230,6 +616,17 @@ export default function TicketsPage() {
               </svg>
               Board
             </button>
+            <button
+              onClick={() => setView('inbox')}
+              className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors border-l border-slate-200 ${view === 'inbox' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+              title="Vue inbox"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/>
+                <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
+              </svg>
+              Inbox
+            </button>
           </div>
 
           <button
@@ -248,193 +645,199 @@ export default function TicketsPage() {
         </div>
       </div>
 
-      <div className="p-6">
-        {/* Filtres — masqués en board (le board montre tout par colonne) */}
-        {/* Filtres — barre commune aux deux vues sauf statut (list only) */}
-        <div className="flex gap-3 mb-4 flex-wrap">
-          {view === 'list' && (
-            <input
-              type="text"
-              value={filterSearch}
-              onChange={e => setFilterSearch(e.target.value)}
-              placeholder="Rechercher (client, sujet...)"
-              className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white text-slate-700 w-56"
-            />
-          )}
-          {view === 'list' && (
-            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-              className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white text-slate-700">
-              {statusOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          )}
-          <select value={filterAssignee} onChange={e => setFilterAssignee(e.target.value)}
-            className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white text-slate-700">
-            <option value="">Tous les agents</option>
-            {assignees.map(a => <option key={a} value={a}>{a}</option>)}
-          </select>
-          {view === 'list' && (
-            <select value={filterProduct} onChange={e => setFilterProduct(e.target.value)}
-              className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white text-slate-700">
-              {productOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          )}
-          {view === 'list' && (
-            <select value={filterPriority} onChange={e => setFilterPriority(e.target.value)}
-              className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white text-slate-700">
-              {priorityOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          )}
-          {view === 'list' && (
-            <select value={sortBy} onChange={e => setSortBy(e.target.value)}
-              className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white text-slate-700">
-              {sortOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          )}
-        </div>
+      {/* ── Inbox view ── */}
+      {view === 'inbox' && (
+        <InboxPane tickets={tickets} loading={loading} />
+      )}
 
-        {/* Spinner premier chargement */}
-        {loading && (
-          <div className="flex items-center justify-center py-20">
-            <div className="w-6 h-6 border-2 border-slate-300 border-t-slate-700 rounded-full animate-spin mr-3" />
-            <span className="text-slate-500 text-sm">Chargement des tickets...</span>
+      {/* ── Liste + Board ── */}
+      {view !== 'inbox' && (
+        <div className="p-6">
+          {/* Filtres */}
+          <div className="flex gap-3 mb-4 flex-wrap">
+            {view === 'list' && (
+              <input
+                type="text"
+                value={filterSearch}
+                onChange={e => setFilterSearch(e.target.value)}
+                placeholder="Rechercher (client, sujet...)"
+                className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white text-slate-700 w-56"
+              />
+            )}
+            {view === 'list' && (
+              <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+                className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white text-slate-700">
+                {statusOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            )}
+            <select value={filterAssignee} onChange={e => setFilterAssignee(e.target.value)}
+              className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white text-slate-700">
+              <option value="">Tous les agents</option>
+              {assignees.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+            {view === 'list' && (
+              <select value={filterProduct} onChange={e => setFilterProduct(e.target.value)}
+                className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white text-slate-700">
+                {productOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            )}
+            {view === 'list' && (
+              <select value={filterPriority} onChange={e => setFilterPriority(e.target.value)}
+                className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white text-slate-700">
+                {priorityOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            )}
+            {view === 'list' && (
+              <select value={sortBy} onChange={e => setSortBy(e.target.value)}
+                className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white text-slate-700">
+                {sortOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            )}
           </div>
-        )}
 
-        {/* Error */}
-        {!loading && error && tickets.length === 0 && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-            <p className="text-red-700 text-sm font-medium">{error}</p>
-            <button onClick={() => loadTickets(true)} className="mt-3 text-sm text-red-600 underline">
-              Réessayer
-            </button>
-          </div>
-        )}
+          {/* Spinner */}
+          {loading && (
+            <div className="flex items-center justify-center py-20">
+              <div className="w-6 h-6 border-2 border-slate-300 border-t-slate-700 rounded-full animate-spin mr-3" />
+              <span className="text-slate-500 text-sm">Chargement des tickets...</span>
+            </div>
+          )}
 
-        {/* ── Vue liste ── */}
-        {!loading && !error && view === 'list' && (
-          <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Sujet</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Client</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Segment</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Statut Zoho</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Priorité</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Produit</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Dernier message client</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Risque</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Assigné à</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filtered.length === 0 ? (
+          {/* Error */}
+          {!loading && error && tickets.length === 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+              <p className="text-red-700 text-sm font-medium">{error}</p>
+              <button onClick={() => loadTickets(true)} className="mt-3 text-sm text-red-600 underline">
+                Réessayer
+              </button>
+            </div>
+          )}
+
+          {/* ── Vue liste ── */}
+          {!loading && !error && view === 'list' && (
+            <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 border-b border-slate-200">
                   <tr>
-                    <td colSpan={9} className="px-4 py-12 text-center text-slate-400 text-sm">
-                      Aucun ticket correspondant aux filtres
-                    </td>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Sujet</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Client</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Segment</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Statut Zoho</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Priorité</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Produit</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Dernier message client</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Risque</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Assigné à</th>
                   </tr>
-                ) : (
-                  filtered.map(ticket => (
-                    <tr key={ticket.id} className="hover:bg-slate-50 cursor-pointer transition-colors">
-                      <td className="px-4 py-3 max-w-xs">
-                        <Link href={`/tickets/${ticket.zohoInternalId}`} className="block">
-                          <span className="font-medium text-slate-900 line-clamp-1">{ticket.subject}</span>
-                        </Link>
-                        <div className="flex items-center gap-1 mt-0.5">
-                          <span className="text-xs text-slate-400">#{ticket.externalId}</span>
-                          <a href={`https://support.loungeup.com/agent/loungeup/loungeup-support-team/tickets/details/${ticket.zohoInternalId}`}
-                            target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
-                            className="text-slate-400 hover:text-blue-500 transition-colors" title="Ouvrir dans Zoho Desk">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                              <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
-                            </svg>
-                          </a>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
-                        <Link href={`/tickets/${ticket.zohoInternalId}`} className="block">
-                          <span className="text-sm">{ticket.clientName}</span>
-                          {ticket.clientEmail && <span className="block text-xs text-slate-400">{ticket.clientEmail}</span>}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Link href={`/tickets/${ticket.zohoInternalId}`} className="block">
-                          {ticket.segment && (
-                            <Badge label={ticket.segment} variant={ticket.segment.toLowerCase() as 'strategic' | 'gold' | 'silver' | 'bronze'} />
-                          )}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Link href={`/tickets/${ticket.zohoInternalId}`} className="block">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700">
-                            {ticket.zohoStatus}
-                          </span>
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Link href={`/tickets/${ticket.zohoInternalId}`} className="block">
-                          <span className="text-xs text-slate-600">{ticket.priority}</span>
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Link href={`/tickets/${ticket.zohoInternalId}`} className="block">
-                          <span className="text-xs text-slate-600">{ticket.productArea}</span>
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3 text-slate-500 whitespace-nowrap text-xs">
-                        <Link href={`/tickets/${ticket.zohoInternalId}`} className="block">
-                          {formatHoursAgo(ticket.lastClientMessageAt)}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Link href={`/tickets/${ticket.zohoInternalId}`} className="block">
-                          <RiskScore score={ticket.riskScore} />
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
-                        <Link href={`/tickets/${ticket.zohoInternalId}`} className="block">
-                          {ticket.assigneeName || '—'}
-                        </Link>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filtered.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="px-4 py-12 text-center text-slate-400 text-sm">
+                        Aucun ticket correspondant aux filtres
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* ── Vue board ── */}
-        {!loading && !error && view === 'board' && (
-          <div className="overflow-x-auto">
-            <div className="flex gap-4 min-w-max pb-4">
-              {BOARD_COLUMNS.map(col => {
-                const colTickets = filtered
-                  .filter(t => t.zohoStatus === col.status)
-                return (
-                  <div key={col.status} className="w-64 flex-shrink-0 flex flex-col max-h-[calc(100vh-180px)]">
-                    <div className={`rounded-t-lg px-3 py-2 flex items-center justify-between flex-shrink-0 ${col.header}`}>
-                      <span className="text-xs font-semibold">{col.label}</span>
-                      <span className="text-xs font-bold">{colTickets.length}</span>
-                    </div>
-                    <div className={`rounded-b-lg ${col.bg} flex-1 overflow-y-auto p-2 space-y-2 min-h-24`}>
-                      {colTickets.length === 0 ? (
-                        <p className="text-xs text-slate-400 text-center py-4">Aucun ticket</p>
-                      ) : (
-                        colTickets.map(ticket => (
-                          <TicketCard key={ticket.id} ticket={ticket} />
-                        ))
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
+                  ) : (
+                    filtered.map(ticket => (
+                      <tr key={ticket.id} className="hover:bg-slate-50 cursor-pointer transition-colors">
+                        <td className="px-4 py-3 max-w-xs">
+                          <Link href={`/tickets/${ticket.zohoInternalId}`} className="block">
+                            <span className="font-medium text-slate-900 line-clamp-1">{ticket.subject}</span>
+                          </Link>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <span className="text-xs text-slate-400">#{ticket.externalId}</span>
+                            <a href={`https://support.loungeup.com/agent/loungeup/loungeup-support-team/tickets/details/${ticket.zohoInternalId}`}
+                              target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+                              className="text-slate-400 hover:text-blue-500 transition-colors" title="Ouvrir dans Zoho Desk">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                                <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                              </svg>
+                            </a>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
+                          <Link href={`/tickets/${ticket.zohoInternalId}`} className="block">
+                            <span className="text-sm">{ticket.clientName}</span>
+                            {ticket.clientEmail && <span className="block text-xs text-slate-400">{ticket.clientEmail}</span>}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Link href={`/tickets/${ticket.zohoInternalId}`} className="block">
+                            {ticket.segment && (
+                              <Badge label={ticket.segment} variant={ticket.segment.toLowerCase() as 'strategic' | 'gold' | 'silver' | 'bronze'} />
+                            )}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Link href={`/tickets/${ticket.zohoInternalId}`} className="block">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700">
+                              {ticket.zohoStatus}
+                            </span>
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Link href={`/tickets/${ticket.zohoInternalId}`} className="block">
+                            <span className="text-xs text-slate-600">{ticket.priority}</span>
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Link href={`/tickets/${ticket.zohoInternalId}`} className="block">
+                            <span className="text-xs text-slate-600">{ticket.productArea}</span>
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3 text-slate-500 whitespace-nowrap text-xs">
+                          <Link href={`/tickets/${ticket.zohoInternalId}`} className="block">
+                            {formatHoursAgo(ticket.lastClientMessageAt)}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Link href={`/tickets/${ticket.zohoInternalId}`} className="block">
+                            <RiskScore score={ticket.riskScore} />
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
+                          <Link href={`/tickets/${ticket.zohoInternalId}`} className="block">
+                            {ticket.assigneeName || '—'}
+                          </Link>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+
+          {/* ── Vue board ── */}
+          {!loading && !error && view === 'board' && (
+            <div className="overflow-x-auto">
+              <div className="flex gap-4 min-w-max pb-4">
+                {BOARD_COLUMNS.map(col => {
+                  const colTickets = filtered.filter(t => t.zohoStatus === col.status)
+                  return (
+                    <div key={col.status} className="w-64 flex-shrink-0 flex flex-col max-h-[calc(100vh-180px)]">
+                      <div className={`rounded-t-lg px-3 py-2 flex items-center justify-between flex-shrink-0 ${col.header}`}>
+                        <span className="text-xs font-semibold">{col.label}</span>
+                        <span className="text-xs font-bold">{colTickets.length}</span>
+                      </div>
+                      <div className={`rounded-b-lg ${col.bg} flex-1 overflow-y-auto p-2 space-y-2 min-h-24`}>
+                        {colTickets.length === 0 ? (
+                          <p className="text-xs text-slate-400 text-center py-4">Aucun ticket</p>
+                        ) : (
+                          colTickets.map(ticket => (
+                            <TicketCard key={ticket.id} ticket={ticket} />
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
