@@ -30,14 +30,36 @@ const participantStatusColors: Record<string, string> = {
   cancelled: 'text-slate-400 line-through',
 }
 
-type Period = '3m' | '6m' | 'all'
+type Period = '3m' | '6m' | 'all' | 'week'
 type Tab = 'sessions' | 'analytics'
 
 const periodOptions: { value: Period; label: string; months?: number }[] = [
+  { value: 'week', label: 'Rapport semaine' },
   { value: '3m', label: '3 derniers mois', months: 3 },
   { value: '6m', label: '6 derniers mois', months: 6 },
   { value: 'all', label: 'Tout' },
 ]
+
+function getWeekDateRange() {
+  const today = new Date()
+  const dow = today.getDay()
+  const daysToMon = dow === 0 ? 6 : dow - 1
+  const thisMon = new Date(today)
+  thisMon.setDate(today.getDate() - daysToMon)
+  const prevMon = new Date(thisMon)
+  prevMon.setDate(thisMon.getDate() - 7)
+  const prevSun = new Date(thisMon)
+  prevSun.setDate(thisMon.getDate() - 1)
+  const thisSun = new Date(thisMon)
+  thisSun.setDate(thisMon.getDate() + 6)
+  const fmt = (d: Date) => d.toISOString().slice(0, 10)
+  return { prevMon: fmt(prevMon), prevSun: fmt(prevSun), thisMon: fmt(thisMon), thisSun: fmt(thisSun) }
+}
+
+function fmtWeekLabel(iso: string) {
+  const d = new Date(iso + 'T12:00:00')
+  return d.toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: '2-digit' })
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -269,10 +291,15 @@ export default function TrainingsPage() {
     setExpandedId(null)
     try {
       const option = periodOptions.find(o => o.value === p)!
-      const url =
-        p === 'all'
-          ? '/api/acuity/sessions?period=all'
-          : `/api/acuity/sessions?period=recent&months=${option.months}`
+      let url: string
+      if (p === 'week') {
+        const { prevMon, thisSun } = getWeekDateRange()
+        url = `/api/acuity/sessions?minDate=${prevMon}&maxDate=${thisSun}`
+      } else if (p === 'all') {
+        url = '/api/acuity/sessions?period=all'
+      } else {
+        url = `/api/acuity/sessions?period=recent&months=${option.months}`
+      }
       const res = await fetch(url)
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: res.statusText }))
@@ -407,7 +434,138 @@ export default function TrainingsPage() {
               Erreur lors du chargement des données : {error}
             </div>
           )}
-          {!loading && !error && (
+          {!loading && !error && period === 'week' && (() => {
+            const { prevMon, prevSun, thisMon, thisSun } = getWeekDateRange()
+            const prevWeekSessions = sessions.filter(s => {
+              const d = s.datetime.slice(0, 10)
+              return d >= prevMon && d <= prevSun
+            })
+            const thisWeekSessions = sessions.filter(s => {
+              const d = s.datetime.slice(0, 10)
+              return d >= thisMon && d <= thisSun
+            })
+            return (
+              <div className="space-y-6">
+                {/* Previous week — completed */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="inline-block w-2 h-2 rounded-full bg-slate-500" />
+                    <h2 className="text-sm font-bold text-slate-700">
+                      Semaine passée — {fmtWeekLabel(prevMon)} → {fmtWeekLabel(prevSun)}
+                    </h2>
+                    <span className="text-xs text-slate-400">{prevWeekSessions.length} session{prevWeekSessions.length !== 1 ? 's' : ''}</span>
+                  </div>
+                  {prevWeekSessions.length === 0 ? (
+                    <p className="text-sm text-slate-400 bg-white rounded-lg border border-slate-200 p-4">Aucune session la semaine passée.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {prevWeekSessions.map(s => {
+                        const regParts = s.participants.filter(p => p.status === 'registered')
+                        return (
+                          <div key={s.classID} className="bg-white rounded-lg border border-slate-200 p-4">
+                            <div className="flex items-start justify-between gap-4 mb-2">
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-semibold text-slate-900 text-sm">{s.title}</span>
+                                  <span className={`text-[11px] px-1.5 py-0.5 rounded font-medium ${statusColors[s.status] ?? 'bg-slate-100'}`}>{statusLabels[s.status] ?? s.status}</span>
+                                  <span className="text-xs text-slate-400">{s.language}</span>
+                                </div>
+                                <p className="text-xs text-slate-500 mt-0.5">
+                                  {new Date(s.datetime).toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: '2-digit' })} · {new Date(s.datetime).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} · {s.calendar}
+                                </p>
+                              </div>
+                              <div className="flex-shrink-0 text-right">
+                                <div className="text-lg font-bold text-slate-900">{regParts.length}</div>
+                                <div className="text-xs text-slate-400">inscrits</div>
+                              </div>
+                            </div>
+                            {regParts.length > 0 && (
+                              <div className="mt-2 pt-2 border-t border-slate-100">
+                                <p className="text-xs font-semibold text-slate-500 mb-1.5">Participants</p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {regParts.map((p, i) => (
+                                    <span key={i} className="inline-flex items-center gap-1 text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
+                                      <span className="font-medium">{p.firstName} {p.lastName}</span>
+                                      {p.hotelName && <span className="text-slate-400">· {p.hotelName}</span>}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* This week — upcoming */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="inline-block w-2 h-2 rounded-full bg-blue-500" />
+                    <h2 className="text-sm font-bold text-slate-700">
+                      Cette semaine — {fmtWeekLabel(thisMon)} → {fmtWeekLabel(thisSun)}
+                    </h2>
+                    <span className="text-xs text-slate-400">{thisWeekSessions.length} session{thisWeekSessions.length !== 1 ? 's' : ''}</span>
+                  </div>
+                  {thisWeekSessions.length === 0 ? (
+                    <p className="text-sm text-slate-400 bg-white rounded-lg border border-slate-200 p-4">Aucune session prévue cette semaine.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {thisWeekSessions.sort((a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime()).map(s => {
+                        const regParts = s.participants.filter(p => p.status === 'registered')
+                        const calendarUrl = buildCalendarUrl(s)
+                        return (
+                          <div key={s.classID} className="bg-white rounded-lg border border-blue-100 p-4">
+                            <div className="flex items-start justify-between gap-4 mb-2">
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-semibold text-slate-900 text-sm">{s.title}</span>
+                                  <span className={`text-[11px] px-1.5 py-0.5 rounded font-medium ${statusColors[s.status] ?? 'bg-slate-100'}`}>{statusLabels[s.status] ?? s.status}</span>
+                                  <span className="text-xs text-slate-400">{s.language}</span>
+                                </div>
+                                <p className="text-xs text-slate-500 mt-0.5">
+                                  {new Date(s.datetime).toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: '2-digit' })} · {new Date(s.datetime).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} · {s.calendar}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <div className="text-right mr-2">
+                                  <div className="text-lg font-bold text-slate-900">{regParts.length}</div>
+                                  <div className="text-xs text-slate-400">inscrits</div>
+                                </div>
+                                <a href={calendarUrl} target="_blank" rel="noopener noreferrer"
+                                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors whitespace-nowrap">
+                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+                                  </svg>
+                                  Google Meet
+                                </a>
+                              </div>
+                            </div>
+                            {regParts.length > 0 && (
+                              <div className="mt-2 pt-2 border-t border-blue-50">
+                                <p className="text-xs font-semibold text-slate-500 mb-1.5">Participants inscrits</p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {regParts.map((p, i) => (
+                                    <span key={i} className="inline-flex items-center gap-1 text-xs bg-blue-50 text-slate-700 px-2 py-0.5 rounded-full">
+                                      <span className="font-medium">{p.firstName} {p.lastName}</span>
+                                      {p.hotelName && <span className="text-slate-400">· {p.hotelName}</span>}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
+
+          {!loading && !error && period !== 'week' && (
             <>
               <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
                 {sessions.length === 0 ? (
@@ -590,6 +748,7 @@ export default function TrainingsPage() {
       )}
 
       {/* ── Analytics tab ── */}
+
       {activeTab === 'analytics' && (
         <div className="p-6 space-y-6">
           {analyticsLoading && (

@@ -6,6 +6,7 @@ import type { ZohoMappedTicket, MappedConversation } from '@/lib/zoho/mapper'
 import Badge from '@/components/ui/Badge'
 import RiskScore from '@/components/ui/RiskScore'
 import { formatHoursAgo } from '@/lib/utils/dates'
+import AnalyticsPane from './AnalyticsPane'
 
 // ─── Colonnes du board ────────────────────────────────────────────────────────
 
@@ -633,7 +634,7 @@ function InboxPane({ tickets, loading }: { tickets: ZohoMappedTicket[]; loading:
 
 // ─── Page principale ───────────────────────────────────────────────────────────
 
-type ViewMode = 'list' | 'board' | 'triage' | 'inbox'
+type ViewMode = 'list' | 'board' | 'triage' | 'inbox' | 'analytics'
 
 export default function TicketsPage() {
   const [tickets, setTickets] = useState<ZohoMappedTicket[]>([])
@@ -703,7 +704,7 @@ export default function TicketsPage() {
   // ─── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <div className={view === 'inbox' ? 'h-screen flex flex-col overflow-hidden' : ''}>
+    <div className={view === 'inbox' ? 'h-screen flex flex-col overflow-hidden' : 'min-h-screen'}>
       {/* Header */}
       <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
         <div>
@@ -711,7 +712,7 @@ export default function TicketsPage() {
           <p className="text-sm text-slate-500 mt-0.5 flex items-center gap-2">
             {loading
               ? 'Chargement...'
-              : `${tickets.length} tickets · ${view !== 'inbox' ? `${filtered.length} affichés · ` : ''}${lastRefreshed ? `mis à jour ${lastRefreshed.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : ''}`}
+              : `${tickets.length} tickets · ${view === 'list' || view === 'board' || view === 'triage' ? `${filtered.length} affichés · ` : ''}${lastRefreshed ? `mis à jour ${lastRefreshed.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : ''}`}
             {refreshing && (
               <span className="inline-block w-3 h-3 border border-slate-300 border-t-slate-500 rounded-full animate-spin" />
             )}
@@ -764,6 +765,16 @@ export default function TicketsPage() {
               </svg>
               Inbox
             </button>
+            <button
+              onClick={() => setView('analytics')}
+              className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors border-l border-slate-200 ${view === 'analytics' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+              title="Analytiques"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+              </svg>
+              Analyse
+            </button>
           </div>
 
           <button
@@ -787,8 +798,11 @@ export default function TicketsPage() {
         <InboxPane tickets={tickets} loading={loading} />
       )}
 
-      {/* ── Liste + Board ── */}
-      {view !== 'inbox' && (
+      {/* ── Analytics view ── */}
+      {view === 'analytics' && <AnalyticsPane />}
+
+      {/* ── Liste + Board + Triage ── */}
+      {(view === 'list' || view === 'board' || view === 'triage') && (
         <div className="p-6">
           {/* Filtres */}
           <div className="flex gap-3 mb-4 flex-wrap">
