@@ -125,6 +125,7 @@ function computeStats(sessions: AcuitySession[]) {
 
 interface AnalyticsData {
   totalSessions: number
+  scheduledSessions: number
   totalRegistered: number
   totalCancelled: number
   cancellationRate: number
@@ -136,6 +137,7 @@ interface AnalyticsData {
 
 function computeAnalytics(sessions: AcuitySession[]): AnalyticsData {
   const totalSessions = sessions.length
+  const scheduledSessions = sessions.filter(s => s.status === 'scheduled').length
   const totalRegistered = sessions.reduce((s, t) => s + t.totalRegistered, 0)
   const totalCancelled = sessions.reduce((s, t) => s + t.totalCancelled, 0)
   const cancellationRate =
@@ -175,6 +177,7 @@ function computeAnalytics(sessions: AcuitySession[]): AnalyticsData {
 
   return {
     totalSessions,
+    scheduledSessions,
     totalRegistered,
     totalCancelled,
     cancellationRate,
@@ -189,7 +192,7 @@ function buildReport(analytics: AnalyticsData, monthLabel: string): string {
   const lines: string[] = [
     `📊 Rapport Formations — ${monthLabel}`,
     '',
-    `Sessions : ${analytics.totalSessions}`,
+    `Sessions : ${analytics.totalSessions} (dont ${analytics.scheduledSessions} programmées à venir)`,
     `Inscrits : ${analytics.totalRegistered}`,
     `Annulations : ${analytics.totalCancelled} (${analytics.cancellationRate}%)`,
     `Hôtels formés : ${analytics.totalUniqueHotels}`,
@@ -635,10 +638,15 @@ export default function TrainingsPage() {
               ) : (
                 <>
                   {/* KPI cards */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
                     <div className="bg-white rounded-lg border border-slate-200 p-4">
                       <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Sessions</p>
                       <p className="text-2xl font-bold text-slate-900">{analytics.totalSessions}</p>
+                    </div>
+                    <div className="bg-white rounded-lg border border-slate-200 p-4">
+                      <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Programmées</p>
+                      <p className="text-2xl font-bold text-blue-600">{analytics.scheduledSessions}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">à venir</p>
                     </div>
                     <div className="bg-white rounded-lg border border-slate-200 p-4">
                       <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Inscrits</p>

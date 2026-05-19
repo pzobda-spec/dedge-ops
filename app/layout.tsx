@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import Sidebar from '@/components/layout/Sidebar'
+import { SessionProvider } from '@/components/providers/SessionProvider'
+import AppShell from '@/components/layout/AppShell'
 
 export const metadata: Metadata = {
   title: 'D-EDGE Ops Cockpit',
@@ -15,10 +16,9 @@ export default function RootLayout({
   return (
     <html lang="fr">
       <body className="bg-slate-50 text-slate-900">
-        <div className="flex min-h-screen">
-          <Sidebar />
-          <main className="flex-1 ml-56 min-h-screen">{children}</main>
-        </div>
+        <SessionProvider>
+          <AppShell>{children}</AppShell>
+        </SessionProvider>
       </body>
     </html>
   )
