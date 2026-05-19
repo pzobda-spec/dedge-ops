@@ -64,7 +64,7 @@ const sortOptions = [
 
 function TicketCard({ ticket }: { ticket: ZohoMappedTicket }) {
   return (
-    <Link href={`/tickets/${ticket.zohoInternalId}`}>
+    <Link href={`/tickets/${ticket.zohoInternalId}`} target="_blank" rel="noopener noreferrer">
       <div className="bg-white rounded-lg border border-slate-200 p-3 shadow-sm hover:border-slate-300 hover:shadow transition-all cursor-pointer">
         <div className="flex items-center justify-between mb-1.5">
           <div className="flex items-center gap-1.5">
@@ -73,7 +73,7 @@ function TicketCard({ ticket }: { ticket: ZohoMappedTicket }) {
               href={`https://support.loungeup.com/agent/loungeup/loungeup-support-team/tickets/details/${ticket.zohoInternalId}`}
               target="_blank"
               rel="noopener noreferrer"
-              onClick={e => e.preventDefault() /* handled by Link above, open Zoho on icon click */}
+              onClick={e => e.stopPropagation()}
               className="text-slate-300 hover:text-blue-500 transition-colors"
               title="Ouvrir dans Zoho Desk"
             >

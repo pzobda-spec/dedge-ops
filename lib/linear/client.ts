@@ -3,6 +3,7 @@ const ENDPOINT = 'https://api.linear.app/graphql'
 async function linearQuery<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
   const res = await fetch(ENDPOINT, {
     method: 'POST',
+    cache: 'no-store',
     headers: {
       Authorization: process.env.LINEAR_API_KEY!,
       'Content-Type': 'application/json',
@@ -132,7 +133,7 @@ const ISSUES_QUERY = `
   }
 `
 
-export async function fetchIssues(first = 100): Promise<LinearIssue[]> {
+export async function fetchIssues(first = 250): Promise<LinearIssue[]> {
   const data = await linearQuery<{ issues: { nodes: RawIssue[] } }>(ISSUES_QUERY, { first })
   return data.issues.nodes.map(mapRawIssue)
 }
