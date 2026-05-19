@@ -5,33 +5,34 @@ import { getCRMAccountsMap, matchAccountByName } from '@/lib/zoho/accountCache'
 
 export const dynamic = 'force-dynamic'
 
+const PAGE_SIZE = 100
+const SUPPORT_DEPT_ID = '5861000000007061'
+const CLOSED_STATUSES = new Set(['Fermé', 'Closed', 'Solved'])
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = req.nextUrl
-    const limit = Number(searchParams.get('limit') ?? 100)
-    const from = Number(searchParams.get('from') ?? 0)
-    // Default to Open only — exclude closed/fermé tickets
-    const status = searchParams.get('status') ?? 'Open'
     const sortBy = searchParams.get('sortBy') ?? 'modifiedTime'
 
-    const SUPPORT_DEPT_ID = '5861000000007061'
-    const CLOSED_STATUSES = new Set(['Fermé', 'Closed', 'Solved'])
-
-    const response = await fetchTickets({ limit, from, status, sortBy, departmentId: SUPPORT_DEPT_ID })
+    // Zoho max = 100 par requête — on pagine jusqu'à avoir tous les tickets ouverts
     const crmMap = await getCRMAccountsMap().catch(() => new Map())
+    const allRaw = []
+    let from = 0
 
-    const tickets = (response.data || [])
+    while (true) {
+      const response = await fetchTickets({ limit: PAGE_SIZE, from, sortBy, departmentId: SUPPORT_DEPT_ID })
+      const page = response.data || []
+      allRaw.push(...page)
+      if (page.length < PAGE_SIZE) break
+      from += PAGE_SIZE
+    }
+
+    const tickets = allRaw
       .filter(raw => !CLOSED_STATUSES.has(raw.status))
       .map(raw => {
-        const clientName =
-          raw.account?.accountName ||
-          raw.contact?.lastName ||
-          ''
-
+        const clientName = raw.account?.accountName || raw.contact?.lastName || ''
         const crmAccount = matchAccountByName(clientName, crmMap)
-        const segment = crmAccount?.segment ?? null
-
-        return mapZohoTicket(raw, segment)
+        return mapZohoTicket(raw, crmAccount?.segment ?? null)
       })
 
     return NextResponse.json({ tickets, count: tickets.length })

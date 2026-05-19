@@ -10,6 +10,13 @@ async function getAccessToken(): Promise<string> {
     return cachedToken
   }
 
+  // Si un token valide est fourni directement dans l'env (override temporaire)
+  if (process.env.ZOHO_ACCESS_TOKEN) {
+    cachedToken = process.env.ZOHO_ACCESS_TOKEN
+    tokenExpiresAt = Date.now() + 55 * 60 * 1000 // 55 min
+    return cachedToken
+  }
+
   const params = new URLSearchParams({
     grant_type: 'refresh_token',
     client_id: process.env.ZOHO_CLIENT_ID!,
@@ -34,7 +41,6 @@ async function getAccessToken(): Promise<string> {
   }
 
   cachedToken = data.access_token
-  // expires_in is in seconds; refresh 60s early
   tokenExpiresAt = Date.now() + (data.expires_in - 60) * 1000
 
   return cachedToken!

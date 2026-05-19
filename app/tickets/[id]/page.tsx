@@ -574,6 +574,9 @@ export default function TicketDetailPage() {
   const [replySent, setReplySent] = useState(false)
   const [replyError, setReplyError] = useState<string | null>(null)
 
+  const [showKBDialog, setShowKBDialog] = useState(false)
+  const [kbInstructions, setKbInstructions] = useState('')
+
   useEffect(() => {
     async function loadTicket() {
       try {
@@ -644,7 +647,7 @@ export default function TicketDetailPage() {
     }
   }
 
-  async function handleAction(action: AiAction) {
+  async function handleAction(action: AiAction, extra: Record<string, unknown> = {}) {
     if (!ticket) return
     setActiveAction(action)
     setAiLoading(true)
@@ -703,6 +706,7 @@ export default function TicketDetailPage() {
           productArea: ticket.productArea,
           resolution: '',
           conversationSummary: conversationSummary || ticket.subject,
+          additionalInstructions: extra.additionalInstructions || '',
         }
       } else if (action === 'similar_bug') {
         endpoint = '/api/ai/find-similar-bug'
@@ -917,7 +921,7 @@ export default function TicketDetailPage() {
             />
             <ActionButton
               label="Créer fiche KB"
-              onClick={() => handleAction('kb')}
+              onClick={() => { setKbInstructions(''); setShowKBDialog(true) }}
               loading={aiLoading && activeAction === 'kb'}
               variant="secondary"
             />
@@ -1113,6 +1117,46 @@ export default function TicketDetailPage() {
           </dl>
         </div>
       </div>
+
+      {/* KB dialog */}
+      {showKBDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 p-6">
+            <h2 className="text-base font-semibold text-slate-900 mb-1">Créer une fiche KB</h2>
+            <p className="text-sm text-slate-500 mb-4">
+              Ajoutez des instructions pour guider la génération (symptômes observés, étapes de vérification, contexte particulier…).
+            </p>
+            <textarea
+              autoFocus
+              value={kbInstructions}
+              onChange={e => setKbInstructions(e.target.value)}
+              rows={7}
+              placeholder={`Ex :
+- Symptôme : le client ne reçoit pas les emails de confirmation
+- Vérifier : configuration SMTP, domaine expéditeur, logs d'envoi
+- Contexte : hôtel nouvellement onboardé, PMS Mews`}
+              className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400 mb-4 resize-none"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowKBDialog(false)}
+                className="px-4 py-2 text-sm rounded-md border border-slate-300 text-slate-600 hover:bg-slate-50 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => {
+                  setShowKBDialog(false)
+                  handleAction('kb', { additionalInstructions: kbInstructions })
+                }}
+                className="px-4 py-2 text-sm rounded-md bg-slate-800 text-white hover:bg-slate-700 transition-colors"
+              >
+                Générer la fiche
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

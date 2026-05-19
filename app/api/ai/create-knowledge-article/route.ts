@@ -5,14 +5,9 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
-  const { ticketId, subject, productArea, resolution, conversationSummary } = body
+  const { ticketId, subject, productArea, resolution, conversationSummary, additionalInstructions } = body
 
-  const completion = await openai.chat.completions.create({
-    model: 'gpt-4o',
-    messages: [
-      {
-        role: 'system',
-        content: `You are creating an internal knowledge base article from a resolved support ticket for a hospitality CRM.
+  const systemPrompt = `You are creating an internal knowledge base article from a support ticket for a hospitality CRM.
 Return a JSON object with:
 - title: string
 - productArea: string
@@ -23,18 +18,24 @@ Return a JSON object with:
 - resolution: string
 - clientReplyTemplate: string
 Language: French.
-Return only valid JSON, no markdown.`,
-      },
-      {
-        role: 'user',
-        content: JSON.stringify({
-          ticketId,
-          subject,
-          productArea,
-          resolution,
-          conversationSummary,
-        }),
-      },
+Return only valid JSON, no markdown.`
+
+  const userContent: Record<string, unknown> = {
+    ticketId,
+    subject,
+    productArea,
+    resolution,
+    conversationSummary,
+  }
+  if (additionalInstructions) {
+    userContent.additionalInstructions = additionalInstructions
+  }
+
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: JSON.stringify(userContent) },
     ],
     response_format: { type: 'json_object' },
   })
