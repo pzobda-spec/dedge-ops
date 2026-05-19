@@ -51,6 +51,7 @@ async function zohoFetch<T>(path: string, options: RequestInit = {}, retry = tru
 
   const res = await fetch(`${ZOHO_DESK_BASE}${path}`, {
     ...options,
+    cache: 'no-store',
     headers: {
       Authorization: `Zoho-oauthtoken ${token}`,
       orgId: process.env.ZOHO_ORG_ID!,
