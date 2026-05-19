@@ -169,7 +169,10 @@ export async function fetchTicketConversationSummaries(ticketId: string): Promis
   }
 }
 
-export async function updateTicket(ticketId: string, fields: Partial<Pick<ZohoTicket, 'status' | 'priority'>>): Promise<ZohoTicket> {
+export async function updateTicket(
+  ticketId: string,
+  fields: Partial<Pick<ZohoTicket, 'status' | 'priority' | 'category'>> & { classification?: string }
+): Promise<ZohoTicket> {
   return zohoFetch<ZohoTicket>(`/tickets/${ticketId}`, {
     method: 'PATCH',
     body: JSON.stringify(fields),
