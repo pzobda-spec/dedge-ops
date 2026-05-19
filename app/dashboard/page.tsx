@@ -7,8 +7,7 @@ import type { LinearIssue } from '@/lib/linear/client'
 import type { AcuitySession } from '@/lib/acuity/client'
 import type { OnboardingProject } from '@/lib/zoho/projectsClient'
 import Badge from '@/components/ui/Badge'
-import RiskScore from '@/components/ui/RiskScore'
-import { formatHoursAgo, formatDate } from '@/lib/utils/dates'
+import { formatDate } from '@/lib/utils/dates'
 
 function formatTodayFR(): string {
   const d = new Date()
@@ -18,6 +17,17 @@ function formatTodayFR(): string {
     'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',
   ]
   return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`
+}
+
+function hoursAgo(dateStr: string): number {
+  return (Date.now() - new Date(dateStr).getTime()) / 3600000
+}
+
+function formatWait(dateStr: string): string {
+  const h = Math.floor(hoursAgo(dateStr))
+  if (h < 1) return '< 1h'
+  if (h < 24) return `${h}h`
+  return `${Math.floor(h / 24)}j ${h % 24}h`
 }
 
 export default function DashboardPage() {
@@ -33,9 +43,9 @@ export default function DashboardPage() {
     setLoadingOther(true)
 
     const [ticketsRes, escalationsRes, sessionsRes, projectsRes] = await Promise.allSettled([
-      fetch('/api/zoho/tickets?limit=100').then(r => r.json()),
+      fetch('/api/zoho/tickets').then(r => r.json()),
       fetch('/api/linear/issues').then(r => r.json()),
-      fetch('/api/acuity/sessions?upcoming=true').then(r => r.json()),
+      fetch('/api/acuity/sessions?period=upcoming').then(r => r.json()),
       fetch('/api/zoho/projects').then(r => r.json()),
     ])
 
@@ -50,32 +60,27 @@ export default function DashboardPage() {
 
   useEffect(() => { loadAll() }, [loadAll])
 
-  const now = new Date()
-
-  const criticalTickets = tickets.filter(t => {
-    if (!['Strategic', 'Gold'].includes(t.segment ?? '')) return false
-    const hoursSinceAgentReply = (now.getTime() - new Date(t.lastAgentReplyAt).getTime()) / 3600000
-    return hoursSinceAgentReply > 24
-  })
-
-  const openTickets = tickets.filter(t => t.status !== 'resolved')
+  // Tickets sans 1ère réponse depuis > 2h
+  // threadCount <= 1 = seul le message client existe, aucune réponse agent
+  const noFirstReply = tickets.filter(t =>
+    t.threadCount <= 1 && hoursAgo(t.createdAt) > 2
+  )
 
   const pendingEscalations = escalations.filter(e => e.status !== 'resolved')
 
   const weekMs = 7 * 24 * 3600 * 1000
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
-  const weekEnd = new Date(todayStart.getTime() + weekMs)
   const weekSessions = sessions.filter(s => {
     const d = new Date(s.datetime)
-    return d >= todayStart && d <= weekEnd
+    return d >= todayStart && d <= new Date(todayStart.getTime() + weekMs)
   })
 
   const blockedProjects = projects.filter(p => p.status === 'blocked')
 
-  const topTickets = [...tickets]
-    .filter(t => t.status !== 'resolved')
-    .sort((a, b) => b.riskScore - a.riskScore)
-    .slice(0, 4)
+  // Top 5 tickets sans réponse, du plus ancien au plus récent
+  const topTickets = [...noFirstReply]
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    .slice(0, 5)
 
   return (
     <div>
@@ -88,23 +93,27 @@ export default function DashboardPage() {
         {/* Metric cards */}
         <div className="grid grid-cols-5 gap-4">
           <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Tickets critiques</p>
+            <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Sans 1ère réponse</p>
             {loadingTickets ? (
               <div className="w-4 h-4 border-2 border-slate-300 border-t-red-600 rounded-full animate-spin mt-2" />
             ) : (
-              <p className="text-3xl font-bold text-red-600 mt-2">{criticalTickets.length}</p>
+              <p className={`text-3xl font-bold mt-2 ${noFirstReply.length > 0 ? 'text-red-600' : 'text-slate-900'}`}>
+                {noFirstReply.length}
+              </p>
             )}
-            <p className="text-xs text-slate-400 mt-1">Strategic/Gold &gt; 24h sans réponse</p>
+            <p className="text-xs text-slate-400 mt-1">&gt; 2h en attente de réponse</p>
           </div>
+
           <div className="bg-white rounded-lg border border-slate-200 p-4">
             <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Tickets ouverts</p>
             {loadingTickets ? (
               <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin mt-2" />
             ) : (
-              <p className="text-3xl font-bold text-slate-900 mt-2">{openTickets.length}</p>
+              <p className="text-3xl font-bold text-slate-900 mt-2">{tickets.length}</p>
             )}
-            <p className="text-xs text-slate-400 mt-1">non résolus</p>
+            <p className="text-xs text-slate-400 mt-1">Support · tous statuts non fermés</p>
           </div>
+
           <div className="bg-white rounded-lg border border-slate-200 p-4">
             <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Escalades en cours</p>
             {loadingOther ? (
@@ -114,6 +123,7 @@ export default function DashboardPage() {
             )}
             <p className="text-xs text-slate-400 mt-1">non résolues</p>
           </div>
+
           <div className="bg-white rounded-lg border border-slate-200 p-4">
             <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Formations (7j)</p>
             {loadingOther ? (
@@ -123,6 +133,7 @@ export default function DashboardPage() {
             )}
             <p className="text-xs text-slate-400 mt-1">cette semaine</p>
           </div>
+
           <div className="bg-white rounded-lg border border-slate-200 p-4">
             <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Onboarding bloqués</p>
             {loadingOther ? (
@@ -152,9 +163,24 @@ export default function DashboardPage() {
 
         {/* Main content */}
         <div className="grid grid-cols-4 gap-6">
-          {/* Left: priority tickets */}
+          {/* Left: tickets sans 1ère réponse */}
           <div className="col-span-3 space-y-4">
-            <h2 className="text-base font-semibold text-slate-900">Tickets prioritaires</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-slate-900">
+                Tickets sans 1ère réponse
+                {!loadingTickets && noFirstReply.length > 0 && (
+                  <span className="ml-2 text-sm font-normal text-red-500">
+                    {noFirstReply.length} en attente
+                  </span>
+                )}
+              </h2>
+              {!loadingTickets && noFirstReply.length > 5 && (
+                <Link href="/tickets" className="text-xs text-blue-600 hover:underline">
+                  Voir tous ({noFirstReply.length})
+                </Link>
+              )}
+            </div>
+
             <div className="bg-white rounded-lg border border-slate-200 divide-y divide-slate-100">
               {loadingTickets ? (
                 <div className="flex items-center gap-2 px-4 py-6 text-sm text-slate-500">
@@ -162,10 +188,14 @@ export default function DashboardPage() {
                   Chargement...
                 </div>
               ) : topTickets.length === 0 ? (
-                <div className="px-4 py-6 text-sm text-slate-400">Aucun ticket prioritaire en cours.</div>
+                <div className="px-4 py-6 text-sm text-slate-400 text-center">
+                  Aucun ticket en attente de 1ère réponse depuis plus de 2h.
+                </div>
               ) : (
                 topTickets.map(ticket => (
-                  <Link key={ticket.id} href={`/tickets/${ticket.zohoInternalId}`}
+                  <Link
+                    key={ticket.id}
+                    href={`/tickets/${ticket.zohoInternalId}`}
                     className="flex items-center gap-4 px-4 py-3 hover:bg-slate-50 transition-colors"
                   >
                     <div className="flex-shrink-0">
@@ -180,8 +210,10 @@ export default function DashboardPage() {
                     {ticket.segment && (
                       <Badge label={ticket.segment} variant={ticket.segment.toLowerCase() as 'strategic' | 'gold' | 'silver' | 'bronze'} />
                     )}
-                    <div className="flex-shrink-0 text-xs text-slate-400">{formatHoursAgo(ticket.createdAt)}</div>
-                    <RiskScore score={ticket.riskScore} />
+                    <div className="flex-shrink-0 text-right">
+                      <span className="text-sm font-semibold text-red-600">{formatWait(ticket.createdAt)}</span>
+                      <p className="text-xs text-slate-400">sans réponse</p>
+                    </div>
                   </Link>
                 ))
               )}
@@ -190,7 +222,6 @@ export default function DashboardPage() {
 
           {/* Right sidebar */}
           <div className="col-span-1 space-y-4">
-            {/* Pending escalations */}
             <div>
               <h2 className="text-base font-semibold text-slate-900 mb-2">Escalades en attente</h2>
               <div className="space-y-2">
@@ -211,7 +242,6 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Sessions this week */}
             <div>
               <h2 className="text-base font-semibold text-slate-900 mb-2">Formations (7 jours)</h2>
               <div className="space-y-2">
@@ -232,7 +262,6 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Blocked onboarding */}
             <div>
               <h2 className="text-base font-semibold text-slate-900 mb-2">Onboarding bloqués</h2>
               <div className="space-y-2">
