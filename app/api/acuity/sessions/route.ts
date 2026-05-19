@@ -8,9 +8,13 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const period = searchParams.get('period') ?? 'recent'
     const months = parseInt(searchParams.get('months') ?? '3', 10)
+    const minDate = searchParams.get('minDate') ?? undefined
+    const maxDate = searchParams.get('maxDate') ?? undefined
 
     let sessions
-    if (period === 'upcoming') {
+    if (minDate || maxDate) {
+      sessions = await fetchSessions({ minDate, maxDate })
+    } else if (period === 'upcoming') {
       sessions = await fetchUpcomingSessions()
     } else if (period === 'all') {
       sessions = await fetchSessions()

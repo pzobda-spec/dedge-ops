@@ -31,6 +31,7 @@ const participantStatusColors: Record<string, string> = {
 }
 
 type Period = '3m' | '6m' | 'all'
+type Tab = 'sessions' | 'analytics'
 
 const periodOptions: { value: Period; label: string; months?: number }[] = [
   { value: '3m', label: '3 derniers mois', months: 3 },
@@ -39,7 +40,7 @@ const periodOptions: { value: Period; label: string; months?: number }[] = [
 ]
 
 // ---------------------------------------------------------------------------
-// Google Calendar URL builder
+// Helpers
 // ---------------------------------------------------------------------------
 
 function buildCalendarUrl(session: AcuitySession): string {
@@ -75,8 +76,24 @@ function buildCalendarUrl(session: AcuitySession): string {
   return `https://calendar.google.com/calendar/render?${params}`
 }
 
+function formatMonth(yyyyMM: string): string {
+  const [year, month] = yyyyMM.split('-')
+  const date = new Date(parseInt(year), parseInt(month) - 1, 1)
+  return date.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
+}
+
+function monthDateRange(yyyyMM: string): { minDate: string; maxDate: string } {
+  const [year, month] = yyyyMM.split('-').map(Number)
+  const lastDay = new Date(year, month, 0).getDate()
+  const mm = String(month).padStart(2, '0')
+  return {
+    minDate: `${year}-${mm}-01`,
+    maxDate: `${year}-${mm}-${String(lastDay).padStart(2, '0')}`,
+  }
+}
+
 // ---------------------------------------------------------------------------
-// Stats helpers (client-side, on AcuitySession[])
+// Stats helpers
 // ---------------------------------------------------------------------------
 
 function computeStats(sessions: AcuitySession[]) {
@@ -106,8 +123,97 @@ function computeStats(sessions: AcuitySession[]) {
   }
 }
 
+interface AnalyticsData {
+  totalSessions: number
+  totalRegistered: number
+  totalCancelled: number
+  cancellationRate: number
+  totalUniqueHotels: number
+  topFormations: { name: string; inscrits: number; sessions: number }[]
+  topHotels: { name: string; sessions: number }[]
+  byLanguage: Record<string, number>
+}
+
+function computeAnalytics(sessions: AcuitySession[]): AnalyticsData {
+  const totalSessions = sessions.length
+  const totalRegistered = sessions.reduce((s, t) => s + t.totalRegistered, 0)
+  const totalCancelled = sessions.reduce((s, t) => s + t.totalCancelled, 0)
+  const cancellationRate =
+    totalRegistered + totalCancelled > 0
+      ? Math.round((totalCancelled / (totalRegistered + totalCancelled)) * 100)
+      : 0
+
+  const allHotels = new Set<string>()
+  sessions.forEach(s => s.uniqueHotels.forEach(h => allHotels.add(h)))
+
+  const formationMap: Record<string, { inscrits: number; sessions: number }> = {}
+  for (const s of sessions) {
+    if (!formationMap[s.theme]) formationMap[s.theme] = { inscrits: 0, sessions: 0 }
+    formationMap[s.theme].inscrits += s.totalRegistered
+    formationMap[s.theme].sessions += 1
+  }
+  const topFormations = Object.entries(formationMap)
+    .map(([name, d]) => ({ name, ...d }))
+    .sort((a, b) => b.inscrits - a.inscrits)
+    .slice(0, 5)
+
+  const hotelSessionCount: Record<string, number> = {}
+  for (const s of sessions) {
+    for (const hotel of s.uniqueHotels) {
+      hotelSessionCount[hotel] = (hotelSessionCount[hotel] || 0) + 1
+    }
+  }
+  const topHotels = Object.entries(hotelSessionCount)
+    .map(([name, sessions]) => ({ name, sessions }))
+    .sort((a, b) => b.sessions - a.sessions)
+    .slice(0, 10)
+
+  const byLanguage: Record<string, number> = {}
+  for (const s of sessions) {
+    byLanguage[s.language] = (byLanguage[s.language] || 0) + 1
+  }
+
+  return {
+    totalSessions,
+    totalRegistered,
+    totalCancelled,
+    cancellationRate,
+    totalUniqueHotels: allHotels.size,
+    topFormations,
+    topHotels,
+    byLanguage,
+  }
+}
+
+function buildReport(analytics: AnalyticsData, monthLabel: string): string {
+  const lines: string[] = [
+    `📊 Rapport Formations — ${monthLabel}`,
+    '',
+    `Sessions : ${analytics.totalSessions}`,
+    `Inscrits : ${analytics.totalRegistered}`,
+    `Annulations : ${analytics.totalCancelled} (${analytics.cancellationRate}%)`,
+    `Hôtels formés : ${analytics.totalUniqueHotels}`,
+  ]
+
+  if (analytics.topFormations.length > 0) {
+    lines.push('', '🏆 Top formations')
+    analytics.topFormations.forEach((f, i) => {
+      lines.push(`${i + 1}. ${f.name} — ${f.inscrits} inscrits`)
+    })
+  }
+
+  if (analytics.topHotels.length > 0) {
+    lines.push('', '🏨 Top hôtels')
+    analytics.topHotels.slice(0, 5).forEach((h, i) => {
+      lines.push(`${i + 1}. ${h.name} — ${h.sessions} session${h.sessions > 1 ? 's' : ''}`)
+    })
+  }
+
+  return lines.join('\n')
+}
+
 // ---------------------------------------------------------------------------
-// MeetPanel — shown inside the expanded session row
+// MeetPanel
 // ---------------------------------------------------------------------------
 
 function MeetPanel({ session }: { session: AcuitySession }) {
@@ -139,11 +245,20 @@ function MeetPanel({ session }: { session: AcuitySession }) {
 // ---------------------------------------------------------------------------
 
 export default function TrainingsPage() {
+  const [activeTab, setActiveTab] = useState<Tab>('sessions')
   const [period, setPeriod] = useState<Period>('3m')
   const [sessions, setSessions] = useState<AcuitySession[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<number | null>(null)
+
+  const [analyticsMonth, setAnalyticsMonth] = useState<string>(
+    () => new Date().toISOString().slice(0, 7)
+  )
+  const [analyticsSessions, setAnalyticsSessions] = useState<AcuitySession[]>([])
+  const [analyticsLoading, setAnalyticsLoading] = useState(false)
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
 
   const loadSessions = useCallback(async (p: Period) => {
     setLoading(true)
@@ -169,243 +284,457 @@ export default function TrainingsPage() {
     }
   }, [])
 
+  const loadAnalytics = useCallback(async (month: string) => {
+    setAnalyticsLoading(true)
+    setAnalyticsError(null)
+    try {
+      const { minDate, maxDate } = monthDateRange(month)
+      const res = await fetch(`/api/acuity/sessions?minDate=${minDate}&maxDate=${maxDate}`)
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(body.error ?? res.statusText)
+      }
+      const data = await res.json()
+      setAnalyticsSessions(data.sessions)
+    } catch (err) {
+      setAnalyticsError(err instanceof Error ? err.message : 'Erreur inconnue')
+    } finally {
+      setAnalyticsLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     loadSessions(period)
   }, [period, loadSessions])
 
+  useEffect(() => {
+    if (activeTab === 'analytics') {
+      loadAnalytics(analyticsMonth)
+    }
+  }, [activeTab, analyticsMonth, loadAnalytics])
+
   const stats = computeStats(sessions)
+  const analytics = computeAnalytics(analyticsSessions)
+
+  function handleCopy() {
+    const text = buildReport(analytics, formatMonth(analyticsMonth))
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
 
   return (
     <div>
       {/* Header */}
       <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900">Formations</h1>
-          {!loading && !error && (
-            <p className="text-sm text-slate-500 mt-0.5">{sessions.length} session{sessions.length !== 1 ? 's' : ''}</p>
-          )}
-        </div>
-
-        {/* Period selector */}
-        <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-          {periodOptions.map(opt => (
+        <div className="flex items-center gap-4">
+          <div>
+            <h1 className="text-xl font-semibold text-slate-900">Formations</h1>
+            {activeTab === 'sessions' && !loading && !error && (
+              <p className="text-sm text-slate-500 mt-0.5">{sessions.length} session{sessions.length !== 1 ? 's' : ''}</p>
+            )}
+          </div>
+          {/* Tab switcher */}
+          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 ml-2">
             <button
-              key={opt.value}
-              onClick={() => setPeriod(opt.value)}
+              onClick={() => setActiveTab('sessions')}
               className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                period === opt.value
+                activeTab === 'sessions'
                   ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              {opt.label}
+              Sessions
             </button>
-          ))}
+            <button
+              onClick={() => setActiveTab('analytics')}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'analytics'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Analytiques
+            </button>
+          </div>
         </div>
+
+        {/* Controls */}
+        {activeTab === 'sessions' && (
+          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+            {periodOptions.map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => setPeriod(opt.value)}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  period === opt.value
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {activeTab === 'analytics' && (
+          <div className="flex items-center gap-2">
+            <input
+              type="month"
+              value={analyticsMonth}
+              onChange={e => setAnalyticsMonth(e.target.value)}
+              className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        )}
       </div>
 
-      <div className="p-6 space-y-6">
-        {/* Loading state */}
-        {loading && (
-          <div className="flex items-center justify-center py-16">
-            <div className="text-slate-500 text-sm">Chargement des sessions…</div>
-          </div>
-        )}
-
-        {/* Error state */}
-        {!loading && error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
-            Erreur lors du chargement des données : {error}
-          </div>
-        )}
-
-        {/* Sessions table */}
-        {!loading && !error && (
-          <>
-            <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-              {sessions.length === 0 ? (
-                <div className="text-center py-12 text-slate-400 text-sm">
-                  Aucune session trouvée pour cette période.
-                </div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 border-b border-slate-200">
-                    <tr>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Date</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Thème</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Langue</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Animateur</th>
-                      <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Inscrits</th>
-                      <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Hôtels uniques</th>
-                      <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Annulés</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Statut</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {sessions.map(s => {
-                      const isExpanded = expandedId === s.classID
-                      return (
-                        <>
-                          <tr
-                            key={s.classID}
-                            className="hover:bg-slate-50 cursor-pointer transition-colors"
-                            onClick={() => setExpandedId(isExpanded ? null : s.classID)}
-                          >
-                            <td className="px-4 py-3 whitespace-nowrap text-slate-700">
-                              <div className="font-medium">{s.date}</div>
-                              <div className="text-xs text-slate-400">{s.time}</div>
-                            </td>
-                            <td className="px-4 py-3 max-w-xs">
-                              <span className="font-medium text-slate-900 line-clamp-2">{s.title}</span>
-                            </td>
-                            <td className="px-4 py-3">
-                              <Badge
-                                label={s.language}
-                                variant={s.language.toLowerCase() as 'fr' | 'en' | 'es'}
-                              />
-                            </td>
-                            <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{s.calendar}</td>
-                            <td className="px-4 py-3 text-center font-medium text-slate-900">{s.totalRegistered}</td>
-                            <td className="px-4 py-3 text-center">
-                              <span className={s.duplicateHotels.length > 0 ? 'text-amber-600 font-medium' : 'text-slate-700'}>
-                                {s.uniqueHotels.length}
-                                {s.duplicateHotels.length > 0 && (
-                                  <span className="ml-1 text-xs">(⚠️ doublons)</span>
-                                )}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                              {s.totalCancelled > 0
-                                ? <span className="text-slate-500">{s.totalCancelled}</span>
-                                : <span className="text-slate-300">0</span>}
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${statusColors[s.status]}`}>
-                                {statusLabels[s.status]}
-                              </span>
-                            </td>
-                          </tr>
-
-                          {isExpanded && (
-                            <tr key={`${s.classID}-detail`} className="bg-slate-50">
-                              <td colSpan={8} className="px-4 py-4">
-                                <h3 className="text-sm font-semibold text-slate-700 mb-3">
-                                  Détail des inscriptions — {s.title}
-                                </h3>
-
-                                {/* Meet link panel */}
-                                <MeetPanel session={s} />
-
-                                <table className="w-full text-sm">
-                                  <thead>
-                                    <tr className="text-xs text-slate-500 uppercase">
-                                      <th className="text-left pb-2 pr-4">Hôtel</th>
-                                      <th className="text-left pb-2 pr-4">Participant</th>
-                                      <th className="text-left pb-2 pr-4">Email</th>
-                                      <th className="text-left pb-2">Statut</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-slate-100">
-                                    {s.participants.map((p, i) => {
-                                      const isDuplicate = s.duplicateHotels.includes(p.hotelName)
-                                      return (
-                                        <tr key={i} className={isDuplicate ? 'bg-amber-50' : ''}>
-                                          <td className="py-1.5 pr-4">
-                                            <span className={isDuplicate ? 'text-amber-700 font-medium' : 'text-slate-700'}>
-                                              {p.hotelName}
-                                              {isDuplicate && (
-                                                <span className="ml-1 text-xs text-amber-500">doublon</span>
-                                              )}
-                                            </span>
-                                          </td>
-                                          <td className={`py-1.5 pr-4 ${participantStatusColors[p.status]}`}>
-                                            {p.firstName} {p.lastName}
-                                          </td>
-                                          <td className={`py-1.5 pr-4 text-xs ${participantStatusColors[p.status]}`}>
-                                            {p.email}
-                                          </td>
-                                          <td className="py-1.5">
-                                            <span className={`text-xs ${participantStatusColors[p.status]}`}>
-                                              {participantStatusLabels[p.status]}
-                                            </span>
-                                          </td>
-                                        </tr>
-                                      )
-                                    })}
-                                  </tbody>
-                                </table>
+      {/* ── Sessions tab ── */}
+      {activeTab === 'sessions' && (
+        <div className="p-6 space-y-6">
+          {loading && (
+            <div className="flex items-center justify-center py-16">
+              <div className="text-slate-500 text-sm">Chargement des sessions…</div>
+            </div>
+          )}
+          {!loading && error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+              Erreur lors du chargement des données : {error}
+            </div>
+          )}
+          {!loading && !error && (
+            <>
+              <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                {sessions.length === 0 ? (
+                  <div className="text-center py-12 text-slate-400 text-sm">
+                    Aucune session trouvée pour cette période.
+                  </div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 border-b border-slate-200">
+                      <tr>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Date</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Thème</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Langue</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Animateur</th>
+                        <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Inscrits</th>
+                        <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Hôtels uniques</th>
+                        <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Annulés</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Statut</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {sessions.map(s => {
+                        const isExpanded = expandedId === s.classID
+                        return (
+                          <>
+                            <tr
+                              key={s.classID}
+                              className="hover:bg-slate-50 cursor-pointer transition-colors"
+                              onClick={() => setExpandedId(isExpanded ? null : s.classID)}
+                            >
+                              <td className="px-4 py-3 whitespace-nowrap text-slate-700">
+                                <div className="font-medium">{s.date}</div>
+                                <div className="text-xs text-slate-400">{s.time}</div>
+                              </td>
+                              <td className="px-4 py-3 max-w-xs">
+                                <span className="font-medium text-slate-900 line-clamp-2">{s.title}</span>
+                              </td>
+                              <td className="px-4 py-3">
+                                <Badge
+                                  label={s.language}
+                                  variant={s.language.toLowerCase() as 'fr' | 'en' | 'es'}
+                                />
+                              </td>
+                              <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{s.calendar}</td>
+                              <td className="px-4 py-3 text-center font-medium text-slate-900">{s.totalRegistered}</td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={s.duplicateHotels.length > 0 ? 'text-amber-600 font-medium' : 'text-slate-700'}>
+                                  {s.uniqueHotels.length}
+                                  {s.duplicateHotels.length > 0 && (
+                                    <span className="ml-1 text-xs">(⚠️ doublons)</span>
+                                  )}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                {s.totalCancelled > 0
+                                  ? <span className="text-slate-500">{s.totalCancelled}</span>
+                                  : <span className="text-slate-300">0</span>}
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${statusColors[s.status]}`}>
+                                  {statusLabels[s.status]}
+                                </span>
                               </td>
                             </tr>
-                          )}
-                        </>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </div>
 
-            {/* Monthly stats */}
-            <div className="grid grid-cols-3 gap-4">
-              {/* Global stats */}
-              <div className="bg-white rounded-lg border border-slate-200 p-4">
-                <h3 className="text-sm font-semibold text-slate-700 mb-3">Vue d&apos;ensemble</h3>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-slate-500">Sessions</span>
-                    <span className="text-sm font-semibold text-slate-900">{stats.totalSessions}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-slate-500">Participants</span>
-                    <span className="text-sm font-semibold text-slate-900">{stats.totalParticipants}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-slate-500">Hôtels formés</span>
-                    <span className="text-sm font-semibold text-slate-900">{stats.totalUniqueHotels}</span>
-                  </div>
-                </div>
+                            {isExpanded && (
+                              <tr key={`${s.classID}-detail`} className="bg-slate-50">
+                                <td colSpan={8} className="px-4 py-4">
+                                  <h3 className="text-sm font-semibold text-slate-700 mb-3">
+                                    Détail des inscriptions — {s.title}
+                                  </h3>
+                                  <MeetPanel session={s} />
+                                  <table className="w-full text-sm">
+                                    <thead>
+                                      <tr className="text-xs text-slate-500 uppercase">
+                                        <th className="text-left pb-2 pr-4">Hôtel</th>
+                                        <th className="text-left pb-2 pr-4">Participant</th>
+                                        <th className="text-left pb-2 pr-4">Email</th>
+                                        <th className="text-left pb-2">Statut</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                      {s.participants.map((p, i) => {
+                                        const isDuplicate = s.duplicateHotels.includes(p.hotelName)
+                                        return (
+                                          <tr key={i} className={isDuplicate ? 'bg-amber-50' : ''}>
+                                            <td className="py-1.5 pr-4">
+                                              <span className={isDuplicate ? 'text-amber-700 font-medium' : 'text-slate-700'}>
+                                                {p.hotelName}
+                                                {isDuplicate && (
+                                                  <span className="ml-1 text-xs text-amber-500">doublon</span>
+                                                )}
+                                              </span>
+                                            </td>
+                                            <td className={`py-1.5 pr-4 ${participantStatusColors[p.status]}`}>
+                                              {p.firstName} {p.lastName}
+                                            </td>
+                                            <td className={`py-1.5 pr-4 text-xs ${participantStatusColors[p.status]}`}>
+                                              {p.email}
+                                            </td>
+                                            <td className="py-1.5">
+                                              <span className={`text-xs ${participantStatusColors[p.status]}`}>
+                                                {participantStatusLabels[p.status]}
+                                              </span>
+                                            </td>
+                                          </tr>
+                                        )
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </td>
+                              </tr>
+                            )}
+                          </>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                )}
               </div>
 
-              {/* By language */}
-              <div className="bg-white rounded-lg border border-slate-200 p-4">
-                <h3 className="text-sm font-semibold text-slate-700 mb-3">Par langue</h3>
-                <div className="space-y-2">
-                  {(Object.entries(stats.byLanguage) as [string, number][])
-                    .filter(([, count]) => count > 0)
-                    .sort((a, b) => b[1] - a[1])
-                    .map(([lang, count]) => (
-                      <div key={lang} className="flex items-center justify-between">
-                        <Badge label={lang} variant={lang.toLowerCase() as 'fr' | 'en' | 'es'} />
-                        <span className="text-sm font-medium text-slate-700">{count} session{count !== 1 ? 's' : ''}</span>
+              {/* Summary cards */}
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-white rounded-lg border border-slate-200 p-4">
+                  <h3 className="text-sm font-semibold text-slate-700 mb-3">Vue d&apos;ensemble</h3>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-slate-500">Sessions</span>
+                      <span className="text-sm font-semibold text-slate-900">{stats.totalSessions}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-slate-500">Participants</span>
+                      <span className="text-sm font-semibold text-slate-900">{stats.totalParticipants}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-slate-500">Hôtels formés</span>
+                      <span className="text-sm font-semibold text-slate-900">{stats.totalUniqueHotels}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-lg border border-slate-200 p-4">
+                  <h3 className="text-sm font-semibold text-slate-700 mb-3">Par langue</h3>
+                  <div className="space-y-2">
+                    {(Object.entries(stats.byLanguage) as [string, number][])
+                      .filter(([, count]) => count > 0)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([lang, count]) => (
+                        <div key={lang} className="flex items-center justify-between">
+                          <Badge label={lang} variant={lang.toLowerCase() as 'fr' | 'en' | 'es'} />
+                          <span className="text-sm font-medium text-slate-700">{count} session{count !== 1 ? 's' : ''}</span>
+                        </div>
+                      ))}
+                    {Object.values(stats.byLanguage).every(c => c === 0) && (
+                      <p className="text-sm text-slate-400">Aucune donnée</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-lg border border-slate-200 p-4">
+                  <h3 className="text-sm font-semibold text-slate-700 mb-3">Top 3 thèmes</h3>
+                  <div className="space-y-2">
+                    {stats.topThemes.length === 0 && (
+                      <p className="text-sm text-slate-400">Aucune donnée</p>
+                    )}
+                    {stats.topThemes.map((t, i) => (
+                      <div key={t.name} className="flex items-center justify-between gap-2">
+                        <span className="text-sm text-slate-700 truncate">
+                          {i + 1}. {t.name}
+                        </span>
+                        <span className="text-sm font-medium text-slate-500 shrink-0">{t.count}</span>
                       </div>
                     ))}
-                  {Object.values(stats.byLanguage).every(c => c === 0) && (
-                    <p className="text-sm text-slate-400">Aucune donnée</p>
-                  )}
+                  </div>
                 </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── Analytics tab ── */}
+      {activeTab === 'analytics' && (
+        <div className="p-6 space-y-6">
+          {analyticsLoading && (
+            <div className="flex items-center justify-center py-16">
+              <div className="text-slate-500 text-sm">Chargement des données…</div>
+            </div>
+          )}
+          {!analyticsLoading && analyticsError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+              Erreur : {analyticsError}
+            </div>
+          )}
+          {!analyticsLoading && !analyticsError && (
+            <>
+              {/* Month heading + copy */}
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-semibold text-slate-800 capitalize">
+                  {formatMonth(analyticsMonth)}
+                </h2>
+                <button
+                  onClick={handleCopy}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium rounded-lg transition-colors"
+                >
+                  {copied ? (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                      Copié !
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                      Copier le rapport
+                    </>
+                  )}
+                </button>
               </div>
 
-              {/* Top themes */}
-              <div className="bg-white rounded-lg border border-slate-200 p-4">
-                <h3 className="text-sm font-semibold text-slate-700 mb-3">Top 3 thèmes</h3>
-                <div className="space-y-2">
-                  {stats.topThemes.length === 0 && (
-                    <p className="text-sm text-slate-400">Aucune donnée</p>
-                  )}
-                  {stats.topThemes.map((t, i) => (
-                    <div key={t.name} className="flex items-center justify-between gap-2">
-                      <span className="text-sm text-slate-700 truncate">
-                        {i + 1}. {t.name}
-                      </span>
-                      <span className="text-sm font-medium text-slate-500 shrink-0">{t.count}</span>
-                    </div>
-                  ))}
+              {analyticsSessions.length === 0 ? (
+                <div className="bg-white rounded-lg border border-slate-200 text-center py-12 text-slate-400 text-sm">
+                  Aucune session trouvée pour ce mois.
                 </div>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
+              ) : (
+                <>
+                  {/* KPI cards */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div className="bg-white rounded-lg border border-slate-200 p-4">
+                      <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Sessions</p>
+                      <p className="text-2xl font-bold text-slate-900">{analytics.totalSessions}</p>
+                    </div>
+                    <div className="bg-white rounded-lg border border-slate-200 p-4">
+                      <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Inscrits</p>
+                      <p className="text-2xl font-bold text-slate-900">{analytics.totalRegistered}</p>
+                    </div>
+                    <div className="bg-white rounded-lg border border-slate-200 p-4">
+                      <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Taux annulation</p>
+                      <p className="text-2xl font-bold text-slate-900">{analytics.cancellationRate}%</p>
+                      <p className="text-xs text-slate-400 mt-0.5">{analytics.totalCancelled} annulation{analytics.totalCancelled !== 1 ? 's' : ''}</p>
+                    </div>
+                    <div className="bg-white rounded-lg border border-slate-200 p-4">
+                      <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Hôtels formés</p>
+                      <p className="text-2xl font-bold text-slate-900">{analytics.totalUniqueHotels}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-6">
+                    {/* Top formations */}
+                    <div className="bg-white rounded-lg border border-slate-200 p-4">
+                      <h3 className="text-sm font-semibold text-slate-700 mb-4">Top formations</h3>
+                      {analytics.topFormations.length === 0 ? (
+                        <p className="text-sm text-slate-400">Aucune donnée</p>
+                      ) : (
+                        <div className="space-y-3">
+                          {analytics.topFormations.map((f, i) => {
+                            const maxInscrits = analytics.topFormations[0].inscrits
+                            const pct = maxInscrits > 0 ? Math.round((f.inscrits / maxInscrits) * 100) : 0
+                            return (
+                              <div key={f.name}>
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-sm text-slate-700 truncate max-w-[200px]">
+                                    {i + 1}. {f.name}
+                                  </span>
+                                  <span className="text-sm font-semibold text-slate-900 ml-2 shrink-0">
+                                    {f.inscrits} inscrits
+                                  </span>
+                                </div>
+                                <div className="w-full bg-slate-100 rounded-full h-1.5">
+                                  <div
+                                    className="bg-blue-500 h-1.5 rounded-full"
+                                    style={{ width: `${pct}%` }}
+                                  />
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Top hôtels */}
+                    <div className="bg-white rounded-lg border border-slate-200 p-4">
+                      <h3 className="text-sm font-semibold text-slate-700 mb-4">Top hôtels</h3>
+                      {analytics.topHotels.length === 0 ? (
+                        <p className="text-sm text-slate-400">Aucune donnée</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {analytics.topHotels.map((h, i) => (
+                            <div key={h.name} className="flex items-center justify-between">
+                              <span className="text-sm text-slate-700 truncate max-w-[220px]">
+                                {i + 1}. {h.name}
+                              </span>
+                              <span className="text-sm font-medium text-slate-500 shrink-0 ml-2">
+                                {h.sessions} session{h.sessions > 1 ? 's' : ''}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* By language */}
+                  {Object.keys(analytics.byLanguage).length > 0 && (
+                    <div className="bg-white rounded-lg border border-slate-200 p-4">
+                      <h3 className="text-sm font-semibold text-slate-700 mb-3">Répartition par langue</h3>
+                      <div className="flex items-center gap-6">
+                        {(Object.entries(analytics.byLanguage) as [string, number][])
+                          .sort((a, b) => b[1] - a[1])
+                          .map(([lang, count]) => (
+                            <div key={lang} className="flex items-center gap-2">
+                              <Badge label={lang} variant={lang.toLowerCase() as 'fr' | 'en' | 'es'} />
+                              <span className="text-sm font-medium text-slate-700">
+                                {count} session{count !== 1 ? 's' : ''}
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }
