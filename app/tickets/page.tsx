@@ -11,11 +11,11 @@ import { formatHoursAgo } from '@/lib/utils/dates'
 
 const BOARD_COLUMNS: { status: string; label: string; bg: string; header: string }[] = [
   { status: 'Open',         label: 'Open',         bg: 'bg-blue-50',    header: 'bg-blue-100 text-blue-800' },
-  { status: 'Managed',      label: 'Managed',      bg: 'bg-green-50',   header: 'bg-green-100 text-green-800' },
   { status: 'Pending',      label: 'Pending',      bg: 'bg-yellow-50',  header: 'bg-yellow-100 text-yellow-800' },
+  { status: 'Managed',      label: 'Managed',      bg: 'bg-green-50',   header: 'bg-green-100 text-green-800' },
   { status: 'Stuck client', label: 'Stuck client', bg: 'bg-orange-50',  header: 'bg-orange-100 text-orange-800' },
-  { status: 'Stuck product',label: 'Stuck product',bg: 'bg-red-50',     header: 'bg-red-100 text-red-800' },
   { status: 'Escalated',    label: 'Escalated',    bg: 'bg-purple-50',  header: 'bg-purple-100 text-purple-800' },
+  { status: 'Stuck product',label: 'Stuck product',bg: 'bg-red-50',     header: 'bg-red-100 text-red-800' },
 ]
 
 // ─── Filtres liste ─────────────────────────────────────────────────────────────
@@ -131,6 +131,7 @@ export default function TicketsPage() {
   const [view, setView] = useState<ViewMode>('list')
 
   const [filterStatus, setFilterStatus] = useState('')
+  const [filterAssignee, setFilterAssignee] = useState('')
   const [filterProduct, setFilterProduct] = useState('')
   const [filterPriority, setFilterPriority] = useState('')
   const [filterSearch, setFilterSearch] = useState('')
@@ -165,10 +166,15 @@ export default function TicketsPage() {
 
   // ─── Filtres communs ──────────────────────────────────────────────────────────
 
+  const assignees = Array.from(
+    new Set(tickets.map(t => t.assigneeName).filter(Boolean))
+  ).sort() as string[]
+
   const searchLower = filterSearch.toLowerCase()
   const filtered = tickets
     .filter(t => {
       if (filterStatus && t.zohoStatus !== filterStatus) return false
+      if (filterAssignee && t.assigneeName !== filterAssignee) return false
       if (filterProduct && t.productArea !== filterProduct) return false
       if (filterPriority && t.priority !== filterPriority) return false
       if (searchLower && !(
@@ -244,8 +250,9 @@ export default function TicketsPage() {
 
       <div className="p-6">
         {/* Filtres — masqués en board (le board montre tout par colonne) */}
-        {view === 'list' && (
-          <div className="flex gap-3 mb-4 flex-wrap">
+        {/* Filtres — barre commune aux deux vues sauf statut (list only) */}
+        <div className="flex gap-3 mb-4 flex-wrap">
+          {view === 'list' && (
             <input
               type="text"
               value={filterSearch}
@@ -253,24 +260,37 @@ export default function TicketsPage() {
               placeholder="Rechercher (client, sujet...)"
               className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white text-slate-700 w-56"
             />
+          )}
+          {view === 'list' && (
             <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
               className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white text-slate-700">
               {statusOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
+          )}
+          <select value={filterAssignee} onChange={e => setFilterAssignee(e.target.value)}
+            className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white text-slate-700">
+            <option value="">Tous les agents</option>
+            {assignees.map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
+          {view === 'list' && (
             <select value={filterProduct} onChange={e => setFilterProduct(e.target.value)}
               className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white text-slate-700">
               {productOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
+          )}
+          {view === 'list' && (
             <select value={filterPriority} onChange={e => setFilterPriority(e.target.value)}
               className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white text-slate-700">
               {priorityOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
+          )}
+          {view === 'list' && (
             <select value={sortBy} onChange={e => setSortBy(e.target.value)}
               className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white text-slate-700">
               {sortOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Spinner premier chargement */}
         {loading && (
@@ -391,9 +411,8 @@ export default function TicketsPage() {
           <div className="overflow-x-auto">
             <div className="flex gap-4 min-w-max pb-4">
               {BOARD_COLUMNS.map(col => {
-                const colTickets = tickets
+                const colTickets = filtered
                   .filter(t => t.zohoStatus === col.status)
-                  .sort((a, b) => b.riskScore - a.riskScore)
                 return (
                   <div key={col.status} className="w-64 flex-shrink-0 flex flex-col max-h-[calc(100vh-180px)]">
                     <div className={`rounded-t-lg px-3 py-2 flex items-center justify-between flex-shrink-0 ${col.header}`}>
