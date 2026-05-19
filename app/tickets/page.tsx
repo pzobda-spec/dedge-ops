@@ -70,6 +70,84 @@ function riskBand(score: number): 'high' | 'med' | 'low' {
 
 const RISK_EDGE_COLOR = { high: '#b91c1c', med: '#b45309', low: '#059669' }
 
+const RISK_RAILS = [
+  {
+    key: 'high',
+    label: 'Critique',
+    hint: 'Risque ≥ 75',
+    bg: 'bg-red-50',
+    headerColor: '#b91c1c',
+    filter: (t: ZohoMappedTicket) => t.riskScore >= 75,
+  },
+  {
+    key: 'med',
+    label: 'À surveiller',
+    hint: 'Risque 50–74',
+    bg: 'bg-amber-50',
+    headerColor: '#b45309',
+    filter: (t: ZohoMappedTicket) => t.riskScore >= 50 && t.riskScore < 75,
+  },
+  {
+    key: 'low',
+    label: 'Sous contrôle',
+    hint: 'Risque < 50',
+    bg: 'bg-green-50',
+    headerColor: '#059669',
+    filter: (t: ZohoMappedTicket) => t.riskScore < 50,
+  },
+]
+
+// ─── Triage card ───────────────────────────────────────────────────────────────
+
+function TriageCard({ ticket }: { ticket: ZohoMappedTicket }) {
+  const band = riskBand(ticket.riskScore)
+  return (
+    <Link
+      href={`/tickets/${ticket.zohoInternalId}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="block bg-white rounded-lg border border-slate-200 p-3 shadow-sm hover:border-slate-300 hover:shadow transition-all relative overflow-hidden"
+    >
+      <span
+        className="absolute left-0 top-0 bottom-0 w-0.5"
+        style={{ background: RISK_EDGE_COLOR[band] }}
+      />
+      <div className="flex items-start justify-between gap-2 mb-2 pl-2">
+        <p className="text-sm font-medium text-slate-900 line-clamp-2 leading-snug flex-1">
+          {ticket.subject}
+        </p>
+        <span
+          className="flex-shrink-0 text-xs font-bold px-1.5 py-0.5 rounded tabular-nums"
+          style={{
+            background: band === 'high' ? '#fee2e2' : band === 'med' ? '#fef3c7' : '#d1fae5',
+            color: RISK_EDGE_COLOR[band],
+          }}
+        >
+          {ticket.riskScore}
+        </span>
+      </div>
+      <div className="pl-2 flex items-center gap-2 flex-wrap">
+        <span className="text-xs font-semibold text-slate-700 truncate max-w-[120px]">{ticket.clientName}</span>
+        {ticket.segment && (
+          <Badge label={ticket.segment} variant={ticket.segment.toLowerCase() as 'strategic' | 'gold' | 'silver' | 'bronze'} />
+        )}
+        {ticket.productArea && ticket.productArea !== 'Autre' && (
+          <span className="text-xs text-slate-400">{ticket.productArea}</span>
+        )}
+      </div>
+      <div className="pl-2 flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+        <span className={`text-xs font-semibold ${
+          ticket.priority === 'urgent' ? 'text-red-600' :
+          ticket.priority === 'high' ? 'text-amber-600' : 'text-slate-400'
+        }`}>
+          {ticket.priority === 'urgent' ? '● Urgent' : ticket.priority === 'high' ? '● Haute' : ticket.zohoStatus}
+        </span>
+        <span className="text-xs text-slate-400">{formatHoursAgo(ticket.lastClientMessageAt)}</span>
+      </div>
+    </Link>
+  )
+}
+
 // ─── Carte board ───────────────────────────────────────────────────────────────
 
 function TicketCard({ ticket }: { ticket: ZohoMappedTicket }) {
@@ -555,7 +633,7 @@ function InboxPane({ tickets, loading }: { tickets: ZohoMappedTicket[]; loading:
 
 // ─── Page principale ───────────────────────────────────────────────────────────
 
-type ViewMode = 'list' | 'board' | 'inbox'
+type ViewMode = 'list' | 'board' | 'triage' | 'inbox'
 
 export default function TicketsPage() {
   const [tickets, setTickets] = useState<ZohoMappedTicket[]>([])
@@ -663,6 +741,17 @@ export default function TicketsPage() {
                 <rect x="3" y="3" width="7" height="18"/><rect x="14" y="3" width="7" height="18"/>
               </svg>
               Board
+            </button>
+            <button
+              onClick={() => setView('triage')}
+              className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors border-l border-slate-200 ${view === 'triage' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+              title="Vue triage par risque"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+              Triage
             </button>
             <button
               onClick={() => setView('inbox')}
@@ -882,6 +971,42 @@ export default function TicketsPage() {
                   )
                 })}
               </div>
+            </div>
+          )}
+
+          {/* ── Vue triage ── */}
+          {!loading && !error && view === 'triage' && (
+            <div className="space-y-5">
+              {RISK_RAILS.map(rail => {
+                const railTickets = filtered
+                  .filter(rail.filter)
+                  .sort((a, b) => b.riskScore - a.riskScore)
+                return (
+                  <div key={rail.key} className={`rounded-xl ${rail.bg} p-4`}>
+                    <div className="flex items-center gap-3 mb-3">
+                      <h3 className="font-bold text-sm uppercase tracking-wide" style={{ color: rail.headerColor }}>
+                        {rail.label}
+                      </h3>
+                      <span
+                        className="text-xs font-bold px-2 py-0.5 rounded-full tabular-nums"
+                        style={{ background: rail.headerColor + '22', color: rail.headerColor }}
+                      >
+                        {railTickets.length}
+                      </span>
+                      <span className="text-xs text-slate-400">{rail.hint}</span>
+                    </div>
+                    {railTickets.length === 0 ? (
+                      <p className="text-xs text-slate-400 py-2">Aucun ticket dans cette catégorie</p>
+                    ) : (
+                      <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
+                        {railTickets.map(t => (
+                          <TriageCard key={t.id} ticket={t} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
