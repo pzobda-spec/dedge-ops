@@ -574,6 +574,9 @@ export default function TicketDetailPage() {
   const [replySent, setReplySent] = useState(false)
   const [replyError, setReplyError] = useState<string | null>(null)
 
+  const [updatingStatus, setUpdatingStatus] = useState(false)
+  const [currentZohoStatus, setCurrentZohoStatus] = useState<string | null>(null)
+
   const [showKBDialog, setShowKBDialog] = useState(false)
   const [kbInstructions, setKbInstructions] = useState('')
 
@@ -586,6 +589,7 @@ export default function TicketDetailPage() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const data = await res.json()
         setTicket(data)
+        setCurrentZohoStatus(data.zohoStatus ?? null)
       } catch (err) {
         console.error('Failed to load ticket:', err)
         setTicketError('Erreur de chargement du ticket')
@@ -780,6 +784,27 @@ export default function TicketDetailPage() {
     }
   }
 
+  async function handleStatusChange(newStatus: string) {
+    if (!ticket || newStatus === currentZohoStatus) return
+    setUpdatingStatus(true)
+    try {
+      const res = await fetch(`/api/zoho/tickets/${ticket.zohoInternalId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || `HTTP ${res.status}`)
+      }
+      setCurrentZohoStatus(newStatus)
+    } catch (err) {
+      console.error('Status update failed:', err)
+    } finally {
+      setUpdatingStatus(false)
+    }
+  }
+
   async function handleSendReply() {
     if (!replyContent.trim() || !ticket) return
     setSendingReply(true)
@@ -837,8 +862,8 @@ export default function TicketDetailPage() {
     <div>
       {/* Header */}
       <div className="bg-white border-b border-slate-200 px-6 py-4">
-        <div className="flex items-start justify-between">
-          <div>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs font-mono text-slate-400">#{ticket.externalId}</span>
               <a
@@ -861,6 +886,32 @@ export default function TicketDetailPage() {
               {ticket.clientName} · {ticket.productArea} · {formatHoursAgo(ticket.createdAt)}
             </p>
           </div>
+          {/* Status selector */}
+          <div className="flex items-center gap-2 flex-shrink-0 mt-1">
+            {updatingStatus && (
+              <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+            )}
+            <select
+              value={currentZohoStatus ?? ''}
+              onChange={e => handleStatusChange(e.target.value)}
+              disabled={updatingStatus}
+              className="text-sm border border-slate-300 rounded-lg px-3 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 cursor-pointer"
+            >
+              <optgroup label="Ouvert">
+                <option value="Open">Open</option>
+                <option value="Escalated">Escalated</option>
+              </optgroup>
+              <optgroup label="En cours">
+                <option value="Pending">Pending</option>
+                <option value="Managed">Managed</option>
+                <option value="Stuck client">Stuck client</option>
+              </optgroup>
+              <optgroup label="Résolu">
+                <option value="Solved">Solved</option>
+                <option value="Stuck product">Stuck product</option>
+              </optgroup>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -881,9 +932,6 @@ export default function TicketDetailPage() {
               variant={ticket.segment.toLowerCase() as 'strategic' | 'gold' | 'silver' | 'bronze'}
             />
           )}
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600">
-            Zoho: {ticket.zohoStatus}
-          </span>
           <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600">
             {sourceLabels[ticket.source] || ticket.source}
           </span>
