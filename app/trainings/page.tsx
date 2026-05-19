@@ -444,122 +444,76 @@ export default function TrainingsPage() {
               const d = s.datetime.slice(0, 10)
               return d >= thisMon && d <= thisSun
             })
-            return (
-              <div className="space-y-6">
-                {/* Previous week — completed */}
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="inline-block w-2 h-2 rounded-full bg-slate-500" />
-                    <h2 className="text-sm font-bold text-slate-700">
-                      Semaine passée — {fmtWeekLabel(prevMon)} → {fmtWeekLabel(prevSun)}
-                    </h2>
-                    <span className="text-xs text-slate-400">{prevWeekSessions.length} session{prevWeekSessions.length !== 1 ? 's' : ''}</span>
-                  </div>
-                  {prevWeekSessions.length === 0 ? (
-                    <p className="text-sm text-slate-400 bg-white rounded-lg border border-slate-200 p-4">Aucune session la semaine passée.</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {prevWeekSessions.map(s => {
-                        const regParts = s.participants.filter(p => p.status === 'registered')
-                        return (
-                          <div key={s.classID} className="bg-white rounded-lg border border-slate-200 p-4">
-                            <div className="flex items-start justify-between gap-4 mb-2">
-                              <div>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-semibold text-slate-900 text-sm">{s.title}</span>
-                                  <span className={`text-[11px] px-1.5 py-0.5 rounded font-medium ${statusColors[s.status] ?? 'bg-slate-100'}`}>{statusLabels[s.status] ?? s.status}</span>
-                                  <span className="text-xs text-slate-400">{s.language}</span>
-                                </div>
-                                <p className="text-xs text-slate-500 mt-0.5">
-                                  {new Date(s.datetime).toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: '2-digit' })} · {new Date(s.datetime).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} · {s.calendar}
-                                </p>
-                              </div>
-                              <div className="flex-shrink-0 text-right">
-                                <div className="text-lg font-bold text-slate-900">{regParts.length}</div>
-                                <div className="text-xs text-slate-400">inscrits</div>
-                              </div>
-                            </div>
-                            {regParts.length > 0 && (
-                              <div className="mt-2 pt-2 border-t border-slate-100">
-                                <p className="text-xs font-semibold text-slate-500 mb-1.5">Participants</p>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {regParts.map((p, i) => (
-                                    <span key={i} className="inline-flex items-center gap-1 text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
-                                      <span className="font-medium">{p.firstName} {p.lastName}</span>
-                                      {p.hotelName && <span className="text-slate-400">· {p.hotelName}</span>}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
+            const renderSessionList = (list: typeof sessions, showMeet: boolean) =>
+              list.map(s => {
+                const reg = s.participants.filter(p => p.status === 'registered')
+                const hotels = reg.map(p => p.hotelName).filter(Boolean) as string[]
+                const uniqueHotels = [...new Set(hotels)]
+                const date = new Date(s.datetime).toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: '2-digit' })
+                const time = new Date(s.datetime).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+                return (
+                  <div key={s.classID} className="border-b border-slate-100 pb-3 last:border-0 last:pb-0">
+                    <div className="flex items-baseline justify-between gap-4">
+                      <span className="text-sm font-semibold text-slate-900">
+                        {s.title}
+                        <span className="font-normal text-slate-400"> · {date} {time} · {s.language} · {s.calendar}</span>
+                      </span>
+                      <div className="flex items-center gap-3 flex-shrink-0">
+                        {uniqueHotels.length > 0 && (
+                          <button
+                            onClick={() => navigator.clipboard.writeText(uniqueHotels.join('\n'))}
+                            className="text-xs text-blue-600 hover:underline"
+                          >
+                            Copier hôtels ({uniqueHotels.length})
+                          </button>
+                        )}
+                        {showMeet && (
+                          <a href={buildCalendarUrl(s)} target="_blank" rel="noopener noreferrer"
+                            className="text-xs text-blue-600 hover:underline">
+                            Google Meet ↗
+                          </a>
+                        )}
+                      </div>
                     </div>
-                  )}
+                    {reg.length > 0 ? (
+                      <ul className="mt-1.5 space-y-0.5 pl-2">
+                        {reg.map((p, i) => (
+                          <li key={i} className="text-sm text-slate-700">
+                            {p.firstName} {p.lastName}{p.hotelName ? ` · ${p.hotelName}` : ''}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-1 text-sm text-slate-400 pl-2">Aucun inscrit</p>
+                    )}
+                  </div>
+                )
+              })
+
+            return (
+              <div className="space-y-6 max-w-3xl">
+                {/* Previous week */}
+                <div>
+                  <h2 className="text-sm font-bold text-slate-700 mb-3">
+                    Semaine passée — {fmtWeekLabel(prevMon)} → {fmtWeekLabel(prevSun)}
+                    <span className="font-normal text-slate-400 ml-2">{prevWeekSessions.length} session{prevWeekSessions.length !== 1 ? 's' : ''}</span>
+                  </h2>
+                  {prevWeekSessions.length === 0
+                    ? <p className="text-sm text-slate-400">Aucune session la semaine passée.</p>
+                    : <div className="space-y-3">{renderSessionList(prevWeekSessions, false)}</div>
+                  }
                 </div>
 
-                {/* This week — upcoming */}
+                {/* This week */}
                 <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="inline-block w-2 h-2 rounded-full bg-blue-500" />
-                    <h2 className="text-sm font-bold text-slate-700">
-                      Cette semaine — {fmtWeekLabel(thisMon)} → {fmtWeekLabel(thisSun)}
-                    </h2>
-                    <span className="text-xs text-slate-400">{thisWeekSessions.length} session{thisWeekSessions.length !== 1 ? 's' : ''}</span>
-                  </div>
-                  {thisWeekSessions.length === 0 ? (
-                    <p className="text-sm text-slate-400 bg-white rounded-lg border border-slate-200 p-4">Aucune session prévue cette semaine.</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {thisWeekSessions.sort((a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime()).map(s => {
-                        const regParts = s.participants.filter(p => p.status === 'registered')
-                        const calendarUrl = buildCalendarUrl(s)
-                        return (
-                          <div key={s.classID} className="bg-white rounded-lg border border-blue-100 p-4">
-                            <div className="flex items-start justify-between gap-4 mb-2">
-                              <div>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-semibold text-slate-900 text-sm">{s.title}</span>
-                                  <span className={`text-[11px] px-1.5 py-0.5 rounded font-medium ${statusColors[s.status] ?? 'bg-slate-100'}`}>{statusLabels[s.status] ?? s.status}</span>
-                                  <span className="text-xs text-slate-400">{s.language}</span>
-                                </div>
-                                <p className="text-xs text-slate-500 mt-0.5">
-                                  {new Date(s.datetime).toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: '2-digit' })} · {new Date(s.datetime).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} · {s.calendar}
-                                </p>
-                              </div>
-                              <div className="flex items-center gap-2 flex-shrink-0">
-                                <div className="text-right mr-2">
-                                  <div className="text-lg font-bold text-slate-900">{regParts.length}</div>
-                                  <div className="text-xs text-slate-400">inscrits</div>
-                                </div>
-                                <a href={calendarUrl} target="_blank" rel="noopener noreferrer"
-                                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors whitespace-nowrap">
-                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-                                  </svg>
-                                  Google Meet
-                                </a>
-                              </div>
-                            </div>
-                            {regParts.length > 0 && (
-                              <div className="mt-2 pt-2 border-t border-blue-50">
-                                <p className="text-xs font-semibold text-slate-500 mb-1.5">Participants inscrits</p>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {regParts.map((p, i) => (
-                                    <span key={i} className="inline-flex items-center gap-1 text-xs bg-blue-50 text-slate-700 px-2 py-0.5 rounded-full">
-                                      <span className="font-medium">{p.firstName} {p.lastName}</span>
-                                      {p.hotelName && <span className="text-slate-400">· {p.hotelName}</span>}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
+                  <h2 className="text-sm font-bold text-slate-700 mb-3">
+                    Cette semaine — {fmtWeekLabel(thisMon)} → {fmtWeekLabel(thisSun)}
+                    <span className="font-normal text-slate-400 ml-2">{thisWeekSessions.length} session{thisWeekSessions.length !== 1 ? 's' : ''}</span>
+                  </h2>
+                  {thisWeekSessions.length === 0
+                    ? <p className="text-sm text-slate-400">Aucune session prévue cette semaine.</p>
+                    : <div className="space-y-3">{renderSessionList([...thisWeekSessions].sort((a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime()), true)}</div>
+                  }
                 </div>
               </div>
             )
