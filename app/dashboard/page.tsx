@@ -60,10 +60,11 @@ export default function DashboardPage() {
 
   useEffect(() => { loadAll() }, [loadAll])
 
-  // Tickets sans 1ère réponse depuis > 2h
-  // threadCount <= 1 = seul le message client existe, aucune réponse agent
+  // Tickets sans 1ère réponse depuis > 2h — Open et Escalated uniquement
   const noFirstReply = tickets.filter(t =>
-    t.threadCount <= 1 && hoursAgo(t.createdAt) > 2
+    (t.zohoStatus === 'Open' || t.zohoStatus === 'Escalated') &&
+    t.threadCount <= 1 &&
+    hoursAgo(t.createdAt) > 2
   )
 
   const pendingEscalations = escalations.filter(e => e.status !== 'resolved')
