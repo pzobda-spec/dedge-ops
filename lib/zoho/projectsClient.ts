@@ -85,6 +85,7 @@ export interface OnboardingProject {
   pms: string | null
   csmName: string | null
   accountCRMName: string | null
+  clientType: string | null   // e.g. 'Groupe' | 'Individuel' — from custom field 'Type'
   isOverdue: boolean
   isBlocked: boolean
 }
@@ -195,6 +196,9 @@ function mapProject(raw: RawProject): OnboardingProject {
 
   const csmName = getCustomField(cf, 'CSM') ?? null
 
+  const clientTypeRaw = getCustomField(cf, 'Type') ?? getCustomField(cf, 'Groupe') ?? getCustomField(cf, 'Client type') ?? null
+  const clientType = clientTypeRaw
+
   const accountRaw = getCustomField(cf, 'Account')
   let accountCRMName: string | null = null
   if (accountRaw && accountRaw.includes(' - ')) {
@@ -221,6 +225,7 @@ function mapProject(raw: RawProject): OnboardingProject {
     pms,
     csmName,
     accountCRMName,
+    clientType,
     isOverdue,
     isBlocked,
   }
