@@ -15,43 +15,55 @@ interface PeriodStats {
   topSubjects: { name: string; count: number }[]
 }
 
-async function fetchPeriodStats(startISO: string, endISO: string, label: string): Promise<PeriodStats> {
-  const createdTimeRange = `${startISO},${endISO}`
+// Zoho /tickets ne supporte pas createdTimeRange — on pagine newest-first et on
+// s'arrête dès qu'on dépasse la borne inférieure.
+async function fetchTicketsInRange(from: Date, to: Date) {
+  const fromMs = from.getTime()
+  const toMs = to.getTime()
+  const result: Awaited<ReturnType<typeof fetchTickets>>['data'] = []
+  let offset = 0
 
-  // Paginate through all tickets created in the period
-  // Zoho Desk caps the from+limit offset — stop at 500 tickets to avoid API errors
-  const allRaw = []
-  let from = 0
-  const MAX_TICKETS = 500
-  while (allRaw.length < MAX_TICKETS) {
+  while (true) {
     let page
     try {
       const res = await fetchTickets({
         limit: PAGE_SIZE,
-        from,
+        from: offset,
         departmentId: SUPPORT_DEPT_ID,
         sortBy: 'createdTime',
-        createdTimeRange,
       })
       page = res.data ?? []
     } catch (err) {
-      if (from === 0) throw err  // première page : erreur réelle
-      break                      // pages suivantes : offset trop élevé
+      if (offset === 0) throw err
+      break
     }
-    allRaw.push(...page)
-    if (page.length < PAGE_SIZE) break
-    from += PAGE_SIZE
+
+    if (page.length === 0) break
+
+    let pastWindow = false
+    for (const ticket of page) {
+      const ts = new Date(ticket.createdTime).getTime()
+      if (ts < fromMs) { pastWindow = true; break }
+      if (ts <= toMs) result.push(ticket)
+    }
+
+    if (pastWindow || page.length < PAGE_SIZE) break
+    offset += PAGE_SIZE
   }
+
+  return result
+}
+
+async function fetchPeriodStats(from: Date, to: Date, label: string): Promise<PeriodStats> {
+  const allRaw = await fetchTicketsInRange(from, to)
 
   const opened = allRaw.length
   const closedTickets = allRaw.filter(t => CLOSED_STATUSES.has(t.status))
   const closed = closedTickets.length
 
-  // FCR ≈ closed tickets with ≤ 2 threads (1 client message + 1 agent response)
   const fcrCount = closedTickets.filter(t => (Number(t.threadCount) || 0) <= 2).length
   const fcr = closed > 0 ? Math.round((fcrCount / closed) * 100) : 0
 
-  // Top subjects by category
   const subjectCounts: Record<string, number> = {}
   for (const t of allRaw) {
     const subject = t.category || 'Autre'
@@ -77,17 +89,13 @@ export async function GET(req: NextRequest) {
     if (monthParam && /^\d{4}-\d{2}$/.test(monthParam)) {
       ;[year, month] = monthParam.split('-').map(Number)
     } else {
-      // Default to M-1
       const d = new Date(now.getFullYear(), now.getMonth() - 1, 1)
       year = d.getFullYear()
       month = d.getMonth() + 1
     }
 
-    // Current period
     const startCurrent = new Date(year, month - 1, 1)
     const endCurrent = new Date(year, month, 0, 23, 59, 59, 999)
-
-    // Same month last year
     const startYoY = new Date(year - 1, month - 1, 1)
     const endYoY = new Date(year - 1, month, 0, 23, 59, 59, 999)
 
@@ -96,8 +104,8 @@ export async function GET(req: NextRequest) {
     const labelYoY = `${monthNames[month - 1]} ${year - 1}`
 
     const [current, yoy] = await Promise.all([
-      fetchPeriodStats(startCurrent.toISOString(), endCurrent.toISOString(), labelCurrent),
-      fetchPeriodStats(startYoY.toISOString(), endYoY.toISOString(), labelYoY),
+      fetchPeriodStats(startCurrent, endCurrent, labelCurrent),
+      fetchPeriodStats(startYoY, endYoY, labelYoY),
     ])
 
     return NextResponse.json({ current, yoy })

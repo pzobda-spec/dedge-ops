@@ -19,14 +19,15 @@ export interface PeriodMetrics {
   topCategories: { name: string; count: number }[]
 }
 
-async function computePeriod(from: Date, to: Date, label: string): Promise<PeriodMetrics> {
-  const createdTimeRange = `${from.toISOString()},${to.toISOString()}`
-  console.log('[analytics] computePeriod', { label, createdTimeRange })
-
-  const allRaw: Awaited<ReturnType<typeof fetchTickets>>['data'] = []
+// Zoho /tickets ne supporte pas createdTimeRange — on pagine newest-first et on
+// s'arrête dès qu'on dépasse la borne inférieure.
+async function fetchTicketsInRange(from: Date, to: Date): Promise<Awaited<ReturnType<typeof fetchTickets>>['data']> {
+  const fromMs = from.getTime()
+  const toMs = to.getTime()
+  const result: Awaited<ReturnType<typeof fetchTickets>>['data'] = []
   let offset = 0
-  const MAX_TICKETS = 500
-  while (allRaw.length < MAX_TICKETS) {
+
+  while (true) {
     let page
     try {
       const res = await fetchTickets({
@@ -34,19 +35,32 @@ async function computePeriod(from: Date, to: Date, label: string): Promise<Perio
         from: offset,
         departmentId: SUPPORT_DEPT_ID,
         sortBy: 'createdTime',
-        createdTimeRange,
       })
       page = res.data ?? []
     } catch (err) {
-      if (offset === 0) throw err  // première page : l'erreur est réelle, on la propage
-      break                        // pages suivantes : offset trop élevé, on s'arrête
+      if (offset === 0) throw err  // erreur réelle sur la première page
+      break                        // offset trop élevé sur les pages suivantes
     }
-    allRaw.push(...page)
-    if (page.length < PAGE_SIZE) break
+
+    if (page.length === 0) break
+
+    let pastWindow = false
+    for (const ticket of page) {
+      const ts = new Date(ticket.createdTime).getTime()
+      if (ts < fromMs) { pastWindow = true; break }
+      if (ts <= toMs) result.push(ticket)
+    }
+
+    if (pastWindow || page.length < PAGE_SIZE) break
     offset += PAGE_SIZE
   }
 
-  console.log('[analytics] fetched', allRaw.length, 'tickets for', label)
+  return result
+}
+
+async function computePeriod(from: Date, to: Date, label: string): Promise<PeriodMetrics> {
+  const allRaw = await fetchTicketsInRange(from, to)
+
   const opened = allRaw.length
   const closedTickets = allRaw.filter(t => CLOSED_STATUSES.has(t.status))
   const closed = closedTickets.length
@@ -55,17 +69,17 @@ async function computePeriod(from: Date, to: Date, label: string): Promise<Perio
   const fcrCount = closedTickets.filter(t => (Number(t.threadCount) || 0) <= 2).length
   const fcr = closed > 0 ? Math.round((fcrCount / closed) * 100) : 0
 
-  // Resolution time from closedTime - createdTime (hours)
+  // Resolution time: closedTime - createdTime (hours)
   const rtSamples = closedTickets
     .filter(t => t.closedTime)
     .map(t => (new Date(t.closedTime!).getTime() - new Date(t.createdTime).getTime()) / 3_600_000)
-    .filter(h => h > 0 && h < 8_760) // discard outliers > 1 year
+    .filter(h => h > 0 && h < 8_760)
   const avgResolutionHours =
     rtSamples.length > 0
       ? Math.round((rtSamples.reduce((a, b) => a + b, 0) / rtSamples.length) * 10) / 10
       : null
 
-  // First reply time via responseTime field (ms) — Zoho may or may not populate this
+  // First reply time via responseTime field (ms)
   const frtSamples = allRaw
     .map(t => (t as unknown as Record<string, unknown>).responseTime)
     .filter((v): v is number => typeof v === 'number' && v > 0)
