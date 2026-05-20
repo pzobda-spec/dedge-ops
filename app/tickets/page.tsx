@@ -103,11 +103,9 @@ const RISK_RAILS = [
 function TriageCard({ ticket }: { ticket: ZohoMappedTicket }) {
   const band = riskBand(ticket.riskScore)
   return (
-    <Link
-      href={`/tickets/${ticket.zohoInternalId}`}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="block bg-white rounded-lg border border-slate-200 p-3 shadow-sm hover:border-slate-300 hover:shadow transition-all relative overflow-hidden"
+    <div
+      onClick={() => window.open(`/tickets/${ticket.zohoInternalId}`, '_blank')}
+      className="block bg-white rounded-lg border border-slate-200 p-3 shadow-sm hover:border-slate-300 hover:shadow transition-all relative overflow-hidden cursor-pointer"
     >
       <span
         className="absolute left-0 top-0 bottom-0 w-0.5"
@@ -161,66 +159,69 @@ function TriageCard({ ticket }: { ticket: ZohoMappedTicket }) {
           </a>
         </div>
       </div>
-    </Link>
+    </div>
   )
 }
 
 // ─── Carte board ───────────────────────────────────────────────────────────────
 
 function TicketCard({ ticket }: { ticket: ZohoMappedTicket }) {
+  const internalUrl = `/tickets/${ticket.zohoInternalId}`
+  const zohoUrl = `https://support.loungeup.com/agent/loungeup/loungeup-support-team/tickets/details/${ticket.zohoInternalId}`
   return (
-    <Link href={`/tickets/${ticket.zohoInternalId}`} target="_blank" rel="noopener noreferrer">
-      <div className="bg-white rounded-lg border border-slate-200 p-3 shadow-sm hover:border-slate-300 hover:shadow transition-all cursor-pointer">
-        <div className="flex items-center justify-between mb-1.5">
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs font-mono text-slate-400">#{ticket.externalId}</span>
-            <a
-              href={`https://support.loungeup.com/agent/loungeup/loungeup-support-team/tickets/details/${ticket.zohoInternalId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={e => e.stopPropagation()}
-              className="text-slate-300 hover:text-blue-500 transition-colors"
-              title="Ouvrir dans Zoho Desk"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                <polyline points="15 3 21 3 21 9"/>
-                <line x1="10" y1="14" x2="21" y2="3"/>
-              </svg>
-            </a>
-          </div>
-          <RiskScore score={ticket.riskScore} />
+    <div
+      onClick={() => window.open(internalUrl, '_blank')}
+      className="bg-white rounded-lg border border-slate-200 p-3 shadow-sm hover:border-slate-300 hover:shadow transition-all cursor-pointer"
+    >
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-mono text-slate-400">#{ticket.externalId}</span>
+          <a
+            href={zohoUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            className="text-slate-300 hover:text-blue-500 transition-colors"
+            title="Ouvrir dans Zoho Desk"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+              <polyline points="15 3 21 3 21 9"/>
+              <line x1="10" y1="14" x2="21" y2="3"/>
+            </svg>
+          </a>
         </div>
-
-        <p className="text-sm font-medium text-slate-900 line-clamp-2 mb-2 leading-snug">
-          {ticket.subject}
-        </p>
-
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span className="text-xs text-slate-600 truncate max-w-[100px]">{ticket.clientName}</span>
-            {ticket.segment && (
-              <Badge
-                label={ticket.segment}
-                variant={ticket.segment.toLowerCase() as 'strategic' | 'gold' | 'silver' | 'bronze'}
-              />
-            )}
-          </div>
-          {ticket.productArea && ticket.productArea !== 'Autre' && (
-            <span className="text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 flex-shrink-0">
-              {ticket.productArea}
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
-          <span className="text-xs text-slate-400">{formatHoursAgo(ticket.lastClientMessageAt)}</span>
-          {ticket.assigneeName && (
-            <span className="text-xs text-slate-400 truncate max-w-[90px]">{ticket.assigneeName}</span>
-          )}
-        </div>
+        <RiskScore score={ticket.riskScore} />
       </div>
-    </Link>
+
+      <p className="text-sm font-medium text-slate-900 line-clamp-2 mb-2 leading-snug">
+        {ticket.subject}
+      </p>
+
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-xs text-slate-600 truncate max-w-[100px]">{ticket.clientName}</span>
+          {ticket.segment && (
+            <Badge
+              label={ticket.segment}
+              variant={ticket.segment.toLowerCase() as 'strategic' | 'gold' | 'silver' | 'bronze'}
+            />
+          )}
+        </div>
+        {ticket.productArea && ticket.productArea !== 'Autre' && (
+          <span className="text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 flex-shrink-0">
+            {ticket.productArea}
+          </span>
+        )}
+      </div>
+
+      <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+        <span className="text-xs text-slate-400">{formatHoursAgo(ticket.lastClientMessageAt)}</span>
+        {ticket.assigneeName && (
+          <span className="text-xs text-slate-400 truncate max-w-[90px]">{ticket.assigneeName}</span>
+        )}
+      </div>
+    </div>
   )
 }
 
