@@ -723,8 +723,8 @@ export default function TicketsPage() {
   return (
     <div className={view === 'inbox' ? 'h-screen flex flex-col overflow-hidden' : 'min-h-screen'}>
       {/* Header */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
-        <div>
+      <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between flex-shrink-0 flex-wrap gap-3">
+        <div className="min-w-0">
           <h1 className="text-xl font-semibold text-slate-900">Tickets</h1>
           <p className="text-sm text-slate-500 mt-0.5 flex items-center gap-2">
             {loading
@@ -736,7 +736,7 @@ export default function TicketsPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           {/* Toggle vue */}
           <div className="flex rounded-md border border-slate-200 overflow-hidden">
             <button
