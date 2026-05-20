@@ -28,7 +28,6 @@ async function fetchTicketsCreatedInRange(from: Date, to: Date) {
       const res = await fetchTickets({
         limit: PAGE_SIZE,
         from: offset,
-        departmentId: SUPPORT_DEPT_ID,
         sortBy: 'createdTime',
       })
       page = res.data ?? []
