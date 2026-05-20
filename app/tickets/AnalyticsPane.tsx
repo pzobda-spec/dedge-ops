@@ -51,17 +51,19 @@ function prevMonthPreset() {
   const m = now.getMonth() // 0-indexed current month
   const prevStart = new Date(y, m - 1, 1)
   const prevEnd = new Date(y, m, 0)
-  const yoyStart = new Date(y - 1, m - 1, 1)
-  const yoyEnd = new Date(y - 1, m, 0)
+  const prev2Start = new Date(y, m - 2, 1)
+  const prev2End = new Date(y, m - 1, 0)
   const mIdx = m - 1 < 0 ? 11 : m - 1
   const mY = m - 1 < 0 ? y - 1 : y
+  const m2Idx = m - 2 < 0 ? 12 + (m - 2) : m - 2
+  const m2Y = m - 2 < 0 ? y - 1 : y
   return {
     from: toDateStr(prevStart),
     to: toDateStr(prevEnd),
     label: `${MONTH_NAMES[mIdx]} ${mY}`,
-    compareFrom: toDateStr(yoyStart),
-    compareTo: toDateStr(yoyEnd),
-    compareLabel: `${MONTH_NAMES[mIdx]} ${mY - 1}`,
+    compareFrom: toDateStr(prev2Start),
+    compareTo: toDateStr(prev2End),
+    compareLabel: `${MONTH_NAMES[m2Idx]} ${m2Y}`,
   }
 }
 
@@ -241,7 +243,7 @@ export default function AnalyticsPane() {
             <span className="text-sm font-bold">All Hands mensuel</span>
           </div>
           <p className={`text-xs ${from === allHands.from && to === allHands.to ? 'text-violet-200' : 'text-slate-500'}`}>
-            {allHands.label} vs {allHands.compareLabel} · comparaison YoY
+            {allHands.label} vs {allHands.compareLabel} · comparaison MoM
           </p>
         </button>
       </div>
