@@ -34,9 +34,9 @@ async function fetchPeriodStats(startISO: string, endISO: string, label: string)
         createdTimeRange,
       })
       page = res.data ?? []
-    } catch {
-      // Zoho may return 422/400 when offset exceeds their internal limit — treat as end of data
-      break
+    } catch (err) {
+      if (from === 0) throw err  // première page : erreur réelle
+      break                      // pages suivantes : offset trop élevé
     }
     allRaw.push(...page)
     if (page.length < PAGE_SIZE) break

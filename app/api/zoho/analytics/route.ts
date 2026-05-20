@@ -21,6 +21,7 @@ export interface PeriodMetrics {
 
 async function computePeriod(from: Date, to: Date, label: string): Promise<PeriodMetrics> {
   const createdTimeRange = `${from.toISOString()},${to.toISOString()}`
+  console.log('[analytics] computePeriod', { label, createdTimeRange })
 
   const allRaw: Awaited<ReturnType<typeof fetchTickets>>['data'] = []
   let offset = 0
@@ -36,14 +37,16 @@ async function computePeriod(from: Date, to: Date, label: string): Promise<Perio
         createdTimeRange,
       })
       page = res.data ?? []
-    } catch {
-      break
+    } catch (err) {
+      if (offset === 0) throw err  // première page : l'erreur est réelle, on la propage
+      break                        // pages suivantes : offset trop élevé, on s'arrête
     }
     allRaw.push(...page)
     if (page.length < PAGE_SIZE) break
     offset += PAGE_SIZE
   }
 
+  console.log('[analytics] fetched', allRaw.length, 'tickets for', label)
   const opened = allRaw.length
   const closedTickets = allRaw.filter(t => CLOSED_STATUSES.has(t.status))
   const closed = closedTickets.length
@@ -116,7 +119,8 @@ export async function GET(req: NextRequest) {
     const [primary, comparison] = await Promise.all([primaryPromise, comparisonPromise])
     return NextResponse.json({ primary, comparison })
   } catch (err) {
-    console.error('[zoho/analytics]', err)
-    return NextResponse.json({ error: 'Erreur lors du calcul des analytics' }, { status: 500 })
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[zoho/analytics]', msg)
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
