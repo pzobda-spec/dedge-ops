@@ -665,6 +665,7 @@ export default function TicketsPage() {
   const [filterProduct, setFilterProduct] = useState('')
   const [filterPriority, setFilterPriority] = useState('')
   const [filterSearch, setFilterSearch] = useState('')
+  const [filterUndefined, setFilterUndefined] = useState(false)
   const [sortBy, setSortBy] = useState('riskScore')
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
 
@@ -711,6 +712,7 @@ export default function TicketsPage() {
         t.subject.toLowerCase().includes(searchLower) ||
         t.clientName.toLowerCase().includes(searchLower)
       )) return false
+      if (filterUndefined && !t.subject.startsWith('Undefined — ')) return false
       return true
     })
     .sort((a, b) => {
@@ -860,6 +862,14 @@ export default function TicketsPage() {
                 className="border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white text-slate-700">
                 {sortOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
+            )}
+            {view === 'board' && (
+              <button
+                onClick={() => setFilterUndefined(v => !v)}
+                className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${filterUndefined ? 'bg-amber-100 border-amber-400 text-amber-800 font-medium' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+              >
+                {filterUndefined ? '✕ Undefined' : 'Undefined'}
+              </button>
             )}
           </div>
 

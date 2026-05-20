@@ -37,6 +37,8 @@ export default function DashboardPage() {
   const [projects, setProjects] = useState<OnboardingProject[]>([])
   const [loadingTickets, setLoadingTickets] = useState(true)
   const [loadingOther, setLoadingOther] = useState(true)
+  const [normalizing, setNormalizing] = useState(false)
+  const [normalizeMsg, setNormalizeMsg] = useState<string | null>(null)
 
   const loadAll = useCallback(async () => {
     setLoadingTickets(true)
@@ -168,6 +170,30 @@ export default function DashboardPage() {
           >
             Gérer les bannières GSC ↗
           </a>
+          <button
+            disabled={normalizing}
+            onClick={async () => {
+              setNormalizing(true)
+              setNormalizeMsg(null)
+              try {
+                const res = await fetch('/api/admin/normalize-tickets', { method: 'POST' })
+                const data = await res.json()
+                setNormalizeMsg(data.message ?? data.error ?? 'Terminé.')
+              } catch {
+                setNormalizeMsg('Erreur réseau.')
+              } finally {
+                setNormalizing(false)
+              }
+            }}
+            className="px-4 py-2 bg-white text-slate-700 border border-slate-300 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {normalizing ? (
+              <><span className="w-3 h-3 border border-slate-400 border-t-slate-700 rounded-full animate-spin" />Normalisation…</>
+            ) : 'Normaliser les tickets'}
+          </button>
+          {normalizeMsg && (
+            <span className="text-xs text-slate-500">{normalizeMsg}</span>
+          )}
         </div>
 
         {/* Main content */}
