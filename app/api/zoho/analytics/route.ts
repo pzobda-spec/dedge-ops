@@ -64,12 +64,18 @@ async function fetchTicketsCreatedInRange(
   return result
 }
 
-async function computePeriod(from: Date, to: Date, label: string): Promise<PeriodMetrics> {
+interface DebugInfo {
+  fetchedCount: number
+  firstCreatedTime: string | null
+  lastCreatedTime: string | null
+  withClosedTime: number
+  closedInPeriodCount: number
+}
+
+async function computePeriod(from: Date, to: Date, label: string, debug = false): Promise<PeriodMetrics & { _debug?: DebugInfo }> {
   const fromMs = from.getTime()
   const toMs = to.getTime()
 
-  // Fenêtre élargie : on remonte LOOKBACK_DAYS avant le début de la période pour
-  // attraper les tickets créés avant mais fermés pendant la période.
   const extendedFrom = new Date(fromMs - LOOKBACK_DAYS * 24 * 3600 * 1000)
   const fetched = await fetchTicketsCreatedInRange(extendedFrom, to)
 
@@ -126,7 +132,17 @@ async function computePeriod(from: Date, to: Date, label: string): Promise<Perio
     .slice(0, 5)
     .map(([name, count]) => ({ name, count }))
 
-  return { label, from: from.toISOString(), to: to.toISOString(), opened, closed, fcr, avgFirstReplyHours, avgResolutionHours, topCategories }
+  const result: PeriodMetrics & { _debug?: DebugInfo } = { label, from: from.toISOString(), to: to.toISOString(), opened, closed, fcr, avgFirstReplyHours, avgResolutionHours, topCategories }
+  if (debug) {
+    result._debug = {
+      fetchedCount: fetched.length,
+      firstCreatedTime: fetched[0]?.createdTime ?? null,
+      lastCreatedTime: fetched[fetched.length - 1]?.createdTime ?? null,
+      withClosedTime: fetched.filter(t => !!t.closedTime).length,
+      closedInPeriodCount: closed,
+    }
+  }
+  return result
 }
 
 export async function GET(req: NextRequest) {
@@ -146,13 +162,15 @@ export async function GET(req: NextRequest) {
     const from = new Date(`${fromParam}T00:00:00.000Z`)
     const to = new Date(`${toParam}T23:59:59.999Z`)
 
-    const primaryPromise = computePeriod(from, to, label || `${fromParam} → ${toParam}`)
+    const isDebug = sp.get('debug') === '1'
+    const primaryPromise = computePeriod(from, to, label || `${fromParam} → ${toParam}`, isDebug)
     const comparisonPromise =
       compareFromParam && compareToParam
         ? computePeriod(
             new Date(`${compareFromParam}T00:00:00.000Z`),
             new Date(`${compareToParam}T23:59:59.999Z`),
             compareLabel || `${compareFromParam} → ${compareToParam}`,
+            isDebug,
           )
         : Promise.resolve(null)
 
