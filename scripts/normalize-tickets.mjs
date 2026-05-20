@@ -132,6 +132,10 @@ function buildClient(ticket) {
   return 'Undefined'
 }
 
+function isNormalized(subject) {
+  return / — /.test(subject)
+}
+
 function isRingover(ticket) {
   const client = buildClient(ticket)
   return client.toLowerCase().includes('ringover') ||
@@ -226,6 +230,10 @@ async function main() {
   const toProcess = allTickets.filter(t => {
     if (doneSet.has(t.id) || skippedSet.has(t.id)) return false
     if (isRingover(t)) {
+      skippedSet.add(t.id)
+      return false
+    }
+    if (isNormalized(t.subject ?? '')) {
       skippedSet.add(t.id)
       return false
     }
