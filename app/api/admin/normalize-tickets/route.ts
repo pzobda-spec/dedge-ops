@@ -26,8 +26,19 @@ function buildClient(ticket: Awaited<ReturnType<typeof fetchTickets>>['data'][nu
   return 'Undefined'
 }
 
+const EMAIL_PREFIX = /^(fwd?|re|tr|fw)\s*:/i
+const GREETING = /^(bonjour|hello|hi|no subject|\(no subject\))/i
+
 function isNormalized(subject: string) {
-  return / — /.test(subject)
+  if (!subject) return false
+  if (/ — /.test(subject)) return true
+  if (!/ - /.test(subject)) return false
+  const first = subject.split(' - ')[0].trim()
+  if (EMAIL_PREFIX.test(first)) return false
+  if (GREETING.test(first)) return false
+  if (first.length > 55) return false
+  if (/^[a-zàâéèêëîïôùûü]/.test(first)) return false
+  return true
 }
 
 function isRingover(ticket: Awaited<ReturnType<typeof fetchTickets>>['data'][number]) {

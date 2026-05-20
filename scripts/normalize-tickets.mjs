@@ -132,8 +132,21 @@ function buildClient(ticket) {
   return 'Undefined'
 }
 
+const EMAIL_PREFIX = /^(fwd?|re|tr|fw)\s*:/i
+const GREETING     = /^(bonjour|hello|hi|no subject|\(no subject\))/i
+
 function isNormalized(subject) {
-  return / — /.test(subject)
+  if (!subject) return false
+  // AI-normalized (em dash)
+  if (/ — /.test(subject)) return true
+  // User-normalized: "CLIENT - description" or "CLIENT - Type - description"
+  if (!/ - /.test(subject)) return false
+  const first = subject.split(' - ')[0].trim()
+  if (EMAIL_PREFIX.test(first)) return false   // Fwd:, RE:, TR:…
+  if (GREETING.test(first)) return false        // Bonjour, Hello…
+  if (first.length > 55) return false           // Too long = a sentence, not a client name
+  if (/^[a-zàâéèêëîïôùûü]/.test(first)) return false  // Starts lowercase = not a proper name
+  return true
 }
 
 function isRingover(ticket) {
