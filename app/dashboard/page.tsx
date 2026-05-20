@@ -160,6 +160,14 @@ export default function DashboardPage() {
           <Link href="/reporting" className="px-4 py-2 bg-white text-slate-700 border border-slate-300 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors">
             Générer reporting
           </Link>
+          <a
+            href="https://dash.getsitecontrol.com/sites/44891/widgets?folderId=13236"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-4 py-2 bg-white text-slate-700 border border-slate-300 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors flex items-center gap-1.5"
+          >
+            Gérer les bannières GSC ↗
+          </a>
         </div>
 
         {/* Main content */}
