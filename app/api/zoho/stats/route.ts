@@ -15,8 +15,7 @@ interface PeriodStats {
   topSubjects: { name: string; count: number }[]
 }
 
-// Zoho /tickets ne supporte pas createdTimeRange — on pagine newest-first et on
-// s'arrête dès qu'on dépasse la borne inférieure.
+// Zoho /tickets ne supporte pas createdTimeRange et trie en ASCENDANT (oldest first).
 async function fetchTicketsInRange(from: Date, to: Date) {
   const fromMs = from.getTime()
   const toMs = to.getTime()
@@ -43,8 +42,8 @@ async function fetchTicketsInRange(from: Date, to: Date) {
     let pastWindow = false
     for (const ticket of page) {
       const ts = new Date(ticket.createdTime).getTime()
-      if (ts < fromMs) { pastWindow = true; break }
-      if (ts <= toMs) result.push(ticket)
+      if (ts > toMs) { pastWindow = true; break }
+      if (ts >= fromMs) result.push(ticket)
     }
 
     if (pastWindow || page.length < PAGE_SIZE) break

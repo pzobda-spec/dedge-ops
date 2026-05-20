@@ -19,8 +19,9 @@ export interface PeriodMetrics {
   topCategories: { name: string; count: number }[]
 }
 
-// Zoho /tickets ne supporte pas createdTimeRange — on pagine newest-first et on
-// s'arrête dès qu'on dépasse la borne inférieure.
+// Zoho /tickets ne supporte pas createdTimeRange et trie en ASCENDANT (oldest first).
+// On pagine depuis l'offset 0, on saute les tickets antérieurs à `from`, on collecte
+// ceux entre `from` et `to`, et on s'arrête dès qu'on dépasse `to`.
 async function fetchTicketsInRange(from: Date, to: Date): Promise<Awaited<ReturnType<typeof fetchTickets>>['data']> {
   const fromMs = from.getTime()
   const toMs = to.getTime()
@@ -38,8 +39,8 @@ async function fetchTicketsInRange(from: Date, to: Date): Promise<Awaited<Return
       })
       page = res.data ?? []
     } catch (err) {
-      if (offset === 0) throw err  // erreur réelle sur la première page
-      break                        // offset trop élevé sur les pages suivantes
+      if (offset === 0) throw err
+      break
     }
 
     if (page.length === 0) break
@@ -47,8 +48,9 @@ async function fetchTicketsInRange(from: Date, to: Date): Promise<Awaited<Return
     let pastWindow = false
     for (const ticket of page) {
       const ts = new Date(ticket.createdTime).getTime()
-      if (ts < fromMs) { pastWindow = true; break }
-      if (ts <= toMs) result.push(ticket)
+      if (ts > toMs) { pastWindow = true; break }   // dépassé la borne supérieure → stop
+      if (ts >= fromMs) result.push(ticket)          // dans la fenêtre
+      // ts < fromMs → avant la fenêtre, on saute
     }
 
     if (pastWindow || page.length < PAGE_SIZE) break
