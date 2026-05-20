@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic'
 const SUPPORT_DEPT_ID = '5861000000007061'
 const PAGE_SIZE = 100
 const CLOSED_STATUSES = new Set(['Closed', 'Solved', 'Fermé'])
+const LOOKBACK_DAYS = 90
 
 interface PeriodStats {
   label: string
@@ -15,8 +16,7 @@ interface PeriodStats {
   topSubjects: { name: string; count: number }[]
 }
 
-// Zoho /tickets ne supporte pas createdTimeRange et trie en ASCENDANT (oldest first).
-async function fetchTicketsInRange(from: Date, to: Date) {
+async function fetchTicketsCreatedInRange(from: Date, to: Date) {
   const fromMs = from.getTime()
   const toMs = to.getTime()
   const result: Awaited<ReturnType<typeof fetchTickets>>['data'] = []
@@ -54,17 +54,30 @@ async function fetchTicketsInRange(from: Date, to: Date) {
 }
 
 async function fetchPeriodStats(from: Date, to: Date, label: string): Promise<PeriodStats> {
-  const allRaw = await fetchTicketsInRange(from, to)
+  const fromMs = from.getTime()
+  const toMs = to.getTime()
 
-  const opened = allRaw.length
-  const closedTickets = allRaw.filter(t => CLOSED_STATUSES.has(t.status))
-  const closed = closedTickets.length
+  const extendedFrom = new Date(fromMs - LOOKBACK_DAYS * 24 * 3600 * 1000)
+  const fetched = await fetchTicketsCreatedInRange(extendedFrom, to)
 
-  const fcrCount = closedTickets.filter(t => (Number(t.threadCount) || 0) <= 2).length
+  const createdInPeriod = fetched.filter(t => {
+    const ts = new Date(t.createdTime).getTime()
+    return ts >= fromMs && ts <= toMs
+  })
+  const opened = createdInPeriod.length
+
+  const closedInPeriod = fetched.filter(t => {
+    if (!t.closedTime) return false
+    const ts = new Date(t.closedTime).getTime()
+    return ts >= fromMs && ts <= toMs
+  })
+  const closed = closedInPeriod.length
+
+  const fcrCount = closedInPeriod.filter(t => (Number(t.threadCount) || 0) <= 2).length
   const fcr = closed > 0 ? Math.round((fcrCount / closed) * 100) : 0
 
   const subjectCounts: Record<string, number> = {}
-  for (const t of allRaw) {
+  for (const t of createdInPeriod) {
     const subject = t.category || 'Autre'
     subjectCounts[subject] = (subjectCounts[subject] ?? 0) + 1
   }
@@ -79,7 +92,7 @@ async function fetchPeriodStats(from: Date, to: Date, label: string): Promise<Pe
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = req.nextUrl
-    const monthParam = searchParams.get('month') // YYYY-MM
+    const monthParam = searchParams.get('month')
 
     const now = new Date()
     let year: number
@@ -99,12 +112,10 @@ export async function GET(req: NextRequest) {
     const endYoY = new Date(year - 1, month, 0, 23, 59, 59, 999)
 
     const monthNames = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre']
-    const labelCurrent = `${monthNames[month - 1]} ${year}`
-    const labelYoY = `${monthNames[month - 1]} ${year - 1}`
 
     const [current, yoy] = await Promise.all([
-      fetchPeriodStats(startCurrent, endCurrent, labelCurrent),
-      fetchPeriodStats(startYoY, endYoY, labelYoY),
+      fetchPeriodStats(startCurrent, endCurrent, `${monthNames[month - 1]} ${year}`),
+      fetchPeriodStats(startYoY, endYoY, `${monthNames[month - 1]} ${year - 1}`),
     ])
 
     return NextResponse.json({ current, yoy })

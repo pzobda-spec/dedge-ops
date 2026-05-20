@@ -7,22 +7,27 @@ const SUPPORT_DEPT_ID = '5861000000007061'
 const PAGE_SIZE = 100
 const CLOSED_STATUSES = new Set(['Closed', 'Solved', 'Fermé'])
 
+// Fenêtre étendue avant la période pour capturer les tickets créés avant mais fermés pendant
+const LOOKBACK_DAYS = 90
+
 export interface PeriodMetrics {
   label: string
   from: string
   to: string
-  opened: number
-  closed: number
+  opened: number   // créés dans la période
+  closed: number   // closedTime dans la période
   fcr: number
   avgFirstReplyHours: number | null
   avgResolutionHours: number | null
   topCategories: { name: string; count: number }[]
 }
 
-// Zoho /tickets ne supporte pas createdTimeRange et trie en ASCENDANT (oldest first).
-// On pagine depuis l'offset 0, on saute les tickets antérieurs à `from`, on collecte
-// ceux entre `from` et `to`, et on s'arrête dès qu'on dépasse `to`.
-async function fetchTicketsInRange(from: Date, to: Date): Promise<Awaited<ReturnType<typeof fetchTickets>>['data']> {
+// Zoho /tickets trie en ASCENDANT (oldest first), pas de filtre date côté API.
+// On pagine depuis l'offset 0, on saute jusqu'à `from`, on collecte jusqu'à `to`, on stoppe après.
+async function fetchTicketsCreatedInRange(
+  from: Date,
+  to: Date,
+): Promise<Awaited<ReturnType<typeof fetchTickets>>['data']> {
   const fromMs = from.getTime()
   const toMs = to.getTime()
   const result: Awaited<ReturnType<typeof fetchTickets>>['data'] = []
@@ -48,9 +53,8 @@ async function fetchTicketsInRange(from: Date, to: Date): Promise<Awaited<Return
     let pastWindow = false
     for (const ticket of page) {
       const ts = new Date(ticket.createdTime).getTime()
-      if (ts > toMs) { pastWindow = true; break }   // dépassé la borne supérieure → stop
-      if (ts >= fromMs) result.push(ticket)          // dans la fenêtre
-      // ts < fromMs → avant la fenêtre, on saute
+      if (ts > toMs) { pastWindow = true; break }
+      if (ts >= fromMs) result.push(ticket)
     }
 
     if (pastWindow || page.length < PAGE_SIZE) break
@@ -61,18 +65,34 @@ async function fetchTicketsInRange(from: Date, to: Date): Promise<Awaited<Return
 }
 
 async function computePeriod(from: Date, to: Date, label: string): Promise<PeriodMetrics> {
-  const allRaw = await fetchTicketsInRange(from, to)
+  const fromMs = from.getTime()
+  const toMs = to.getTime()
 
-  const opened = allRaw.length
-  const closedTickets = allRaw.filter(t => CLOSED_STATUSES.has(t.status))
-  const closed = closedTickets.length
+  // Fenêtre élargie : on remonte LOOKBACK_DAYS avant le début de la période pour
+  // attraper les tickets créés avant mais fermés pendant la période.
+  const extendedFrom = new Date(fromMs - LOOKBACK_DAYS * 24 * 3600 * 1000)
+  const fetched = await fetchTicketsCreatedInRange(extendedFrom, to)
 
-  // FCR: closed with ≤ 2 threads
-  const fcrCount = closedTickets.filter(t => (Number(t.threadCount) || 0) <= 2).length
+  // Nouveaux : créés dans la période réelle
+  const opened = fetched.filter(t => {
+    const ts = new Date(t.createdTime).getTime()
+    return ts >= fromMs && ts <= toMs
+  }).length
+
+  // Fermés : closedTime tombe dans la période (peu importe la date de création)
+  const closedInPeriod = fetched.filter(t => {
+    if (!t.closedTime) return false
+    const ts = new Date(t.closedTime).getTime()
+    return ts >= fromMs && ts <= toMs
+  })
+  const closed = closedInPeriod.length
+
+  // FCR : fermés dans la période avec ≤ 2 échanges
+  const fcrCount = closedInPeriod.filter(t => (Number(t.threadCount) || 0) <= 2).length
   const fcr = closed > 0 ? Math.round((fcrCount / closed) * 100) : 0
 
-  // Resolution time: closedTime - createdTime (hours)
-  const rtSamples = closedTickets
+  // Résolution : closedTime - createdTime pour tickets fermés dans la période
+  const rtSamples = closedInPeriod
     .filter(t => t.closedTime)
     .map(t => (new Date(t.closedTime!).getTime() - new Date(t.createdTime).getTime()) / 3_600_000)
     .filter(h => h > 0 && h < 8_760)
@@ -81,8 +101,12 @@ async function computePeriod(from: Date, to: Date, label: string): Promise<Perio
       ? Math.round((rtSamples.reduce((a, b) => a + b, 0) / rtSamples.length) * 10) / 10
       : null
 
-  // First reply time via responseTime field (ms)
-  const frtSamples = allRaw
+  // 1ère réponse : champ responseTime (ms) — peut ne pas être renvoyé par Zoho en bulk
+  const createdInPeriod = fetched.filter(t => {
+    const ts = new Date(t.createdTime).getTime()
+    return ts >= fromMs && ts <= toMs
+  })
+  const frtSamples = createdInPeriod
     .map(t => (t as unknown as Record<string, unknown>).responseTime)
     .filter((v): v is number => typeof v === 'number' && v > 0)
     .map(ms => ms / 3_600_000)
@@ -91,9 +115,9 @@ async function computePeriod(from: Date, to: Date, label: string): Promise<Perio
       ? Math.round((frtSamples.reduce((a, b) => a + b, 0) / frtSamples.length) * 10) / 10
       : null
 
-  // Top 5 categories
+  // Top 5 catégories sur les tickets créés dans la période
   const catCounts: Record<string, number> = {}
-  for (const t of allRaw) {
+  for (const t of createdInPeriod) {
     const cat = t.category || 'Autre'
     catCounts[cat] = (catCounts[cat] ?? 0) + 1
   }
