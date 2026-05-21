@@ -201,15 +201,32 @@ export default function DashboardPage() {
             onClick={async () => {
               setFixingUndefined(true)
               setFixUndefinedMsg(null)
-              try {
-                const res = await fetch('/api/admin/fix-undefined-tickets', { method: 'POST' })
-                const data = await res.json()
-                setFixUndefinedMsg(data.message ?? data.error ?? 'Terminé.')
-              } catch {
-                setFixUndefinedMsg('Erreur réseau.')
-              } finally {
-                setFixingUndefined(false)
+              let totalProcessed = 0
+              let round = 0
+              const MAX_RETRIES = 3
+              const MAX_ROUNDS = 100
+              while (round < MAX_ROUNDS) {
+                let data: { processed?: number; hasMore?: boolean; message?: string; error?: string } | null = null
+                let retries = 0
+                while (retries < MAX_RETRIES) {
+                  try {
+                    const res = await fetch('/api/admin/fix-undefined-tickets', { method: 'POST' })
+                    data = await res.json()
+                    break
+                  } catch {
+                    retries++
+                    if (retries >= MAX_RETRIES) { data = null; break }
+                    await new Promise(r => setTimeout(r, 3000 * retries))
+                  }
+                }
+                if (!data) { setFixUndefinedMsg(`${totalProcessed} corrigés — erreur réseau après ${MAX_RETRIES} tentatives.`); break }
+                if (data.error) { setFixUndefinedMsg(`${totalProcessed} corrigés — erreur : ${data.error}`); break }
+                totalProcessed += data.processed ?? 0
+                round++
+                setFixUndefinedMsg(`En cours… ${totalProcessed} corrigés (passe ${round})`)
+                if (!data.hasMore) { setFixUndefinedMsg(`Terminé — ${totalProcessed} ticket(s) corrigés.`); break }
               }
+              setFixingUndefined(false)
             }}
             className="px-4 py-2 bg-white text-slate-700 border border-slate-300 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors disabled:opacity-50 flex items-center gap-1.5"
           >
