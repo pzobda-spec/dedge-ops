@@ -66,12 +66,26 @@ async function getPortalSlug(): Promise<string> {
   if (res.ok) {
     const data = await res.json()
     const portal = (data.portals ?? [])[0]
-    // link.project.url = "https://projects.zoho.eu/portal/{slug}/"
+    console.log('[getPortalSlug] portal keys:', portal ? Object.keys(portal) : 'none')
+    console.log('[getPortalSlug] link.project.url:', portal?.link?.project?.url)
+    // Try web URL first (link.project.url may be REST API URL with numeric ID — skip those)
     const url: string = portal?.link?.project?.url ?? ''
-    const match = url.match(/\/portal\/([^/]+)\//)
-    if (match) { portalSlug = match[1]; return portalSlug }
+    const match = url.match(/\/portal\/([^/]+)/)
+    if (match && !/^\d+$/.test(match[1])) {
+      portalSlug = match[1]
+      console.log('[getPortalSlug] slug from URL:', portalSlug)
+      return portalSlug
+    }
+    // Fall back to portal name → slug (e.g. "D-EDGE" → "d-edge")
+    const name: string = portal?.name ?? portal?.portal_name ?? ''
+    console.log('[getPortalSlug] portal name:', name)
+    if (name) {
+      portalSlug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      console.log('[getPortalSlug] slug from name:', portalSlug)
+      return portalSlug
+    }
   }
-  // Fallback to numeric PORTAL_ID
+  console.warn('[getPortalSlug] falling back to numeric PORTAL_ID')
   portalSlug = PORTAL_ID
   return portalSlug
 }
