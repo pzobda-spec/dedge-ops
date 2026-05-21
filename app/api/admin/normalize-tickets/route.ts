@@ -87,9 +87,18 @@ ${batch.map(t => `id=${t.id} | client="${t.client}" | subject="${t.subject}"`).j
 
 export async function POST(_req: NextRequest) {
   try {
-    // Fetch recent tickets without department filter
-    const allData = await fetchTickets({ limit: MAX_TICKETS, sortBy: 'createdTime' })
-    const tickets = (allData.data ?? []).filter(t => !isNormalized(t.subject ?? '') && !isRingover(t))
+    // Fetch up to MAX_TICKETS tickets paginated (Zoho max 100/page)
+    const PAGE_SIZE = 100
+    const allRaw: Awaited<ReturnType<typeof fetchTickets>>['data'] = []
+    let from = 0
+    while (allRaw.length < MAX_TICKETS) {
+      const page = await fetchTickets({ limit: PAGE_SIZE, from, sortBy: 'createdTime' })
+      const rows = page.data ?? []
+      allRaw.push(...rows)
+      if (rows.length < PAGE_SIZE) break
+      from += PAGE_SIZE
+    }
+    const tickets = allRaw.slice(0, MAX_TICKETS).filter(t => !isNormalized(t.subject ?? '') && !isRingover(t))
 
     if (tickets.length === 0) {
       return NextResponse.json({ processed: 0, skipped: 0, message: 'Tous les tickets récents sont déjà normalisés.' })

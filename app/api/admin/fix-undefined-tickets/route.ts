@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 290
 
 const BATCH_SIZE = 10
-const MAX_TICKETS = 500
+const PAGE_SIZE = 100
 
 const CLASSIFICATIONS = ['Question', 'Problem', 'Task', 'Feature'] as const
 const CATEGORIES = [
@@ -58,9 +58,16 @@ ${batch.map(t => `id=${t.id} | client="${t.accountName}" | subject="${t.subject}
 
 export async function POST() {
   try {
-    // Fetch all tickets (no dept filter — same as normalize route)
-    const allData = await fetchTickets({ limit: MAX_TICKETS, sortBy: 'createdTime' })
-    const allTickets = allData.data ?? []
+    // Fetch all tickets paginated (Zoho max 100/page)
+    const allTickets: Awaited<ReturnType<typeof fetchTickets>>['data'] = []
+    let from = 0
+    while (true) {
+      const page = await fetchTickets({ limit: PAGE_SIZE, from, sortBy: 'createdTime' })
+      const rows = page.data ?? []
+      allTickets.push(...rows)
+      if (rows.length < PAGE_SIZE) break
+      from += PAGE_SIZE
+    }
 
     // Keep only "Undefined — …" tickets that have an accountId
     const candidates = allTickets.filter(t =>
