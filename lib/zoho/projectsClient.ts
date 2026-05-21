@@ -54,6 +54,28 @@ async function projectsFetch<T>(path: string): Promise<T> {
   return res.json()
 }
 
+// Portal slug (used in web URLs) — fetched once and cached
+let portalSlug: string | null = null
+
+async function getPortalSlug(): Promise<string> {
+  if (portalSlug) return portalSlug
+  const token = await getAccessToken()
+  const res = await fetch('https://projectsapi.zoho.eu/restapi/portals/', {
+    headers: { Authorization: `Zoho-oauthtoken ${token}`, 'Content-Type': 'application/json' },
+  })
+  if (res.ok) {
+    const data = await res.json()
+    const portal = (data.portals ?? [])[0]
+    // link.project.url = "https://projects.zoho.eu/portal/{slug}/"
+    const url: string = portal?.link?.project?.url ?? ''
+    const match = url.match(/\/portal\/([^/]+)\//)
+    if (match) { portalSlug = match[1]; return portalSlug }
+  }
+  // Fallback to numeric PORTAL_ID
+  portalSlug = PORTAL_ID
+  return portalSlug
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -168,7 +190,7 @@ function getCustomField(fields: RawCustomField[] | undefined, key: string): stri
   return undefined
 }
 
-function mapProject(raw: RawProject): OnboardingProject {
+function mapProject(raw: RawProject, portalSlug: string): OnboardingProject {
   const statusLabel = raw.custom_status_name ?? raw.status ?? ''
   const status = mapStatus(statusLabel)
 
@@ -231,7 +253,7 @@ function mapProject(raw: RawProject): OnboardingProject {
     clientType,
     isOverdue,
     isBlocked,
-    projectUrl: `https://projects.zoho.eu/portal/${PORTAL_ID}/projects/${id}/`,
+    projectUrl: `https://projects.zoho.eu/portal/${portalSlug}/projects/${id}/`,
   }
 }
 
@@ -245,6 +267,7 @@ export async function fetchProjects(options?: {
 }): Promise<OnboardingProject[]> {
   const range = options?.range ?? 100
   const all: OnboardingProject[] = []
+  const slug = await getPortalSlug()
 
   let index = 1
   while (true) {
@@ -257,7 +280,7 @@ export async function fetchProjects(options?: {
     const data = await projectsFetch<ProjectsListResponse>(`/projects/?${query}`)
     const batch = data.projects ?? []
 
-    all.push(...batch.map(mapProject))
+    all.push(...batch.map(raw => mapProject(raw, slug)))
 
     if (batch.length < range) break
     index += range
