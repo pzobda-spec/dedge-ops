@@ -8,6 +8,7 @@ export const maxDuration = 290
 
 const BATCH_SIZE = 10
 const PAGE_SIZE = 100
+const MAX_PER_RUN = 50  // tickets traités par appel (cliquer plusieurs fois si nécessaire)
 
 const CLASSIFICATIONS = ['Question', 'Problem', 'Task', 'Feature'] as const
 const CATEGORIES = [
@@ -58,23 +59,25 @@ ${batch.map(t => `id=${t.id} | client="${t.accountName}" | subject="${t.subject}
 
 export async function POST() {
   try {
-    // Fetch all tickets paginated (Zoho max 100/page)
-    const allTickets: Awaited<ReturnType<typeof fetchTickets>>['data'] = []
+    // Fetch pages until we have MAX_PER_RUN candidates (early exit to avoid timeout)
+    const candidates: Awaited<ReturnType<typeof fetchTickets>>['data'] = []
     let from = 0
-    while (true) {
+    while (candidates.length < MAX_PER_RUN) {
       const page = await fetchTickets({ limit: PAGE_SIZE, from, sortBy: 'createdTime' })
       const rows = page.data ?? []
-      allTickets.push(...rows)
+      for (const t of rows) {
+        if (
+          (t.subject ?? '').startsWith('Undefined — ') &&
+          t.accountId &&
+          !t.account?.accountName
+        ) {
+          candidates.push(t)
+          if (candidates.length >= MAX_PER_RUN) break
+        }
+      }
       if (rows.length < PAGE_SIZE) break
       from += PAGE_SIZE
     }
-
-    // Keep only "Undefined — …" tickets that have an accountId
-    const candidates = allTickets.filter(t =>
-      (t.subject ?? '').startsWith('Undefined — ') &&
-      t.accountId &&
-      !t.account?.accountName  // already has embedded account → not Undefined by this bug
-    )
 
     if (candidates.length === 0) {
       return NextResponse.json({ processed: 0, message: 'Aucun ticket "Undefined" avec accountId trouvé.' })
@@ -140,12 +143,13 @@ export async function POST() {
 
     revalidateTag('zoho-tickets')
 
+    const hasMore = candidates.length >= MAX_PER_RUN
     return NextResponse.json({
       processed,
-      checked: candidates.length,
       resolved: enriched.length,
       errors,
-      message: `${processed} ticket(s) corrigés${errors ? `, ${errors} erreur(s)` : ''} (${candidates.length} "Undefined" trouvés, ${enriched.length} avec compte résolu).`,
+      hasMore,
+      message: `${processed} ticket(s) corrigés${errors ? `, ${errors} erreur(s)` : ''}${hasMore ? ' — relance pour continuer.' : ' — terminé.'}`,
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
