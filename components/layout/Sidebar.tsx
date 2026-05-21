@@ -3,17 +3,66 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
-const navItems = [
+interface NavChild {
+  href: string
+  label: string
+}
+
+interface NavItem {
+  href: string
+  label: string
+  children?: NavChild[]
+}
+
+const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Tableau de bord' },
-  { href: '/tickets', label: 'Tickets' },
-  { href: '/escalations', label: 'Escalades' },
-  { href: '/trainings', label: 'Formations' },
-  { href: '/onboarding', label: 'Onboarding' },
+  {
+    href: '/tickets',
+    label: 'Tickets',
+    children: [
+      { href: '/tickets', label: 'Tickets' },
+      { href: '/tickets/analytics', label: 'Analytiques' },
+    ],
+  },
+  {
+    href: '/escalations',
+    label: 'Escalades',
+    children: [
+      { href: '/escalations', label: 'Escalades' },
+      { href: '/escalations/analytics', label: 'Analytiques' },
+    ],
+  },
+  {
+    href: '/trainings',
+    label: 'Formations',
+    children: [
+      { href: '/trainings', label: 'Sessions' },
+      { href: '/trainings/analytics', label: 'Analytiques' },
+    ],
+  },
+  {
+    href: '/onboarding',
+    label: 'Onboarding',
+    children: [
+      { href: '/onboarding', label: 'Dashboard' },
+      { href: '/onboarding/board', label: 'Board' },
+      { href: '/onboarding/charge', label: 'Charge' },
+    ],
+  },
   { href: '/knowledge', label: 'Base de connaissances' },
   { href: '/reporting', label: 'Reporting' },
   { href: '/assistant', label: 'Assistant IA' },
   { href: '/settings', label: 'Paramètres' },
 ]
+
+function isParentActive(href: string, pathname: string): boolean {
+  if (href === '/dashboard') return pathname === href
+  return pathname === href || pathname.startsWith(href + '/')
+}
+
+function isChildActive(href: string, pathname: string): boolean {
+  return pathname === href
+}
 
 export default function Sidebar() {
   const pathname = usePathname()
@@ -27,21 +76,42 @@ export default function Sidebar() {
       <nav className="flex-1 py-4 overflow-y-auto">
         <ul className="space-y-0.5 px-2">
           {navItems.map(item => {
-            const isActive =
-              pathname === item.href ||
-              (item.href !== '/dashboard' && pathname.startsWith(item.href))
+            const parentActive = isParentActive(item.href, pathname)
             return (
               <li key={item.href}>
                 <Link
                   href={item.href}
                   className={`flex items-center px-3 py-2 rounded-md text-sm transition-colors ${
-                    isActive
+                    parentActive && !item.children
                       ? 'bg-slate-700 text-white font-medium'
+                      : parentActive && item.children
+                      ? 'text-white font-medium'
                       : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                   }`}
                 >
                   {item.label}
                 </Link>
+                {item.children && parentActive && (
+                  <ul className="mt-0.5 mb-1 space-y-0.5 pl-3">
+                    {item.children.map(child => {
+                      const childActive = isChildActive(child.href, pathname)
+                      return (
+                        <li key={child.href}>
+                          <Link
+                            href={child.href}
+                            className={`flex items-center px-3 py-1.5 rounded-md text-xs transition-colors ${
+                              childActive
+                                ? 'bg-slate-700 text-white font-medium'
+                                : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                            }`}
+                          >
+                            {child.label}
+                          </Link>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
               </li>
             )
           })}
