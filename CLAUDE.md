@@ -1,87 +1,63 @@
 # D-EDGE Ops Cockpit — CLAUDE.md
 
-## Contexte projet
+## Contexte
 
-Cockpit opérationnel personnel pour Pablo Zobda (Support/Education/Onboarding manager, D-EDGE CRM).
-Couche applicative au-dessus de Zoho Desk, Linear, Acuity, Zoho Projects, Zoho CRM.
-
-Stack : Next.js 14 App Router · TypeScript · Tailwind CSS · Supabase
+Cockpit opérationnel pour Pablo Zobda (Support/Education/Onboarding manager, D-EDGE CRM).
+Stack : Next.js 14 App Router · TypeScript · Tailwind · Supabase
 
 ---
 
 ## Règles absolues
 
-- **Ne jamais écrire dans Zoho CRM** (lecture seule — "Non n'écris rien dans zoho stp")
-- Toutes les pages et labels UI en **français**
-- Dates affichées au format **DD/MM/YYYY**
-- Pas d'authentification dans l'app
+- **Ne jamais écrire dans Zoho CRM** (lecture seule)
+- UI en **français**, dates en **DD/MM/YYYY**
+- Pas d'authentification
 
 ---
 
-## Architecture clé
+## Architecture
 
 ### Zoho Desk
 - Org ID : `20063299426`
-- Département Support : `5861000000007061` (LOUNGEUP Support team)
-- Département CSM : `5861000019985859` (LoungeUp CSM Team) — NE PAS afficher dans la vue tickets
-- Auth : OAuth refresh token (`accounts.zoho.eu`), scope actuel : `Desk.tickets.ALL Desk.contacts.READ Desk.search.READ Desk.settings.READ`
-- Token Desk : `ZOHO_REFRESH_TOKEN` dans `.env.local`
-- ⚠️ Ne jamais appeler l'endpoint token directement en dehors de l'app — ça invalide le token en cache du serveur
+- Dept Support : `5861000000007061` — Dept CSM `5861000019985859` (ne pas afficher dans tickets)
+- Auth : OAuth refresh token (`accounts.zoho.eu`) · Token : `ZOHO_REFRESH_TOKEN`
+- ⚠️ Ne jamais appeler l'endpoint token hors de l'app (invalide le cache serveur)
 
 ### Zoho CRM
-- Token séparé : `ZOHO_CRM_REFRESH_TOKEN`
-- Lecture seule — segment calculé depuis MRR : Strategic >4000€, Gold ≥750€, Silver ≥200€, Bronze <200€
-- Cache 1h côté serveur (`lib/zoho/accountCache.ts`)
+- Token : `ZOHO_CRM_REFRESH_TOKEN` — lecture seule
+- Segment MRR : Strategic >4000€, Gold ≥750€, Silver ≥200€, Bronze <200€
+- Cache 1h : `lib/zoho/accountCache.ts`
 
 ### Linear
-- Workspace : `loungeup`, team : `BUGS`
-- URL issues : `https://linear.app/loungeup/issue/{identifier}/{slug}`
+- Workspace `loungeup`, team `BUGS`
+- URL : `https://linear.app/loungeup/issue/{identifier}/{slug}`
 
 ### Acuity
-- Sessions groupées par `classID`, hôtel depuis le champ formulaire "Company Name"
+- Sessions groupées par `classID`, hôtel via champ "Company Name"
 
 ---
 
-## Segmentation risque (tickets)
+## Score de risque (tickets)
 
-Score 0–100 :
-- Segment : Strategic +40, Gold +30, Silver +15, Bronze +0, inconnu +10
-- Âge basé sur `lastClientMessageAt` : >48h +25, >24h +15, >8h +8
-- Sentiment négatif : +20
-- Priorité urgent/haute : +20/+10
-- Statut réouvert : +10
+Score 0–100 · Segment : Strategic +40, Gold +30, Silver +15, Bronze +0, inconnu +10
+· Âge (`lastClientMessageAt`) : >48h +25, >24h +15, >8h +8 · Sentiment négatif +20
+· Priorité urgent/haute +20/+10 · Statut réouvert +10
 
 ---
 
-## Roadmap
+## Performance
 
-### En cours / fait
-- [x] Vue tickets Support (Zoho Desk, dept `5861000000007061`, filtre Open)
-- [x] Score de risque par ticket
-- [x] Détail ticket + conversations lazy-loaded
-- [x] Réponse directe depuis l'app (Zoho Desk)
-- [x] Actions IA : résumé, réponse client, escalade, fiche KB
-- [x] Création escalade Linear depuis ticket
-- [x] Vue Escalades (kanban Linear team BUGS)
-- [x] Vue Formations (Acuity) + lien Google Calendar
-- [x] Vue Projets (Zoho Projects)
-- [x] Liens externes (icône ↗) vers Zoho Desk et Linear
+API routes cachées via `unstable_cache` (Next.js Data Cache, partagé inter-instances Vercel) :
+- Tickets 2 min · Linear 5 min · Projects 5 min · Acuity 10 min
+- Invalidation par tag aux mutations (reply, update, create, normalize)
+- **TODO perf** : paralléliser la pagination while-loop des tickets et CRM accounts (cold start)
 
-### À faire
+---
 
-- [ ] **Webhook RAG temps réel**
-  - Webhook Zoho Desk → ingestion automatique à la création/fermeture de ticket
-  - Table `ticket_chunks` (Supabase pgvector, `text-embedding-3-small`)
-  - Route : `app/api/webhooks/zoho-desk/route.ts` — auth via `x-zoho-webhook-token`
-  - Ingestion : `lib/rag/ingest.ts::ingestSingleTicket(zohoTicketId)`
-  - Enregistrement : `npx tsx scripts/register-zoho-webhook.ts`
-  - Vars requises : `ZOHO_WEBHOOK_SECRET`, `ZOHO_WEBHOOK_ID`, `NEXT_PUBLIC_APP_URL`
-  - ⚠️ Activer l'extension `pgvector` dans Supabase avant de créer la table
+## Fait / À faire
 
-- [ ] **Page Stats Zoho Desk**
-  - Volume tickets : créés vs fermés sur 7j / 30j
-  - Répartition par statut (Open, Pending, Escalated…)
-  - Top produits/catégories impactés
-  - FCR approché : (total – réouverts) / total
-  - Temps de réponse et résolution moyens (rapports `responseTime` / `resolutionTime`)
-  - Source : endpoint `/tickets` avec filtres date + rapports Zoho Desk (IDs connus)
+**Fait** : tickets Support, score risque, détail + conversations, réponse directe, actions IA, escalades Linear, formations Acuity, projets Zoho, liens externes, board Onboarding (filtre owner + lien projet)
+
+**À faire** :
+- Webhook RAG : `app/api/webhooks/zoho-desk/route.ts`, table `ticket_chunks` (Supabase pgvector `text-embedding-3-small`), `lib/rag/ingest.ts` — vars `ZOHO_WEBHOOK_SECRET/ID`, `NEXT_PUBLIC_APP_URL` — activer pgvector d'abord
+- Stats Zoho Desk : volume 7j/30j, répartition statuts, FCR, temps réponse/résolution

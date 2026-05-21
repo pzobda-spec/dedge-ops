@@ -306,6 +306,7 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [view, setView] = useState<'board' | 'dashboard'>('dashboard')
+  const [ownerFilter, setOwnerFilter] = useState<string>('')
 
   useEffect(() => {
     fetch('/api/zoho/projects')
@@ -325,6 +326,11 @@ export default function OnboardingPage() {
   }, [])
 
   const today = new Date()
+
+  const owners = useMemo(
+    () => [...new Set(projects.map(p => p.ownerShort).filter(Boolean))].sort(),
+    [projects],
+  )
 
   // Board owner workload
   const ownerMap = new Map<string, OnboardingProject[]>()
@@ -396,10 +402,31 @@ export default function OnboardingPage() {
           {/* ── Board ── */}
           {view === 'board' && (
             <div className="p-6 space-y-6">
+              {/* Owner filter */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => setOwnerFilter('')}
+                  className={`px-3 py-1 text-xs rounded-full border transition-colors ${ownerFilter === '' ? 'bg-slate-800 text-white border-slate-800' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+                >
+                  Tous
+                </button>
+                {owners.map(owner => (
+                  <button
+                    key={owner}
+                    onClick={() => setOwnerFilter(ownerFilter === owner ? '' : owner)}
+                    className={`px-3 py-1 text-xs rounded-full border transition-colors ${ownerFilter === owner ? 'bg-slate-800 text-white border-slate-800' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    {owner}
+                  </button>
+                ))}
+              </div>
               <div className="overflow-x-auto">
                 <div className="flex gap-4 min-w-max">
                   {columns.map(col => {
-                    const colProjects = projects.filter(p => p.status === col.status)
+                    const colProjects = projects.filter(p =>
+                      p.status === col.status &&
+                      (ownerFilter === '' || p.ownerShort === ownerFilter)
+                    )
                     return (
                       <div key={col.status} className="w-60 flex-shrink-0">
                         <div className={`rounded-t-lg px-3 py-2 flex items-center justify-between ${columnHeaderColors[col.status]}`}>
@@ -413,7 +440,13 @@ export default function OnboardingPage() {
                             colProjects.map(p => {
                               const border = p.isBlocked ? 'border-2 border-red-400' : 'border border-slate-200'
                               return (
-                                <div key={p.id} className={`bg-white rounded-lg ${border} p-3 shadow-sm`}>
+                                <a
+                                  key={p.id}
+                                  href={p.projectUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={`block bg-white rounded-lg ${border} p-3 shadow-sm hover:shadow-md hover:border-blue-300 transition-all cursor-pointer`}
+                                >
                                   <p className="text-xs font-semibold text-slate-800 line-clamp-2 mb-1">{p.hotelName}</p>
                                   <div className="flex flex-wrap gap-1 mb-2">
                                     {p.product && (
@@ -440,7 +473,7 @@ export default function OnboardingPage() {
                                     <span className="inline-flex items-center text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">{p.ownerShort}</span>
                                     {p.endDate && <span className="text-xs text-slate-400">{formatISODate(p.endDate)}</span>}
                                   </div>
-                                </div>
+                                </a>
                               )
                             })
                           )}

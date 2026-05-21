@@ -88,6 +88,7 @@ export interface OnboardingProject {
   clientType: string | null   // e.g. 'Groupe' | 'Individuel' — from custom field 'Type'
   isOverdue: boolean
   isBlocked: boolean
+  projectUrl: string
 }
 
 // ---------------------------------------------------------------------------
@@ -208,8 +209,10 @@ function mapProject(raw: RawProject): OnboardingProject {
     }
   }
 
+  const id = String(raw.id_string ?? raw.id)
+
   return {
-    id: String(raw.id_string ?? raw.id),
+    id,
     name: raw.name,
     hotelName,
     product: raw.group_name ?? '',
@@ -228,6 +231,7 @@ function mapProject(raw: RawProject): OnboardingProject {
     clientType,
     isOverdue,
     isBlocked,
+    projectUrl: `https://projects.zoho.eu/portal/${PORTAL_ID}/projects/${id}/`,
   }
 }
 
