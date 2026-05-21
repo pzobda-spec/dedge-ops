@@ -4,6 +4,9 @@ import { useEffect, useMemo, useState } from 'react'
 import type { OnboardingProject, ProjectStatus } from '@/lib/zoho/projectsClient'
 import { formatDate } from '@/lib/utils/dates'
 
+const IMPLEMENTATION_GROUP = ['Lan', 'Thuy-Tien', 'Dalia', 'Winli']
+const EXCLUDED_OWNERS = ['Bruno', 'Admin', 'Dominic', 'Lauren']
+
 const columns: { status: ProjectStatus; label: string }[] = [
   { status: 'not_started',    label: 'Non démarré' },
   { status: 'in_progress',    label: 'En cours' },
@@ -47,11 +50,17 @@ function formatISODate(iso: string | null): string {
   return formatDate(iso)
 }
 
+function resolveOwnerFilter(filter: string, availableOwners: string[]): string[] {
+  if (filter === 'Tous') return availableOwners
+  if (filter === 'Implémentation') return IMPLEMENTATION_GROUP.filter(o => availableOwners.includes(o))
+  return [filter]
+}
+
 export default function OnboardingBoardPage() {
   const [projects, setProjects] = useState<OnboardingProject[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [ownerFilter, setOwnerFilter] = useState('')
+  const [ownerFilter, setOwnerFilter] = useState<string>('Tous')
 
   useEffect(() => {
     fetch('/api/zoho/projects')
@@ -60,9 +69,29 @@ export default function OnboardingBoardPage() {
       .catch(err => { console.error(err); setError('Impossible de charger les projets.'); setLoading(false) })
   }, [])
 
-  const owners = useMemo(
-    () => [...new Set(projects.map(p => p.ownerShort).filter(Boolean))].sort(),
+  const baseProjects = useMemo(
+    () => projects.filter(p => !EXCLUDED_OWNERS.includes(p.ownerShort ?? '')),
     [projects],
+  )
+
+  const availableOwners = useMemo(
+    () => [...new Set(baseProjects.map(p => p.ownerShort).filter(Boolean))].sort() as string[],
+    [baseProjects],
+  )
+
+  const ownerPills = useMemo(
+    () => ['Tous', 'Implémentation', ...availableOwners],
+    [availableOwners],
+  )
+
+  const resolvedOwners = useMemo(
+    () => resolveOwnerFilter(ownerFilter, availableOwners),
+    [ownerFilter, availableOwners],
+  )
+
+  const visibleProjects = useMemo(
+    () => ownerFilter === 'Tous' ? baseProjects : baseProjects.filter(p => resolvedOwners.includes(p.ownerShort ?? '')),
+    [baseProjects, ownerFilter, resolvedOwners],
   )
 
   return (
@@ -70,7 +99,7 @@ export default function OnboardingBoardPage() {
       <div className="bg-white border-b border-slate-200 px-6 py-4">
         <h1 className="text-xl font-semibold text-slate-900">Board</h1>
         {!loading && !error && (
-          <p className="text-sm text-slate-500 mt-0.5">{projects.length} projets · {new Set(projects.map(p => p.hotelName)).size} comptes</p>
+          <p className="text-sm text-slate-500 mt-0.5">{baseProjects.length} projets · {new Set(baseProjects.map(p => p.hotelName)).size} comptes</p>
         )}
         {loading && <p className="text-sm text-slate-400 mt-0.5">Chargement…</p>}
         {error && <p className="text-sm text-red-500 mt-0.5">{error}</p>}
@@ -84,17 +113,17 @@ export default function OnboardingBoardPage() {
         <div className="p-6 space-y-4">
           {/* Owner filter */}
           <div className="flex items-center gap-2 flex-wrap">
-            <button
-              onClick={() => setOwnerFilter('')}
-              className={`px-3 py-1 text-xs rounded-full border transition-colors ${ownerFilter === '' ? 'bg-slate-800 text-white border-slate-800' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}
-            >
-              Tous
-            </button>
-            {owners.map(owner => (
+            {ownerPills.map(owner => (
               <button
                 key={owner}
-                onClick={() => setOwnerFilter(ownerFilter === owner ? '' : owner)}
-                className={`px-3 py-1 text-xs rounded-full border transition-colors ${ownerFilter === owner ? 'bg-slate-800 text-white border-slate-800' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+                onClick={() => setOwnerFilter(ownerFilter === owner && owner !== 'Tous' ? 'Tous' : owner)}
+                className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                  ownerFilter === owner
+                    ? 'bg-slate-800 text-white border-slate-800'
+                    : owner === 'Implémentation'
+                    ? 'border-indigo-300 text-indigo-700 bg-indigo-50 hover:bg-indigo-100'
+                    : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+                }`}
               >
                 {owner}
               </button>
@@ -105,10 +134,7 @@ export default function OnboardingBoardPage() {
           <div className="overflow-x-auto">
             <div className="flex gap-4 min-w-max">
               {columns.map(col => {
-                const colProjects = projects.filter(p =>
-                  p.status === col.status &&
-                  (ownerFilter === '' || p.ownerShort === ownerFilter)
-                )
+                const colProjects = visibleProjects.filter(p => p.status === col.status)
                 return (
                   <div key={col.status} className="w-60 flex-shrink-0">
                     <div className={`rounded-t-lg px-3 py-2 flex items-center justify-between ${columnHeaderColors[col.status]}`}>

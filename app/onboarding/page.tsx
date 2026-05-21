@@ -17,6 +17,7 @@ const columns: { status: ProjectStatus; label: string }[] = [
 
 const CAPACITY_THRESHOLD = 50
 const IMPLEMENTATION_GROUP = ['Lan', 'Thuy-Tien', 'Dalia', 'Winli']
+const EXCLUDED_OWNERS = ['Bruno', 'Admin', 'Dominic', 'Lauren']
 
 const productColors: Record<string, string> = {
   'LoungeUp':    'bg-blue-100 text-blue-700',
@@ -54,10 +55,65 @@ function chargeColor(pct: number): { text: string } {
 
 function resolveOwnerFilter(filter: string, availableOwners: string[]): string[] {
   if (filter === 'Tous') return availableOwners
-  if (filter === 'Implémentation') {
-    return IMPLEMENTATION_GROUP.filter(o => availableOwners.includes(o))
-  }
+  if (filter === 'Implémentation') return IMPLEMENTATION_GROUP.filter(o => availableOwners.includes(o))
   return [filter]
+}
+
+// ─── Date filter ──────────────────────────────────────────────────────────────
+
+type DatePreset = 'all' | 'prev_month' | 'curr_month' | 'curr_quarter' | 'custom'
+
+const DATE_PRESETS: { value: DatePreset; label: string }[] = [
+  { value: 'all',          label: 'Tous' },
+  { value: 'prev_month',   label: 'Mois précédent' },
+  { value: 'curr_month',   label: 'Mois en cours' },
+  { value: 'curr_quarter', label: 'Trimestre en cours' },
+  { value: 'custom',       label: 'Personnalisé' },
+]
+
+function computeDateRange(preset: DatePreset, customFrom: string, customTo: string): { from: string; to: string } | null {
+  if (preset === 'all') return null
+  const today = new Date()
+  const y = today.getFullYear()
+  const m = today.getMonth()
+
+  const isoDate = (year: number, month: number, day: number) =>
+    `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  const lastDayOf = (year: number, month: number) => new Date(year, month + 1, 0).getDate()
+
+  if (preset === 'curr_month') {
+    return { from: isoDate(y, m, 1), to: isoDate(y, m, lastDayOf(y, m)) }
+  }
+  if (preset === 'prev_month') {
+    const pm = m === 0 ? 11 : m - 1
+    const py = m === 0 ? y - 1 : y
+    return { from: isoDate(py, pm, 1), to: isoDate(py, pm, lastDayOf(py, pm)) }
+  }
+  if (preset === 'curr_quarter') {
+    const qStart = Math.floor(m / 3) * 3
+    const qEnd = qStart + 2
+    return { from: isoDate(y, qStart, 1), to: isoDate(y, qEnd, lastDayOf(y, qEnd)) }
+  }
+  if (preset === 'custom' && customFrom && customTo) {
+    return { from: customFrom, to: customTo }
+  }
+  return null
+}
+
+function filterByDateRange(ps: OnboardingProject[], range: { from: string; to: string } | null): OnboardingProject[] {
+  if (!range) return ps
+  return ps.filter(p => {
+    const start = p.startDate ?? ''
+    const end = p.endDate ?? ''
+    const startedBeforeRangeEnd = !start || start <= range.to
+    const endedAfterRangeStart = !end || end >= range.from
+    return startedBeforeRangeEnd && endedAfterRangeStart
+  })
+}
+
+function fmtDateRange(range: { from: string; to: string }): string {
+  const fmt = (iso: string) => iso.split('-').reverse().join('/')
+  return `${fmt(range.from)} → ${fmt(range.to)}`
 }
 
 // ─── Satisfaction types ────────────────────────────────────────────────────────
@@ -229,7 +285,11 @@ export default function OnboardingDashboardPage() {
   const [error, setError] = useState<string | null>(null)
   const [satisfaction, setSatisfaction] = useState<SatisfactionRow[]>([])
   const [satisfactionSyncing, setSatisfactionSyncing] = useState(false)
+
   const [activeOwner, setActiveOwner] = useState<string>('Tous')
+  const [datePreset, setDatePreset] = useState<DatePreset>('all')
+  const [customFrom, setCustomFrom] = useState<string>('')
+  const [customTo, setCustomTo] = useState<string>('')
 
   useEffect(() => {
     fetch('/api/zoho/projects')
@@ -261,20 +321,36 @@ export default function OnboardingDashboardPage() {
   const today = new Date()
   const thisMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
 
-  // Available owners from data (for pills + filter resolution)
-  const availableOwners = useMemo(
-    () => [...new Set(projects.map(p => p.ownerShort).filter((o): o is string => Boolean(o)))].sort(),
+  // Base: exclude unwanted owners
+  const baseProjects = useMemo(
+    () => projects.filter(p => !EXCLUDED_OWNERS.includes(p.ownerShort ?? '')),
     [projects],
   )
 
-  // Projects scoped to the active filter
-  const filteredProjects = useMemo(() => {
-    const resolved = resolveOwnerFilter(activeOwner, availableOwners)
-    if (activeOwner === 'Tous') return projects
-    return projects.filter(p => resolved.includes(p.ownerShort ?? ''))
-  }, [projects, activeOwner, availableOwners])
+  // Available owners for pills
+  const availableOwners = useMemo(
+    () => [...new Set(baseProjects.map(p => p.ownerShort).filter((o): o is string => Boolean(o)))].sort(),
+    [baseProjects],
+  )
 
-  // Satisfaction scoped to the active filter
+  // Date range
+  const dateRange = useMemo(
+    () => computeDateRange(datePreset, customFrom, customTo),
+    [datePreset, customFrom, customTo],
+  )
+
+  // Apply date filter first, then owner filter
+  const dateFilteredProjects = useMemo(
+    () => filterByDateRange(baseProjects, dateRange),
+    [baseProjects, dateRange],
+  )
+
+  const filteredProjects = useMemo(() => {
+    if (activeOwner === 'Tous') return dateFilteredProjects
+    const resolved = resolveOwnerFilter(activeOwner, availableOwners)
+    return dateFilteredProjects.filter(p => resolved.includes(p.ownerShort ?? ''))
+  }, [dateFilteredProjects, activeOwner, availableOwners])
+
   const filteredSatisfaction = useMemo(() => {
     if (activeOwner === 'Tous') return satisfaction
     const resolved = resolveOwnerFilter(activeOwner, availableOwners)
@@ -334,13 +410,19 @@ export default function OnboardingDashboardPage() {
   const maxProduct = perProduct[0]?.[1] ?? 1
   const maxTypologie = typologie[0]?.[1] ?? 1
 
-  // Pills: Tous + Implémentation + individual owners
-  const ownerPills = useMemo(() => {
-    const individuals = availableOwners.filter(o => o !== 'Tous')
-    return ['Tous', 'Implémentation', ...individuals]
-  }, [availableOwners])
+  const ownerPills = useMemo(
+    () => ['Tous', 'Implémentation', ...availableOwners],
+    [availableOwners],
+  )
 
-  const isFiltered = activeOwner !== 'Tous'
+  const isFiltered = activeOwner !== 'Tous' || datePreset !== 'all'
+
+  const filterSummaryParts: string[] = []
+  if (activeOwner !== 'Tous') filterSummaryParts.push(activeOwner)
+  if (datePreset !== 'all') {
+    if (datePreset === 'custom' && dateRange) filterSummaryParts.push(fmtDateRange(dateRange))
+    else filterSummaryParts.push(DATE_PRESETS.find(p => p.value === datePreset)?.label ?? '')
+  }
 
   return (
     <div>
@@ -351,7 +433,7 @@ export default function OnboardingDashboardPage() {
         ) : error ? (
           <p className="text-sm text-red-500 mt-0.5">{error}</p>
         ) : (
-          <p className="text-sm text-slate-500 mt-0.5">{projects.length} projets · {new Set(projects.map(p => p.hotelName)).size} comptes</p>
+          <p className="text-sm text-slate-500 mt-0.5">{baseProjects.length} projets · {new Set(baseProjects.map(p => p.hotelName)).size} comptes</p>
         )}
       </div>
 
@@ -360,14 +442,14 @@ export default function OnboardingDashboardPage() {
       ) : error ? (
         <div className="p-12 text-center text-red-500 text-sm">{error}</div>
       ) : (
-        <div className="p-6 space-y-6 max-w-5xl">
+        <div className="p-6 space-y-4 max-w-5xl">
 
           {/* Owner filter pills */}
           <div className="flex items-center gap-2 flex-wrap">
             {ownerPills.map(owner => (
               <button
                 key={owner}
-                onClick={() => setActiveOwner(activeOwner === owner ? 'Tous' : owner)}
+                onClick={() => setActiveOwner(activeOwner === owner && owner !== 'Tous' ? 'Tous' : owner)}
                 className={`px-3 py-1 text-xs rounded-full border transition-colors ${
                   activeOwner === owner
                     ? 'bg-slate-800 text-white border-slate-800'
@@ -381,6 +463,40 @@ export default function OnboardingDashboardPage() {
             ))}
           </div>
 
+          {/* Date filter */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {DATE_PRESETS.map(preset => (
+              <button
+                key={preset.value}
+                onClick={() => setDatePreset(preset.value)}
+                className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                  datePreset === preset.value
+                    ? 'bg-slate-800 text-white border-slate-800'
+                    : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                {preset.label}
+              </button>
+            ))}
+            {datePreset === 'custom' && (
+              <div className="flex items-center gap-1.5 ml-1">
+                <input
+                  type="date"
+                  value={customFrom}
+                  onChange={e => setCustomFrom(e.target.value)}
+                  className="text-xs border border-slate-200 rounded-lg px-2 py-1 text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                <span className="text-xs text-slate-400">→</span>
+                <input
+                  type="date"
+                  value={customTo}
+                  onChange={e => setCustomTo(e.target.value)}
+                  className="text-xs border border-slate-200 rounded-lg px-2 py-1 text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+            )}
+          </div>
+
           {/* KPIs */}
           <div>
             <div className="grid grid-cols-5 gap-3">
@@ -392,9 +508,9 @@ export default function OnboardingDashboardPage() {
             </div>
             {isFiltered && (
               <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
-                <span>Affichage filtré : <span className="font-medium text-slate-700">{activeOwner}</span></span>
+                <span>Affichage filtré : <span className="font-medium text-slate-700">{filterSummaryParts.join(' · ')}</span></span>
                 <button
-                  onClick={() => setActiveOwner('Tous')}
+                  onClick={() => { setActiveOwner('Tous'); setDatePreset('all'); setCustomFrom(''); setCustomTo('') }}
                   className="text-slate-400 hover:text-slate-600 transition-colors"
                 >
                   × Réinitialiser
