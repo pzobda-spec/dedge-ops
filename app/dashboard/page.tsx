@@ -39,6 +39,8 @@ export default function DashboardPage() {
   const [loadingOther, setLoadingOther] = useState(true)
   const [normalizing, setNormalizing] = useState(false)
   const [normalizeMsg, setNormalizeMsg] = useState<string | null>(null)
+  const [fixingUndefined, setFixingUndefined] = useState(false)
+  const [fixUndefinedMsg, setFixUndefinedMsg] = useState<string | null>(null)
 
   const loadAll = useCallback(async () => {
     setLoadingTickets(true)
@@ -193,6 +195,30 @@ export default function DashboardPage() {
           </button>
           {normalizeMsg && (
             <span className="text-xs text-slate-500">{normalizeMsg}</span>
+          )}
+          <button
+            disabled={fixingUndefined}
+            onClick={async () => {
+              setFixingUndefined(true)
+              setFixUndefinedMsg(null)
+              try {
+                const res = await fetch('/api/admin/fix-undefined-tickets', { method: 'POST' })
+                const data = await res.json()
+                setFixUndefinedMsg(data.message ?? data.error ?? 'Terminé.')
+              } catch {
+                setFixUndefinedMsg('Erreur réseau.')
+              } finally {
+                setFixingUndefined(false)
+              }
+            }}
+            className="px-4 py-2 bg-white text-slate-700 border border-slate-300 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {fixingUndefined ? (
+              <><span className="w-3 h-3 border border-slate-400 border-t-slate-700 rounded-full animate-spin" />Correction…</>
+            ) : 'Corriger les "Undefined"'}
+          </button>
+          {fixUndefinedMsg && (
+            <span className="text-xs text-slate-500">{fixUndefinedMsg}</span>
           )}
         </div>
 

@@ -122,8 +122,8 @@ async function fetchAllTickets() {
 // ── Classify with AI (batch) ─────────────────────────────────────────────────
 
 function buildClient(ticket) {
-  const acct = ticket.account?.accountName
-  if (acct) return acct
+  if (ticket.account?.accountName) return ticket.account.accountName
+  if (ticket.contact?.account?.accountName) return ticket.contact.account.accountName
   const c = ticket.contact
   if (c) {
     const full = `${c.firstName || ''} ${c.lastName || ''}`.trim()

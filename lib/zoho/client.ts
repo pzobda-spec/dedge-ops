@@ -88,6 +88,8 @@ export interface ZohoTicket {
   customerResponseTime: string | null
   threadCount?: string | null
   departmentId?: string | null
+  accountId?: string | null
+  contactId?: string | null
   contact: { id: string; firstName: string; lastName: string; email: string; account?: { id: string; accountName: string } | null } | null
   account: { id: string; accountName: string } | null
   assignee: { id: string; firstName: string; lastName: string } | null
@@ -178,4 +180,13 @@ export async function updateTicket(
     method: 'PATCH',
     body: JSON.stringify(fields),
   })
+}
+
+export async function fetchAccount(accountId: string): Promise<{ id: string; accountName: string } | null> {
+  try {
+    const data = await zohoFetch<{ id: string; accountName: string }>(`/accounts/${accountId}`)
+    return data ?? null
+  } catch {
+    return null
+  }
 }
