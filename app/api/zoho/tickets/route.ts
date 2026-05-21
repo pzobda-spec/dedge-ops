@@ -27,7 +27,7 @@ const getTicketsData = unstable_cache(
     const tickets = allRaw
       .filter(raw => !CLOSED_STATUSES.has(raw.status))
       .map(raw => {
-        const clientName = raw.account?.accountName || raw.contact?.lastName || ''
+        const clientName = raw.account?.accountName || raw.contact?.account?.accountName || raw.contact?.lastName || ''
         const crmAccount = matchAccountByName(clientName, crmMap)
         return mapZohoTicket(raw, crmAccount?.segment ?? null)
       })

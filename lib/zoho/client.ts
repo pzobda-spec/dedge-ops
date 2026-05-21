@@ -88,7 +88,7 @@ export interface ZohoTicket {
   customerResponseTime: string | null
   threadCount?: string | null
   departmentId?: string | null
-  contact: { id: string; firstName: string; lastName: string; email: string } | null
+  contact: { id: string; firstName: string; lastName: string; email: string; account?: { id: string; accountName: string } | null } | null
   account: { id: string; accountName: string } | null
   assignee: { id: string; firstName: string; lastName: string } | null
   sentiment: { type: string } | null

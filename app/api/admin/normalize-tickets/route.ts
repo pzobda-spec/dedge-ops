@@ -20,6 +20,7 @@ const CATEGORIES = [
 
 function buildClient(ticket: Awaited<ReturnType<typeof fetchTickets>>['data'][number]) {
   if (ticket.account?.accountName) return ticket.account.accountName
+  if (ticket.contact?.account?.accountName) return ticket.contact.account.accountName
   if (ticket.contact) {
     const full = `${ticket.contact.firstName ?? ''} ${ticket.contact.lastName ?? ''}`.trim()
     if (full) return full
