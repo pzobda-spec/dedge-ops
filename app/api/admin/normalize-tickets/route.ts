@@ -98,7 +98,11 @@ export async function POST(_req: NextRequest) {
       if (rows.length < PAGE_SIZE) break
       from += PAGE_SIZE
     }
-    const tickets = allRaw.slice(0, MAX_TICKETS).filter(t => !isNormalized(t.subject ?? '') && !isRingover(t))
+    const tickets = allRaw.slice(0, MAX_TICKETS).filter(t =>
+      !isNormalized(t.subject ?? '') &&
+      !isRingover(t) &&
+      !(t.classification && t.category)  // déjà classifié manuellement → ne pas toucher
+    )
 
     if (tickets.length === 0) {
       return NextResponse.json({ processed: 0, skipped: 0, message: 'Tous les tickets récents sont déjà normalisés.' })

@@ -82,6 +82,7 @@ export interface ZohoTicket {
   priority: string
   channel: string
   category?: string | null
+  classification?: string | null
   createdTime: string
   modifiedTime: string
   closedTime?: string | null
@@ -117,7 +118,7 @@ export async function fetchTickets(params: {
     ...(params.departmentId && { departmentId: params.departmentId }),
     ...(params.createdTimeRange && { createdTimeRange: params.createdTimeRange }),
     sortBy: params.sortBy ?? 'createdTime',
-    fields: 'id,ticketNumber,subject,status,priority,channel,category,createdTime,modifiedTime,closedTime,customerResponseTime,threadCount,contact,account,accountId,assignee,sentiment,cf',
+    fields: 'id,ticketNumber,subject,status,priority,channel,category,classification,createdTime,modifiedTime,closedTime,customerResponseTime,threadCount,contact,account,accountId,assignee,sentiment,cf',
   })
 
   return zohoFetch<ZohoTicketsResponse>(`/tickets?${query}`)

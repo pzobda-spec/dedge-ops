@@ -71,7 +71,9 @@ export default function DashboardPage() {
     hoursAgo(t.createdAt) > 2
   )
 
-  const pendingEscalations = escalations.filter(e => e.status !== 'resolved')
+  const pendingEscalations = escalations.filter(e =>
+    e.status === 'to_qualify' && hoursAgo(e.updatedAt) > 48
+  )
 
   const weekMs = 7 * 24 * 3600 * 1000
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
@@ -120,7 +122,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Escalades en cours</p>
+            <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Escalades à relancer</p>
             {loadingOther ? (
               <div className="w-4 h-4 border-2 border-slate-300 border-t-orange-500 rounded-full animate-spin mt-2" />
             ) : (
@@ -301,7 +303,7 @@ export default function DashboardPage() {
           {/* Right sidebar */}
           <div className="col-span-1 space-y-4">
             <div>
-              <h2 className="text-base font-semibold text-slate-900 mb-2">Escalades en attente</h2>
+              <h2 className="text-base font-semibold text-slate-900 mb-2">Escalades à relancer</h2>
               <div className="space-y-2">
                 {loadingOther ? (
                   <div className="h-16 bg-white rounded-lg border border-slate-200 animate-pulse" />
