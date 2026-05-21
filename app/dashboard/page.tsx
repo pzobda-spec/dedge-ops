@@ -9,26 +9,81 @@ import type { OnboardingProject } from '@/lib/zoho/projectsClient'
 import Badge from '@/components/ui/Badge'
 import { formatDate } from '@/lib/utils/dates'
 
+const EXCLUDED_OWNERS = ['Bruno', 'Admin', 'Dominic', 'Lauren']
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 function formatTodayFR(): string {
   const d = new Date()
   const days = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi']
-  const months = [
-    'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
-    'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',
-  ]
+  const months = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
   return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`
 }
 
 function hoursAgo(dateStr: string): number {
-  return (Date.now() - new Date(dateStr).getTime()) / 3600000
+  return (Date.now() - new Date(dateStr).getTime()) / 3_600_000
+}
+
+function daysUntil(dateStr: string): number {
+  return Math.ceil((new Date(dateStr).getTime() - Date.now()) / 86_400_000)
 }
 
 function formatWait(dateStr: string): string {
   const h = Math.floor(hoursAgo(dateStr))
   if (h < 1) return '< 1h'
   if (h < 24) return `${h}h`
-  return `${Math.floor(h / 24)}j ${h % 24}h`
+  return `${Math.floor(h / 24)}j`
 }
+
+function isToday(dateStr: string): boolean {
+  const d = new Date(dateStr)
+  const t = new Date()
+  return d.getDate() === t.getDate() && d.getMonth() === t.getMonth() && d.getFullYear() === t.getFullYear()
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function Spinner({ color = 'border-t-slate-600' }: { color?: string }) {
+  return <div className={`w-4 h-4 border-2 border-slate-200 ${color} rounded-full animate-spin`} />
+}
+
+function KpiAlert({
+  label, value, sub, href, loading, severity = 'red',
+}: {
+  label: string
+  value: number
+  sub: string
+  href: string
+  loading: boolean
+  severity?: 'red' | 'orange' | 'neutral'
+}) {
+  const isAlert = value > 0
+  const spinnerColor = severity === 'red' ? 'border-t-red-500' : severity === 'orange' ? 'border-t-orange-400' : 'border-t-slate-500'
+  const valueColor = !isAlert ? 'text-emerald-600' : severity === 'red' ? 'text-red-600' : 'text-orange-500'
+  const borderColor = !isAlert ? 'border-slate-200' : severity === 'red' ? 'border-red-200' : 'border-orange-200'
+  const bg = !isAlert ? 'bg-white' : severity === 'red' ? 'bg-red-50' : 'bg-orange-50'
+
+  return (
+    <Link href={href} className={`block rounded-xl border ${borderColor} ${bg} p-4 hover:shadow-sm transition-shadow`}>
+      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{label}</p>
+      {loading ? (
+        <div className="mt-2"><Spinner color={spinnerColor} /></div>
+      ) : (
+        <p className={`text-3xl font-bold tabular-nums mt-1.5 ${valueColor}`}>{value}</p>
+      )}
+      <p className="text-xs text-slate-400 mt-1">{sub}</p>
+    </Link>
+  )
+}
+
+const PRIORITY_DOT: Record<string, string> = {
+  urgent: 'bg-red-500',
+  high:   'bg-orange-400',
+  medium: 'bg-blue-400',
+  low:    'bg-slate-300',
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
   const [tickets, setTickets] = useState<ZohoMappedTicket[]>([])
@@ -45,17 +100,14 @@ export default function DashboardPage() {
   const loadAll = useCallback(async () => {
     setLoadingTickets(true)
     setLoadingOther(true)
-
     const [ticketsRes, escalationsRes, sessionsRes, projectsRes] = await Promise.allSettled([
       fetch('/api/zoho/tickets').then(r => r.json()),
       fetch('/api/linear/issues').then(r => r.json()),
       fetch('/api/acuity/sessions?period=upcoming').then(r => r.json()),
       fetch('/api/zoho/projects').then(r => r.json()),
     ])
-
     if (ticketsRes.status === 'fulfilled') setTickets(ticketsRes.value.tickets ?? [])
     setLoadingTickets(false)
-
     if (escalationsRes.status === 'fulfilled') setEscalations(escalationsRes.value.issues ?? [])
     if (sessionsRes.status === 'fulfilled') setSessions(sessionsRes.value.sessions ?? [])
     if (projectsRes.status === 'fulfilled') setProjects(projectsRes.value.projects ?? [])
@@ -64,303 +116,374 @@ export default function DashboardPage() {
 
   useEffect(() => { loadAll() }, [loadAll])
 
-  // Tickets sans 1ère réponse depuis > 2h — Open et Escalated uniquement
-  const noFirstReply = tickets.filter(t =>
-    (t.zohoStatus === 'Open' || t.zohoStatus === 'Escalated') &&
-    t.threadCount <= 1 &&
-    hoursAgo(t.createdAt) > 2
-  )
+  // ─── Tickets ────────────────────────────────────────────────────────────────
 
-  const pendingEscalations = escalations.filter(e =>
-    e.status === 'to_qualify' && hoursAgo(e.updatedAt) > 48
-  )
+  const noFirstReply = tickets
+    .filter(t => (t.zohoStatus === 'Open' || t.zohoStatus === 'Escalated') && t.threadCount <= 1 && hoursAgo(t.createdAt) > 2)
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
 
-  const weekMs = 7 * 24 * 3600 * 1000
-  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
-  const weekSessions = sessions.filter(s => {
-    const d = new Date(s.datetime)
-    return d >= todayStart && d <= new Date(todayStart.getTime() + weekMs)
+  const highRisk = tickets.filter(t => (t.riskScore ?? 0) >= 60)
+
+  const noFirstReplyIds = new Set(noFirstReply.map(t => t.id))
+  const attentionList = [
+    ...noFirstReply,
+    ...highRisk.filter(t => !noFirstReplyIds.has(t.id)).sort((a, b) => (b.riskScore ?? 0) - (a.riskScore ?? 0)),
+  ].slice(0, 8)
+
+  // ─── Escalades ──────────────────────────────────────────────────────────────
+
+  const openEscalations = escalations.filter(e => e.status !== 'resolved')
+  const toQualify = escalations.filter(e => e.status === 'to_qualify')
+
+  const escaladePriority = [...openEscalations].sort((a, b) => {
+    const urgency = (e: LinearIssue) => e.status === 'to_qualify' ? 0 : 1
+    return urgency(a) - urgency(b) || new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
   })
 
-  const blockedProjects = projects.filter(p => p.status === 'blocked')
+  // ─── Formations ─────────────────────────────────────────────────────────────
 
-  // Top 5 tickets sans réponse, du plus ancien au plus récent
-  const topTickets = [...noFirstReply]
-    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-    .slice(0, 5)
+  const todaySessions = sessions.filter(s => isToday(s.datetime))
+  const upcomingSessions = sessions.filter(s => {
+    if (isToday(s.datetime)) return false
+    const diff = new Date(s.datetime).getTime() - Date.now()
+    return diff > 0 && diff <= 7 * 86_400_000
+  })
+
+  // ─── Onboarding ─────────────────────────────────────────────────────────────
+
+  const baseProjects = projects.filter(p => !EXCLUDED_OWNERS.includes(p.ownerShort ?? ''))
+  const blockedProjects = baseProjects.filter(p => p.status === 'blocked')
+  const goLiveSoon = baseProjects
+    .filter(p => p.endDate && p.status !== 'live' && daysUntil(p.endDate) >= 0 && daysUntil(p.endDate) <= 7)
+    .sort((a, b) => (a.endDate ?? '').localeCompare(b.endDate ?? ''))
 
   return (
     <div>
-      <div className="bg-white border-b border-slate-200 px-6 py-4">
-        <h1 className="text-xl font-semibold text-slate-900">Bonjour Pablo</h1>
-        <p className="text-sm text-slate-500 mt-0.5 capitalize">{formatTodayFR()}</p>
+      {/* Header */}
+      <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">Bonjour Pablo</h1>
+          <p className="text-sm text-slate-500 mt-0.5 capitalize">{formatTodayFR()}</p>
+        </div>
+        <button
+          onClick={loadAll}
+          className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-1.5"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          Rafraîchir
+        </button>
       </div>
 
-      <div className="p-6 space-y-6">
-        {/* Metric cards */}
-        <div className="grid grid-cols-5 gap-4">
-          <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Sans 1ère réponse</p>
-            {loadingTickets ? (
-              <div className="w-4 h-4 border-2 border-slate-300 border-t-red-600 rounded-full animate-spin mt-2" />
-            ) : (
-              <p className={`text-3xl font-bold mt-2 ${noFirstReply.length > 0 ? 'text-red-600' : 'text-slate-900'}`}>
-                {noFirstReply.length}
-              </p>
-            )}
-            <p className="text-xs text-slate-400 mt-1">&gt; 2h en attente de réponse</p>
-          </div>
+      <div className="p-6 space-y-5">
 
-          <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Tickets ouverts</p>
-            {loadingTickets ? (
-              <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin mt-2" />
-            ) : (
-              <p className="text-3xl font-bold text-slate-900 mt-2">{tickets.length}</p>
-            )}
-            <p className="text-xs text-slate-400 mt-1">Support · tous statuts non fermés</p>
-          </div>
-
-          <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Escalades à relancer</p>
-            {loadingOther ? (
-              <div className="w-4 h-4 border-2 border-slate-300 border-t-orange-500 rounded-full animate-spin mt-2" />
-            ) : (
-              <p className="text-3xl font-bold text-orange-600 mt-2">{pendingEscalations.length}</p>
-            )}
-            <p className="text-xs text-slate-400 mt-1">non résolues</p>
-          </div>
-
-          <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Formations (7j)</p>
-            {loadingOther ? (
-              <div className="w-4 h-4 border-2 border-slate-300 border-t-blue-500 rounded-full animate-spin mt-2" />
-            ) : (
-              <p className="text-3xl font-bold text-blue-600 mt-2">{weekSessions.length}</p>
-            )}
-            <p className="text-xs text-slate-400 mt-1">cette semaine</p>
-          </div>
-
-          <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Onboarding bloqués</p>
-            {loadingOther ? (
-              <div className="w-4 h-4 border-2 border-slate-300 border-t-red-500 rounded-full animate-spin mt-2" />
-            ) : (
-              <p className="text-3xl font-bold text-red-500 mt-2">{blockedProjects.length}</p>
-            )}
-            <p className="text-xs text-slate-400 mt-1">projets bloqués</p>
-          </div>
+        {/* ── KPI strip ── */}
+        <div className="grid grid-cols-4 gap-3">
+          <KpiAlert
+            label="Sans 1ère réponse"
+            value={noFirstReply.length}
+            sub="> 2h · tickets ouverts"
+            href="/tickets"
+            loading={loadingTickets}
+            severity="red"
+          />
+          <KpiAlert
+            label="Tickets à risque"
+            value={highRisk.length}
+            sub="score ≥ 60"
+            href="/tickets"
+            loading={loadingTickets}
+            severity="orange"
+          />
+          <KpiAlert
+            label="Escalades ouvertes"
+            value={openEscalations.length}
+            sub={toQualify.length > 0 ? `dont ${toQualify.length} à qualifier` : 'aucune à qualifier'}
+            href="/escalations"
+            loading={loadingOther}
+            severity="orange"
+          />
+          <KpiAlert
+            label="Onboarding bloqués"
+            value={blockedProjects.length}
+            sub="projets en attente déblocage"
+            href="/onboarding/board"
+            loading={loadingOther}
+            severity="red"
+          />
         </div>
 
-        {/* Quick actions */}
-        <div className="flex gap-3">
-          <Link href="/tickets" className="px-4 py-2 bg-red-600 text-white rounded-md text-sm font-medium hover:bg-red-700 transition-colors">
-            Répondre aux tickets critiques
-          </Link>
-          <Link href="/escalations" className="px-4 py-2 bg-slate-900 text-white rounded-md text-sm font-medium hover:bg-slate-700 transition-colors">
-            Relancer tech
-          </Link>
-          <Link href="/trainings" className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 transition-colors">
-            Préparer formation
-          </Link>
-          <Link href="/reporting" className="px-4 py-2 bg-white text-slate-700 border border-slate-300 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors">
-            Générer reporting
-          </Link>
-          <a
-            href="https://dash.getsitecontrol.com/sites/44891/widgets?folderId=13236"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-4 py-2 bg-white text-slate-700 border border-slate-300 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors flex items-center gap-1.5"
-          >
-            Gérer les bannières GSC ↗
-          </a>
-          <button
-            disabled={normalizing}
-            onClick={async () => {
-              setNormalizing(true)
-              setNormalizeMsg(null)
-              try {
-                const res = await fetch('/api/admin/normalize-tickets', { method: 'POST' })
-                const data = await res.json()
-                setNormalizeMsg(data.message ?? data.error ?? 'Terminé.')
-              } catch {
-                setNormalizeMsg('Erreur réseau.')
-              } finally {
-                setNormalizing(false)
-              }
-            }}
-            className="px-4 py-2 bg-white text-slate-700 border border-slate-300 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors disabled:opacity-50 flex items-center gap-1.5"
-          >
-            {normalizing ? (
-              <><span className="w-3 h-3 border border-slate-400 border-t-slate-700 rounded-full animate-spin" />Normalisation…</>
-            ) : 'Normaliser les tickets'}
-          </button>
-          {normalizeMsg && (
-            <span className="text-xs text-slate-500">{normalizeMsg}</span>
-          )}
-          <button
-            disabled={fixingUndefined}
-            onClick={async () => {
-              setFixingUndefined(true)
-              setFixUndefinedMsg(null)
-              let totalProcessed = 0
-              let round = 0
-              const MAX_RETRIES = 3
-              const MAX_ROUNDS = 100
-              while (round < MAX_ROUNDS) {
-                let data: { processed?: number; hasMore?: boolean; message?: string; error?: string } | null = null
-                let retries = 0
-                while (retries < MAX_RETRIES) {
-                  try {
-                    const res = await fetch('/api/admin/fix-undefined-tickets', { method: 'POST' })
-                    data = await res.json()
-                    break
-                  } catch {
-                    retries++
-                    if (retries >= MAX_RETRIES) { data = null; break }
-                    await new Promise(r => setTimeout(r, 3000 * retries))
-                  }
-                }
-                if (!data) { setFixUndefinedMsg(`${totalProcessed} corrigés — erreur réseau après ${MAX_RETRIES} tentatives.`); break }
-                if (data.error) { setFixUndefinedMsg(`${totalProcessed} corrigés — erreur : ${data.error}`); break }
-                totalProcessed += data.processed ?? 0
-                round++
-                setFixUndefinedMsg(`En cours… ${totalProcessed} corrigés (passe ${round})`)
-                if (!data.hasMore) { setFixUndefinedMsg(`Terminé — ${totalProcessed} ticket(s) corrigés.`); break }
-              }
-              setFixingUndefined(false)
-            }}
-            className="px-4 py-2 bg-white text-slate-700 border border-slate-300 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors disabled:opacity-50 flex items-center gap-1.5"
-          >
-            {fixingUndefined ? (
-              <><span className="w-3 h-3 border border-slate-400 border-t-slate-700 rounded-full animate-spin" />Correction…</>
-            ) : 'Corriger les "Undefined"'}
-          </button>
-          {fixUndefinedMsg && (
-            <span className="text-xs text-slate-500">{fixUndefinedMsg}</span>
-          )}
-        </div>
+        {/* ── Main grid ── */}
+        <div className="grid grid-cols-3 gap-5">
 
-        {/* Main content */}
-        <div className="grid grid-cols-4 gap-6">
-          {/* Left: tickets sans 1ère réponse */}
-          <div className="col-span-3 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-slate-900">
-                Tickets sans 1ère réponse
-                {!loadingTickets && noFirstReply.length > 0 && (
-                  <span className="ml-2 text-sm font-normal text-red-500">
-                    {noFirstReply.length} en attente
+          {/* Left: tickets attention */}
+          <div className="col-span-2 bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="px-5 py-3 border-b border-slate-200 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <h2 className="text-sm font-semibold text-slate-900">Tickets · à traiter</h2>
+                {!loadingTickets && attentionList.length > 0 && (
+                  <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-semibold tabular-nums">
+                    {attentionList.length}
                   </span>
                 )}
-              </h2>
-              {!loadingTickets && noFirstReply.length > 5 && (
-                <Link href="/tickets" className="text-xs text-blue-600 hover:underline">
-                  Voir tous ({noFirstReply.length})
+              </div>
+              {!loadingTickets && (
+                <Link href="/tickets" className="text-xs text-slate-400 hover:text-blue-600 transition-colors">
+                  {tickets.length} tickets ouverts →
                 </Link>
               )}
             </div>
 
-            <div className="bg-white rounded-lg border border-slate-200 divide-y divide-slate-100">
-              {loadingTickets ? (
-                <div className="flex items-center gap-2 px-4 py-6 text-sm text-slate-500">
-                  <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
-                  Chargement...
-                </div>
-              ) : topTickets.length === 0 ? (
-                <div className="px-4 py-6 text-sm text-slate-400 text-center">
-                  Aucun ticket en attente de 1ère réponse depuis plus de 2h.
-                </div>
-              ) : (
-                topTickets.map(ticket => (
-                  <Link
-                    key={ticket.id}
-                    href={`/tickets/${ticket.zohoInternalId}`}
-                    className="flex items-center gap-4 px-4 py-3 hover:bg-slate-50 transition-colors"
-                  >
-                    <div className="flex-shrink-0">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700">
-                        {ticket.zohoStatus}
-                      </span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-900 truncate">{ticket.subject}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">{ticket.clientName} · {ticket.productArea}</p>
-                    </div>
-                    {ticket.segment && (
-                      <Badge label={ticket.segment} variant={ticket.segment.toLowerCase() as 'strategic' | 'gold' | 'silver' | 'bronze'} />
-                    )}
-                    <div className="flex-shrink-0 text-right">
-                      <span className="text-sm font-semibold text-red-600">{formatWait(ticket.createdAt)}</span>
-                      <p className="text-xs text-slate-400">sans réponse</p>
-                    </div>
-                  </Link>
-                ))
-              )}
-            </div>
+            {loadingTickets ? (
+              <div className="flex items-center gap-2.5 px-5 py-8 text-sm text-slate-400">
+                <Spinner />
+                Chargement…
+              </div>
+            ) : attentionList.length === 0 ? (
+              <div className="px-5 py-10 text-center">
+                <p className="text-2xl mb-1">✓</p>
+                <p className="text-sm text-slate-500 font-medium">Aucun ticket en attente</p>
+                <p className="text-xs text-slate-400 mt-0.5">Pas de ticket sans 1ère réponse depuis plus de 2h</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {attentionList.map(ticket => {
+                  const isNoReply = noFirstReplyIds.has(ticket.id)
+                  return (
+                    <Link
+                      key={ticket.id}
+                      href={`/tickets/${ticket.zohoInternalId}`}
+                      className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors"
+                    >
+                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${PRIORITY_DOT[ticket.priority] ?? 'bg-slate-300'}`} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-900 truncate">{ticket.subject}</p>
+                        <p className="text-xs text-slate-500 mt-0.5 truncate">{ticket.clientName} · {ticket.productArea}</p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {ticket.segment && (
+                          <Badge label={ticket.segment} variant={ticket.segment.toLowerCase() as 'strategic' | 'gold' | 'silver' | 'bronze'} />
+                        )}
+                        {isNoReply ? (
+                          <span className="text-xs font-semibold text-red-600 tabular-nums w-16 text-right">
+                            {formatWait(ticket.createdAt)} sans rép.
+                          </span>
+                        ) : (
+                          <span className="text-xs font-semibold text-orange-500 tabular-nums w-16 text-right">
+                            risque {ticket.riskScore}
+                          </span>
+                        )}
+                      </div>
+                    </Link>
+                  )
+                })}
+              </div>
+            )}
           </div>
 
-          {/* Right sidebar */}
+          {/* Right: sidebar */}
           <div className="col-span-1 space-y-4">
-            <div>
-              <h2 className="text-base font-semibold text-slate-900 mb-2">Escalades à relancer</h2>
-              <div className="space-y-2">
-                {loadingOther ? (
-                  <div className="h-16 bg-white rounded-lg border border-slate-200 animate-pulse" />
-                ) : pendingEscalations.length === 0 ? (
-                  <p className="text-xs text-slate-400">Aucune escalade en attente</p>
-                ) : (
-                  pendingEscalations.slice(0, 3).map(e => (
-                    <a key={e.id} href={e.url} target="_blank" rel="noopener noreferrer"
-                      className="block bg-white rounded-lg border border-slate-200 p-3 hover:border-slate-300 transition-colors"
-                    >
-                      <p className="text-xs font-mono text-slate-500">{e.identifier}</p>
-                      <p className="text-sm font-medium text-slate-900 mt-1 line-clamp-2">{e.title}</p>
-                    </a>
-                  ))
-                )}
-              </div>
-            </div>
 
-            <div>
-              <h2 className="text-base font-semibold text-slate-900 mb-2">Formations (7 jours)</h2>
-              <div className="space-y-2">
-                {loadingOther ? (
-                  <div className="h-16 bg-white rounded-lg border border-slate-200 animate-pulse" />
-                ) : weekSessions.length === 0 ? (
-                  <p className="text-xs text-slate-400">Aucune formation cette semaine</p>
-                ) : (
-                  weekSessions.slice(0, 3).map(s => (
-                    <div key={s.classID} className="bg-white rounded-lg border border-slate-200 p-3">
+            {/* Formations */}
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-slate-900">Formations</h2>
+                <Link href="/trainings" className="text-xs text-slate-400 hover:text-blue-600 transition-colors">Voir tout →</Link>
+              </div>
+              {loadingOther ? (
+                <div className="px-4 py-4 flex items-center gap-2 text-sm text-slate-400"><Spinner />Chargement…</div>
+              ) : todaySessions.length === 0 && upcomingSessions.length === 0 ? (
+                <p className="px-4 py-4 text-xs text-slate-400">Aucune formation cette semaine</p>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {todaySessions.map(s => (
+                    <div key={s.classID} className="px-4 py-2.5 bg-blue-50">
+                      <p className="text-xs font-semibold text-blue-800 uppercase tracking-wide mb-0.5">Aujourd&apos;hui</p>
                       <p className="text-sm font-medium text-slate-900 line-clamp-1">{s.title}</p>
-                      <p className="text-xs text-slate-400 mt-1">
-                        {formatDate(s.datetime)} · {s.totalRegistered} inscrits
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {new Date(s.datetime).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} · {s.totalRegistered} inscrit{s.totalRegistered > 1 ? 's' : ''}
                       </p>
                     </div>
-                  ))
-                )}
-              </div>
+                  ))}
+                  {upcomingSessions.slice(0, 3).map(s => (
+                    <div key={s.classID} className="px-4 py-2.5">
+                      <p className="text-sm font-medium text-slate-900 line-clamp-1">{s.title}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {formatDate(s.datetime)} · {s.totalRegistered} inscrit{s.totalRegistered > 1 ? 's' : ''}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            <div>
-              <h2 className="text-base font-semibold text-slate-900 mb-2">Onboarding bloqués</h2>
-              <div className="space-y-2">
-                {loadingOther ? (
-                  <div className="h-16 bg-white rounded-lg border border-slate-200 animate-pulse" />
-                ) : blockedProjects.length === 0 ? (
-                  <p className="text-xs text-slate-400">Aucun projet bloqué</p>
-                ) : (
-                  blockedProjects.slice(0, 3).map(p => (
-                    <div key={p.id} className="bg-white rounded-lg border border-red-200 p-3">
-                      <p className="text-sm font-medium text-slate-900">{p.name}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">{p.ownerName}</p>
-                    </div>
-                  ))
-                )}
+            {/* Escalades */}
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-slate-900">Escalades</h2>
+                <Link href="/escalations" className="text-xs text-slate-400 hover:text-blue-600 transition-colors">Voir tout →</Link>
               </div>
+              {loadingOther ? (
+                <div className="px-4 py-4 flex items-center gap-2 text-sm text-slate-400"><Spinner />Chargement…</div>
+              ) : openEscalations.length === 0 ? (
+                <p className="px-4 py-4 text-xs text-slate-400">Aucune escalade ouverte</p>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {escaladePriority.slice(0, 4).map(e => (
+                    <a key={e.id} href={e.url} target="_blank" rel="noopener noreferrer"
+                      className="flex items-start gap-2.5 px-4 py-2.5 hover:bg-slate-50 transition-colors"
+                    >
+                      <div className="flex-shrink-0 mt-0.5">
+                        {e.status === 'to_qualify' ? (
+                          <span className="inline-block w-2 h-2 bg-orange-400 rounded-full" />
+                        ) : (
+                          <span className="inline-block w-2 h-2 bg-blue-400 rounded-full" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-mono text-slate-400">{e.identifier}</p>
+                        <p className="text-sm text-slate-800 line-clamp-2 mt-0.5">{e.title}</p>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
+
+            {/* Onboarding */}
+            {(blockedProjects.length > 0 || goLiveSoon.length > 0) && (
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-slate-900">Onboarding</h2>
+                  <Link href="/onboarding/board" className="text-xs text-slate-400 hover:text-blue-600 transition-colors">Board →</Link>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {blockedProjects.slice(0, 3).map(p => (
+                    <a key={p.id} href={p.projectUrl} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-slate-50 transition-colors"
+                    >
+                      <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-medium flex-shrink-0">Bloqué</span>
+                      <div className="min-w-0">
+                        <p className="text-sm text-slate-800 truncate">{p.hotelName}</p>
+                        <p className="text-xs text-slate-400">{p.ownerShort}</p>
+                      </div>
+                    </a>
+                  ))}
+                  {goLiveSoon.slice(0, 3).map(p => {
+                    const days = daysUntil(p.endDate!)
+                    return (
+                      <a key={p.id} href={p.projectUrl} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-slate-50 transition-colors"
+                      >
+                        <span className="text-xs bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-medium flex-shrink-0 whitespace-nowrap">
+                          J{days === 0 ? '' : `-${days}`}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm text-slate-800 truncate">{p.hotelName}</p>
+                          <p className="text-xs text-slate-400">{p.ownerShort}</p>
+                        </div>
+                      </a>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
+
+        {/* ── Actions ── */}
+        <div className="space-y-2 pt-1">
+          {/* Navigation */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <Link href="/tickets" className="px-3.5 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-700 transition-colors">
+              Tickets
+            </Link>
+            <Link href="/escalations" className="px-3.5 py-2 bg-white text-slate-700 border border-slate-300 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
+              Escalades
+            </Link>
+            <Link href="/trainings" className="px-3.5 py-2 bg-white text-slate-700 border border-slate-300 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
+              Formations
+            </Link>
+            <Link href="/onboarding" className="px-3.5 py-2 bg-white text-slate-700 border border-slate-300 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
+              Onboarding
+            </Link>
+            <Link href="/reporting" className="px-3.5 py-2 bg-white text-slate-700 border border-slate-300 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
+              Reporting
+            </Link>
+          </div>
+
+          {/* Admin tools */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-slate-400 font-medium">Outils ·</span>
+            <a
+              href="https://dash.getsitecontrol.com/sites/44891/widgets?folderId=13236"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 text-xs text-slate-500 border border-slate-200 rounded-md hover:bg-slate-50 transition-colors"
+            >
+              Bannières GSC ↗
+            </a>
+            <button
+              disabled={normalizing}
+              onClick={async () => {
+                setNormalizing(true)
+                setNormalizeMsg(null)
+                try {
+                  const res = await fetch('/api/admin/normalize-tickets', { method: 'POST' })
+                  const data = await res.json()
+                  setNormalizeMsg(data.message ?? data.error ?? 'Terminé.')
+                } catch {
+                  setNormalizeMsg('Erreur réseau.')
+                } finally {
+                  setNormalizing(false)
+                }
+              }}
+              className="px-3 py-1.5 text-xs text-slate-500 border border-slate-200 rounded-md hover:bg-slate-50 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+            >
+              {normalizing ? <><Spinner /><span>Normalisation…</span></> : 'Normaliser les tickets'}
+            </button>
+            <button
+              disabled={fixingUndefined}
+              onClick={async () => {
+                setFixingUndefined(true)
+                setFixUndefinedMsg(null)
+                let totalProcessed = 0
+                let round = 0
+                const MAX_ROUNDS = 100
+                while (round < MAX_ROUNDS) {
+                  let data: { processed?: number; hasMore?: boolean; message?: string; error?: string } | null = null
+                  let retries = 0
+                  while (retries < 3) {
+                    try {
+                      const res = await fetch('/api/admin/fix-undefined-tickets', { method: 'POST' })
+                      data = await res.json()
+                      break
+                    } catch {
+                      retries++
+                      if (retries >= 3) { data = null; break }
+                      await new Promise(r => setTimeout(r, 3000 * retries))
+                    }
+                  }
+                  if (!data) { setFixUndefinedMsg(`${totalProcessed} corrigés — erreur réseau.`); break }
+                  if (data.error) { setFixUndefinedMsg(`${totalProcessed} corrigés — erreur : ${data.error}`); break }
+                  totalProcessed += data.processed ?? 0
+                  round++
+                  setFixUndefinedMsg(`${totalProcessed} corrigés…`)
+                  if (!data.hasMore) { setFixUndefinedMsg(`Terminé — ${totalProcessed} ticket(s) corrigés.`); break }
+                }
+                setFixingUndefined(false)
+              }}
+              className="px-3 py-1.5 text-xs text-slate-500 border border-slate-200 rounded-md hover:bg-slate-50 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+            >
+              {fixingUndefined ? <><Spinner /><span>Correction…</span></> : 'Corriger les "Undefined"'}
+            </button>
+            {(normalizeMsg || fixUndefinedMsg) && (
+              <span className="text-xs text-slate-400">{fixUndefinedMsg ?? normalizeMsg}</span>
+            )}
+          </div>
+        </div>
+
       </div>
     </div>
   )
