@@ -3,6 +3,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import type { LinearIssue } from '@/lib/linear/client'
 
+type DatePreset = 'all' | '7d' | '30d' | 'quarter' | 'custom'
+
 const LINEAR_STATE_DISPLAY: { state: string; label: string; bg: string; border: string; countColor: string }[] = [
   { state: 'Todo',            label: 'To do',           bg: 'bg-slate-50',   border: 'border-slate-200',  countColor: 'text-slate-700' },
   { state: 'In Progress',     label: 'In Progress',     bg: 'bg-orange-50',  border: 'border-orange-200', countColor: 'text-orange-700' },
@@ -26,10 +28,27 @@ function daysSince(iso: string): number {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000)
 }
 
+function getPresetRange(preset: DatePreset): { from: Date | null; to: Date | null } {
+  const now = new Date()
+  if (preset === 'all') return { from: null, to: null }
+  if (preset === '7d') return { from: new Date(now.getTime() - 7 * 86_400_000), to: null }
+  if (preset === '30d') return { from: new Date(now.getTime() - 30 * 86_400_000), to: null }
+  if (preset === 'quarter') {
+    const q = Math.floor(now.getMonth() / 3)
+    const from = new Date(now.getFullYear(), q * 3, 1)
+    return { from, to: null }
+  }
+  return { from: null, to: null }
+}
+
 export default function EscalationsAnalyticsPage() {
   const [issues, setIssues] = useState<LinearIssue[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  const [preset, setPreset] = useState<DatePreset>('all')
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
 
   useEffect(() => {
     fetch('/api/linear/issues')
@@ -38,15 +57,35 @@ export default function EscalationsAnalyticsPage() {
       .catch(err => { console.error(err); setError('Impossible de charger les escalades.'); setLoading(false) })
   }, [])
 
-  const openIssues = useMemo(() => issues.filter(i => i.status !== 'resolved'), [issues])
-  const resolvedCount = issues.length - openIssues.length
-  const resolutionRate = issues.length > 0 ? Math.round((resolvedCount / issues.length) * 100) : 0
+  const filteredIssues = useMemo(() => {
+    if (preset === 'all' && !customFrom && !customTo) return issues
+    let from: Date | null = null
+    let to: Date | null = null
+    if (preset === 'custom') {
+      from = customFrom ? new Date(customFrom) : null
+      to = customTo ? new Date(customTo + 'T23:59:59') : null
+    } else {
+      const range = getPresetRange(preset)
+      from = range.from
+      to = range.to
+    }
+    return issues.filter(i => {
+      const d = new Date(i.createdAt)
+      if (from && d < from) return false
+      if (to && d > to) return false
+      return true
+    })
+  }, [issues, preset, customFrom, customTo])
+
+  const openIssues = useMemo(() => filteredIssues.filter(i => i.status !== 'resolved'), [filteredIssues])
+  const resolvedCount = filteredIssues.length - openIssues.length
+  const resolutionRate = filteredIssues.length > 0 ? Math.round((resolvedCount / filteredIssues.length) * 100) : 0
 
   const stateCounts = useMemo(() => {
     const map: Record<string, number> = {}
-    for (const i of issues) map[i.linearState] = (map[i.linearState] ?? 0) + 1
+    for (const i of filteredIssues) map[i.linearState] = (map[i.linearState] ?? 0) + 1
     return map
-  }, [issues])
+  }, [filteredIssues])
 
   const priorityCounts = useMemo(() => {
     const map: Record<string, number> = {}
@@ -65,15 +104,64 @@ export default function EscalationsAnalyticsPage() {
   for (const i of openIssues) for (const l of i.labels) labelMap[l] = (labelMap[l] ?? 0) + 1
   const topLabels = Object.entries(labelMap).sort((a, b) => b[1] - a[1]).slice(0, 6)
 
+  const presets: { value: DatePreset; label: string }[] = [
+    { value: 'all',     label: 'Tous' },
+    { value: '7d',      label: '7 derniers jours' },
+    { value: '30d',     label: '30 derniers jours' },
+    { value: 'quarter', label: 'Ce trimestre' },
+    { value: 'custom',  label: 'Personnalisé' },
+  ]
+
   return (
     <div>
-      <div className="bg-white border-b border-slate-200 px-6 py-4">
-        <h1 className="text-xl font-semibold text-slate-900">Analytiques Escalades</h1>
-        {!loading && !error && (
-          <p className="text-sm text-slate-500 mt-0.5">{issues.length} escalade{issues.length !== 1 ? 's' : ''}</p>
-        )}
-        {loading && <p className="text-sm text-slate-400 mt-0.5">Chargement…</p>}
-        {error && <p className="text-sm text-red-500 mt-0.5">{error}</p>}
+      <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">Analytiques Board Bug</h1>
+          {!loading && !error && (
+            <p className="text-sm text-slate-500 mt-0.5">
+              {filteredIssues.length} escalade{filteredIssues.length !== 1 ? 's' : ''}
+              {preset !== 'all' && ` · filtrées sur ${issues.length} au total`}
+            </p>
+          )}
+          {loading && <p className="text-sm text-slate-400 mt-0.5">Chargement…</p>}
+          {error && <p className="text-sm text-red-500 mt-0.5">{error}</p>}
+        </div>
+
+        {/* Date filters */}
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+            {presets.map(p => (
+              <button
+                key={p.value}
+                onClick={() => setPreset(p.value)}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  preset === p.value
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {preset === 'custom' && (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={customFrom}
+                onChange={e => setCustomFrom(e.target.value)}
+                className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <span className="text-xs text-slate-400">→</span>
+              <input
+                type="date"
+                value={customTo}
+                onChange={e => setCustomTo(e.target.value)}
+                className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {loading ? (

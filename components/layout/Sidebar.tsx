@@ -26,9 +26,9 @@ const navItems: NavItem[] = [
   },
   {
     href: '/escalations',
-    label: 'Escalades',
+    label: 'Board Bug',
     children: [
-      { href: '/escalations', label: 'Escalades' },
+      { href: '/escalations', label: 'Board' },
       { href: '/escalations/analytics', label: 'Analytiques' },
     ],
   },
@@ -49,9 +49,6 @@ const navItems: NavItem[] = [
       { href: '/onboarding/charge', label: 'Charge' },
     ],
   },
-  { href: '/knowledge', label: 'Base de connaissances' },
-  { href: '/reporting', label: 'Reporting' },
-  { href: '/assistant', label: 'Assistant IA' },
   { href: '/settings', label: 'Paramètres' },
 ]
 
