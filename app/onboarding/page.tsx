@@ -16,6 +16,7 @@ const columns: { status: ProjectStatus; label: string }[] = [
 ]
 
 const CAPACITY_THRESHOLD = 50
+const IMPLEMENTATION_GROUP = ['Lan', 'Thuy-Tien', 'Dalia', 'Winli']
 
 const productColors: Record<string, string> = {
   'LoungeUp':    'bg-blue-100 text-blue-700',
@@ -49,6 +50,14 @@ function chargeColor(pct: number): { text: string } {
   if (pct > 100) return { text: 'text-red-600' }
   if (pct >= 70)  return { text: 'text-orange-500' }
   return { text: 'text-emerald-600' }
+}
+
+function resolveOwnerFilter(filter: string, availableOwners: string[]): string[] {
+  if (filter === 'Tous') return availableOwners
+  if (filter === 'Implémentation') {
+    return IMPLEMENTATION_GROUP.filter(o => availableOwners.includes(o))
+  }
+  return [filter]
 }
 
 // ─── Satisfaction types ────────────────────────────────────────────────────────
@@ -97,10 +106,12 @@ function scoreLabel(avg: number): string {
 
 function SatisfactionSection({
   data,
+  filterLabel,
   syncing,
   onSync,
 }: {
   data: SatisfactionRow[]
+  filterLabel: string
   syncing: boolean
   onSync: () => void
 }) {
@@ -124,13 +135,17 @@ function SatisfactionSection({
   const totalPages = Math.ceil(data.length / PAGE_SIZE)
   const pageRows = data.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
+  const countLabel = filterLabel !== 'Tous'
+    ? `${data.length} réponse${data.length > 1 ? 's' : ''} — ${filterLabel}`
+    : `${data.length} réponse${data.length > 1 ? 's' : ''}`
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
       <div className="px-5 py-3 border-b border-slate-200 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold text-slate-700">Satisfaction client</h2>
           {data.length > 0 && (
-            <span className="text-xs text-slate-400">{data.length} réponse{data.length > 1 ? 's' : ''}</span>
+            <span className="text-xs text-slate-400">{countLabel}</span>
           )}
         </div>
         <button
@@ -214,6 +229,7 @@ export default function OnboardingDashboardPage() {
   const [error, setError] = useState<string | null>(null)
   const [satisfaction, setSatisfaction] = useState<SatisfactionRow[]>([])
   const [satisfactionSyncing, setSatisfactionSyncing] = useState(false)
+  const [activeOwner, setActiveOwner] = useState<string>('Tous')
 
   useEffect(() => {
     fetch('/api/zoho/projects')
@@ -245,9 +261,29 @@ export default function OnboardingDashboardPage() {
   const today = new Date()
   const thisMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
 
-  const active = useMemo(() => projects.filter(p => p.status !== 'live' && p.status !== 'other'), [projects])
-  const liveProjects = useMemo(() => projects.filter(p => p.status === 'live'), [projects])
-  const uniqueAccounts = useMemo(() => new Set(projects.map(p => p.hotelName)).size, [projects])
+  // Available owners from data (for pills + filter resolution)
+  const availableOwners = useMemo(
+    () => [...new Set(projects.map(p => p.ownerShort).filter((o): o is string => Boolean(o)))].sort(),
+    [projects],
+  )
+
+  // Projects scoped to the active filter
+  const filteredProjects = useMemo(() => {
+    const resolved = resolveOwnerFilter(activeOwner, availableOwners)
+    if (activeOwner === 'Tous') return projects
+    return projects.filter(p => resolved.includes(p.ownerShort ?? ''))
+  }, [projects, activeOwner, availableOwners])
+
+  // Satisfaction scoped to the active filter
+  const filteredSatisfaction = useMemo(() => {
+    if (activeOwner === 'Tous') return satisfaction
+    const resolved = resolveOwnerFilter(activeOwner, availableOwners)
+    return satisfaction.filter(r => resolved.includes(r.owner))
+  }, [satisfaction, activeOwner, availableOwners])
+
+  const active = useMemo(() => filteredProjects.filter(p => p.status !== 'live' && p.status !== 'other'), [filteredProjects])
+  const liveProjects = useMemo(() => filteredProjects.filter(p => p.status === 'live'), [filteredProjects])
+  const uniqueAccounts = useMemo(() => new Set(filteredProjects.map(p => p.hotelName)).size, [filteredProjects])
 
   const ttvSamples = useMemo(
     () => liveProjects.filter(p => p.startDate && p.endDate).map(p => daysBetween(p.startDate!, p.endDate!)).filter(d => d > 0),
@@ -256,11 +292,11 @@ export default function OnboardingDashboardPage() {
   const avgTtv = ttvSamples.length > 0 ? Math.round(ttvSamples.reduce((a, b) => a + b, 0) / ttvSamples.length) : null
 
   const goLiveThisMonth = useMemo(() => liveProjects.filter(p => p.endDate?.startsWith(thisMonth)).length, [liveProjects, thisMonth])
-  const blocked = useMemo(() => projects.filter(p => p.status === 'blocked').length, [projects])
+  const blocked = useMemo(() => filteredProjects.filter(p => p.status === 'blocked').length, [filteredProjects])
 
   const perPerson = useMemo(() => {
     const map = new Map<string, OnboardingProject[]>()
-    for (const p of projects) {
+    for (const p of filteredProjects) {
       const key = p.ownerShort || p.ownerName || '—'
       if (!map.has(key)) map.set(key, [])
       map.get(key)!.push(p)
@@ -274,29 +310,37 @@ export default function OnboardingDashboardPage() {
       const chargePct = Math.round((activeCount / CAPACITY_THRESHOLD) * 100)
       return { owner, total: ps.length, active: activeCount, live: liveCount, accounts, avgTtv: avgOwnerTtv, chargePct }
     }).sort((a, b) => b.active - a.active)
-  }, [projects])
+  }, [filteredProjects])
 
   const perProduct = useMemo(() => {
     const map: Record<string, number> = {}
-    for (const p of projects) { const k = p.product || 'Autre'; map[k] = (map[k] ?? 0) + 1 }
+    for (const p of filteredProjects) { const k = p.product || 'Autre'; map[k] = (map[k] ?? 0) + 1 }
     return Object.entries(map).sort((a, b) => b[1] - a[1])
-  }, [projects])
+  }, [filteredProjects])
 
   const perStatus = useMemo(() => {
     const map: Partial<Record<ProjectStatus, number>> = {}
-    for (const p of projects) map[p.status] = (map[p.status] ?? 0) + 1
+    for (const p of filteredProjects) map[p.status] = (map[p.status] ?? 0) + 1
     return columns.map(col => ({ status: col.status, label: col.label, count: map[col.status] ?? 0 }))
-  }, [projects])
+  }, [filteredProjects])
 
   const typologie = useMemo(() => {
     const map: Record<string, number> = {}
-    for (const p of projects) { const t = p.clientType ?? 'Non renseigné'; map[t] = (map[t] ?? 0) + 1 }
+    for (const p of filteredProjects) { const t = p.clientType ?? 'Non renseigné'; map[t] = (map[t] ?? 0) + 1 }
     return Object.entries(map).sort((a, b) => b[1] - a[1])
-  }, [projects])
+  }, [filteredProjects])
 
-  const hasTypologie = projects.some(p => p.clientType)
+  const hasTypologie = filteredProjects.some(p => p.clientType)
   const maxProduct = perProduct[0]?.[1] ?? 1
   const maxTypologie = typologie[0]?.[1] ?? 1
+
+  // Pills: Tous + Implémentation + individual owners
+  const ownerPills = useMemo(() => {
+    const individuals = availableOwners.filter(o => o !== 'Tous')
+    return ['Tous', 'Implémentation', ...individuals]
+  }, [availableOwners])
+
+  const isFiltered = activeOwner !== 'Tous'
 
   return (
     <div>
@@ -307,7 +351,7 @@ export default function OnboardingDashboardPage() {
         ) : error ? (
           <p className="text-sm text-red-500 mt-0.5">{error}</p>
         ) : (
-          <p className="text-sm text-slate-500 mt-0.5">{projects.length} projets · {uniqueAccounts} comptes</p>
+          <p className="text-sm text-slate-500 mt-0.5">{projects.length} projets · {new Set(projects.map(p => p.hotelName)).size} comptes</p>
         )}
       </div>
 
@@ -317,13 +361,46 @@ export default function OnboardingDashboardPage() {
         <div className="p-12 text-center text-red-500 text-sm">{error}</div>
       ) : (
         <div className="p-6 space-y-6 max-w-5xl">
+
+          {/* Owner filter pills */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {ownerPills.map(owner => (
+              <button
+                key={owner}
+                onClick={() => setActiveOwner(activeOwner === owner ? 'Tous' : owner)}
+                className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                  activeOwner === owner
+                    ? 'bg-slate-800 text-white border-slate-800'
+                    : owner === 'Implémentation'
+                    ? 'border-indigo-300 text-indigo-700 bg-indigo-50 hover:bg-indigo-100'
+                    : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                {owner}
+              </button>
+            ))}
+          </div>
+
           {/* KPIs */}
-          <div className="grid grid-cols-5 gap-3">
-            <KpiCard label="Projets actifs"  value={active.length}       sub="hors live et autre" />
-            <KpiCard label="Comptes uniques" value={uniqueAccounts}      sub="hôtels distincts" />
-            <KpiCard label="TTV moyen"       value={fmtDays(avgTtv)}     sub={`sur ${ttvSamples.length} projets live`} />
-            <KpiCard label="Go-live ce mois" value={goLiveThisMonth}     sub={`sur ${liveProjects.length} live total`} accent="text-emerald-600" />
-            <KpiCard label="Bloqués"         value={blocked}             accent={blocked > 0 ? 'text-red-600' : undefined} />
+          <div>
+            <div className="grid grid-cols-5 gap-3">
+              <KpiCard label="Projets actifs"  value={active.length}       sub="hors live et autre" />
+              <KpiCard label="Comptes uniques" value={uniqueAccounts}      sub="hôtels distincts" />
+              <KpiCard label="TTV moyen"       value={fmtDays(avgTtv)}     sub={`sur ${ttvSamples.length} projets live`} />
+              <KpiCard label="Go-live ce mois" value={goLiveThisMonth}     sub={`sur ${liveProjects.length} live total`} accent="text-emerald-600" />
+              <KpiCard label="Bloqués"         value={blocked}             accent={blocked > 0 ? 'text-red-600' : undefined} />
+            </div>
+            {isFiltered && (
+              <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
+                <span>Affichage filtré : <span className="font-medium text-slate-700">{activeOwner}</span></span>
+                <button
+                  onClick={() => setActiveOwner('Tous')}
+                  className="text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  × Réinitialiser
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Per person */}
@@ -412,7 +489,12 @@ export default function OnboardingDashboardPage() {
           </div>
 
           {/* Satisfaction */}
-          <SatisfactionSection data={satisfaction} syncing={satisfactionSyncing} onSync={handleSync} />
+          <SatisfactionSection
+            data={filteredSatisfaction}
+            filterLabel={activeOwner}
+            syncing={satisfactionSyncing}
+            onSync={handleSync}
+          />
         </div>
       )}
     </div>
