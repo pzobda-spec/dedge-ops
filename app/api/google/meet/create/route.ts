@@ -40,7 +40,6 @@ export async function POST(req: NextRequest) {
     // 1. Create Calendar event with Meet link — Google sends calendar invites via sendUpdates: 'all'
     const meetEvent = await createMeetEvent({
       title: sessionTitle,
-      description: `Formation D-EDGE : ${sessionTitle}\n\nAnimateur : ${hostName}`,
       startDatetime: startDate.toISOString(),
       endDatetime: endDate.toISOString(),
       attendeeEmails: registeredParticipants.map(p => p.email),

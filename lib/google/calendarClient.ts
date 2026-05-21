@@ -11,7 +11,6 @@ export interface MeetEvent {
 
 export async function createMeetEvent(params: {
   title: string
-  description: string
   startDatetime: string   // ISO 8601
   endDatetime: string     // ISO 8601
   attendeeEmails: string[]
@@ -21,7 +20,6 @@ export async function createMeetEvent(params: {
 
   const event = {
     summary: params.title,
-    description: params.description,
     start: { dateTime: params.startDatetime, timeZone: params.timezone ?? 'Europe/Paris' },
     end: { dateTime: params.endDatetime, timeZone: params.timezone ?? 'Europe/Paris' },
     attendees: params.attendeeEmails.map(email => ({ email })),
