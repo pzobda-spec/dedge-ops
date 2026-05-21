@@ -54,41 +54,9 @@ async function projectsFetch<T>(path: string): Promise<T> {
   return res.json()
 }
 
-// Portal slug (used in web URLs) — fetched once and cached
-let portalSlug: string | null = null
-
-async function getPortalSlug(): Promise<string> {
-  if (portalSlug) return portalSlug
-  const token = await getAccessToken()
-  const res = await fetch('https://projectsapi.zoho.eu/restapi/portals/', {
-    headers: { Authorization: `Zoho-oauthtoken ${token}`, 'Content-Type': 'application/json' },
-  })
-  if (res.ok) {
-    const data = await res.json()
-    const portal = (data.portals ?? [])[0]
-    console.log('[getPortalSlug] portal keys:', portal ? Object.keys(portal) : 'none')
-    console.log('[getPortalSlug] link.project.url:', portal?.link?.project?.url)
-    // Try web URL first (link.project.url may be REST API URL with numeric ID — skip those)
-    const url: string = portal?.link?.project?.url ?? ''
-    const match = url.match(/\/portal\/([^/]+)/)
-    if (match && !/^\d+$/.test(match[1])) {
-      portalSlug = match[1]
-      console.log('[getPortalSlug] slug from URL:', portalSlug)
-      return portalSlug
-    }
-    // Fall back to portal name → slug (e.g. "D-EDGE" → "d-edge")
-    const name: string = portal?.name ?? portal?.portal_name ?? ''
-    console.log('[getPortalSlug] portal name:', name)
-    if (name) {
-      portalSlug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-      console.log('[getPortalSlug] slug from name:', portalSlug)
-      return portalSlug
-    }
-  }
-  console.warn('[getPortalSlug] falling back to numeric PORTAL_ID')
-  portalSlug = PORTAL_ID
-  return portalSlug
-}
+// Zoho Projects web URL constants (hash-based SPA routing)
+const PORTAL_SLUG = 'loungeup'
+const PORTFOLIO_ID = '31465000000078005'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -204,7 +172,7 @@ function getCustomField(fields: RawCustomField[] | undefined, key: string): stri
   return undefined
 }
 
-function mapProject(raw: RawProject, portalSlug: string): OnboardingProject {
+function mapProject(raw: RawProject): OnboardingProject {
   const statusLabel = raw.custom_status_name ?? raw.status ?? ''
   const status = mapStatus(statusLabel)
 
@@ -267,7 +235,7 @@ function mapProject(raw: RawProject, portalSlug: string): OnboardingProject {
     clientType,
     isOverdue,
     isBlocked,
-    projectUrl: `https://projects.zoho.eu/portal/${portalSlug}/projects/${id}/`,
+    projectUrl: `https://projects.zoho.eu/portal/${PORTAL_SLUG}#allprojects/${PORTFOLIO_ID}/proj-detail/${id}`,
   }
 }
 
@@ -281,7 +249,6 @@ export async function fetchProjects(options?: {
 }): Promise<OnboardingProject[]> {
   const range = options?.range ?? 100
   const all: OnboardingProject[] = []
-  const slug = await getPortalSlug()
 
   let index = 1
   while (true) {
@@ -294,7 +261,7 @@ export async function fetchProjects(options?: {
     const data = await projectsFetch<ProjectsListResponse>(`/projects/?${query}`)
     const batch = data.projects ?? []
 
-    all.push(...batch.map(raw => mapProject(raw, slug)))
+    all.push(...batch.map(raw => mapProject(raw)))
 
     if (batch.length < range) break
     index += range
