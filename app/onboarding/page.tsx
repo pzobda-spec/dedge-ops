@@ -40,6 +40,8 @@ const productColors: Record<string, string> = {
   'Mobile Keys': 'bg-slate-200 text-slate-700',
 }
 
+const CAPACITY_THRESHOLD = 50
+
 function productBadgeClass(product: string): string {
   return productColors[product] ?? 'bg-slate-100 text-slate-600'
 }
@@ -79,6 +81,22 @@ const STATUS_COLORS: Record<ProjectStatus, { bg: string; text: string }> = {
   other:          { bg: 'bg-slate-100',   text: 'text-slate-500' },
 }
 
+// ─── Satisfaction types ────────────────────────────────────────────────────────
+
+interface SatisfactionRow {
+  zoho_id: string
+  establishment: string
+  respondent_name: string
+  owner: string
+  score_global: number
+  score_onboarding: number
+  score_simplicity: number
+  score_tool: number
+  score_training: number
+  comment: string | null
+  submitted_at: string
+}
+
 // ─── Small components ──────────────────────────────────────────────────────────
 
 function KpiCard({ label, value, sub, accent }: { label: string; value: string | number; sub?: string; accent?: string }) {
@@ -99,9 +117,241 @@ function MiniBar({ value, max, color = 'bg-slate-600' }: { value: number; max: n
   )
 }
 
+function chargeColor(pct: number): { bar: string; text: string } {
+  if (pct > 100) return { bar: 'bg-red-500', text: 'text-red-600' }
+  if (pct >= 70)  return { bar: 'bg-orange-400', text: 'text-orange-500' }
+  return { bar: 'bg-emerald-500', text: 'text-emerald-600' }
+}
+
+// ─── Charge alerts block (board) ───────────────────────────────────────────────
+
+function ChargeAlertsBlock({ projects }: { projects: OnboardingProject[] }) {
+  const rows = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const p of projects) {
+      if (p.status === 'live' || p.status === 'other') continue
+      const key = p.ownerShort || p.ownerName || '—'
+      map.set(key, (map.get(key) ?? 0) + 1)
+    }
+    return Array.from(map.entries())
+      .map(([owner, active]) => ({ owner, active, pct: Math.round((active / CAPACITY_THRESHOLD) * 100) }))
+      .sort((a, b) => b.pct - a.pct)
+  }, [projects])
+
+  const hasOverload = rows.some(r => r.pct > 100)
+  const [open, setOpen] = useState(hasOverload)
+
+  if (rows.length === 0) return null
+
+  return (
+    <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-50 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-slate-700">Alertes de charge</span>
+          {hasOverload && (
+            <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">
+              {rows.filter(r => r.pct > 100).length} en surcharge
+            </span>
+          )}
+        </div>
+        <svg
+          xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+          fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+          className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`}
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+      {open && (
+        <div className="px-4 pb-4 space-y-3 border-t border-slate-100 pt-3">
+          {rows.map(({ owner, active, pct }) => {
+            const c = chargeColor(pct)
+            const barWidth = Math.min(pct, 100)
+            return (
+              <div key={owner} className="flex items-center gap-3">
+                <span className="text-sm font-medium text-slate-700 w-24 flex-shrink-0">{owner}</span>
+                <div className="flex-1 h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full ${c.bar} rounded-full transition-all`}
+                    style={{ width: `${barWidth}%` }}
+                  />
+                </div>
+                <span className="text-xs text-slate-500 tabular-nums w-32 flex-shrink-0">
+                  {active} projets actifs
+                </span>
+                <span className={`text-xs font-bold tabular-nums w-12 text-right flex-shrink-0 ${c.text}`}>
+                  {pct}%
+                </span>
+                {pct > 100 && (
+                  <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium flex-shrink-0">
+                    En surcharge
+                  </span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Satisfaction section ──────────────────────────────────────────────────────
+
+function scoreLabel(avg: number): string {
+  if (avg >= 4.5) return 'text-emerald-600'
+  if (avg >= 3.5) return 'text-orange-500'
+  return 'text-red-500'
+}
+
+function SatisfactionSection({
+  data,
+  syncing,
+  onSync,
+}: {
+  data: SatisfactionRow[]
+  syncing: boolean
+  onSync: () => void
+}) {
+  const [page, setPage] = useState(0)
+  const PAGE_SIZE = 10
+
+  const avg = (key: keyof SatisfactionRow) => {
+    const vals = data.map(r => r[key] as number).filter(v => v > 0)
+    if (vals.length === 0) return null
+    return vals.reduce((a, b) => a + b, 0) / vals.length
+  }
+
+  const scores = [
+    { label: 'Global',     key: 'score_global' as const },
+    { label: 'Onboarding', key: 'score_onboarding' as const },
+    { label: 'Simplicité', key: 'score_simplicity' as const },
+    { label: 'Outil',      key: 'score_tool' as const },
+    { label: 'Formation',  key: 'score_training' as const },
+  ]
+
+  const totalPages = Math.ceil(data.length / PAGE_SIZE)
+  const pageRows = data.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="px-5 py-3 border-b border-slate-200 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold text-slate-700">Satisfaction client</h2>
+          {data.length > 0 && (
+            <span className="text-xs text-slate-400">{data.length} réponse{data.length > 1 ? 's' : ''}</span>
+          )}
+        </div>
+        <button
+          onClick={onSync}
+          disabled={syncing}
+          className="text-xs px-3 py-1.5 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-colors"
+        >
+          {syncing ? 'Synchronisation…' : 'Synchroniser'}
+        </button>
+      </div>
+
+      {data.length === 0 ? (
+        <div className="px-5 py-8 text-center text-sm text-slate-400">
+          Aucune donnée — cliquez sur Synchroniser pour importer les réponses Zoho Forms.
+          <br />
+          <span className="text-xs mt-1 block text-slate-300">
+            Requiert le scope ZohoForms.form.READ sur le refresh token.
+          </span>
+        </div>
+      ) : (
+        <div className="p-5 space-y-5">
+          {/* Score cards */}
+          <div className="grid grid-cols-5 gap-3">
+            {scores.map(({ label, key }) => {
+              const a = avg(key)
+              return (
+                <div key={key} className="text-center bg-slate-50 rounded-lg p-4 border border-slate-100">
+                  <p className={`text-3xl font-bold tabular-nums ${a !== null ? scoreLabel(a) : 'text-slate-400'}`}>
+                    {a !== null ? a.toFixed(1) : '—'}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1 font-medium">{label}</p>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  {['Établissement', 'Répondant', 'Owner', 'Global', 'Onboarding', 'Simplicité', 'Outil', 'Formation', 'Date'].map(h => (
+                    <th key={h} className="text-left px-3 py-2 font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {pageRows.map(r => (
+                  <tr key={r.zoho_id} className="hover:bg-slate-50">
+                    <td className="px-3 py-2 text-slate-800 font-medium max-w-[140px] truncate">{r.establishment || '—'}</td>
+                    <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{r.respondent_name || '—'}</td>
+                    <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{r.owner || '—'}</td>
+                    {[r.score_global, r.score_onboarding, r.score_simplicity, r.score_tool, r.score_training].map((s, i) => (
+                      <td key={i} className={`px-3 py-2 font-semibold tabular-nums ${s > 0 ? scoreLabel(s) : 'text-slate-300'}`}>
+                        {s > 0 ? s.toFixed(1) : '—'}
+                      </td>
+                    ))}
+                    <td className="px-3 py-2 text-slate-400 whitespace-nowrap">
+                      {r.submitted_at ? formatDate(r.submitted_at.slice(0, 10)) : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between pt-2">
+              <span className="text-xs text-slate-400">
+                Page {page + 1} / {totalPages}
+              </span>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => setPage(p => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                  className="text-xs px-2 py-1 rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50"
+                >
+                  ‹ Préc.
+                </button>
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                  disabled={page >= totalPages - 1}
+                  className="text-xs px-2 py-1 rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-50"
+                >
+                  Suiv. ›
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Dashboard view ────────────────────────────────────────────────────────────
 
-function OnboardingDashboard({ projects }: { projects: OnboardingProject[] }) {
+function OnboardingDashboard({
+  projects,
+  satisfaction,
+  satisfactionSyncing,
+  onSatisfactionSync,
+}: {
+  projects: OnboardingProject[]
+  satisfaction: SatisfactionRow[]
+  satisfactionSyncing: boolean
+  onSatisfactionSync: () => void
+}) {
   const today = new Date()
   const thisMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
 
@@ -117,7 +367,6 @@ function OnboardingDashboard({ projects }: { projects: OnboardingProject[] }) {
     [projects],
   )
 
-  // TTV: days from startDate to endDate for live projects
   const ttvSamples = useMemo(
     () =>
       liveProjects
@@ -137,7 +386,6 @@ function OnboardingDashboard({ projects }: { projects: OnboardingProject[] }) {
 
   const blocked = useMemo(() => projects.filter(p => p.status === 'blocked').length, [projects])
 
-  // ── Par personne ──
   const perPerson = useMemo(() => {
     const map = new Map<string, { projects: OnboardingProject[] }>()
     for (const p of projects) {
@@ -157,12 +405,12 @@ function OnboardingDashboard({ projects }: { projects: OnboardingProject[] }) {
         const avgOwnerTtv = ttv.length > 0
           ? Math.round(ttv.reduce((a, b) => a + b, 0) / ttv.length)
           : null
-        return { owner, total: ps.length, active: activeCount, live: liveCount, accounts, avgTtv: avgOwnerTtv }
+        const chargePercent = Math.round((activeCount / CAPACITY_THRESHOLD) * 100)
+        return { owner, total: ps.length, active: activeCount, live: liveCount, accounts, avgTtv: avgOwnerTtv, chargePercent }
       })
       .sort((a, b) => b.active - a.active)
   }, [projects])
 
-  // ── Par produit ──
   const perProduct = useMemo(() => {
     const map: Record<string, number> = {}
     for (const p of projects) {
@@ -172,14 +420,12 @@ function OnboardingDashboard({ projects }: { projects: OnboardingProject[] }) {
     return Object.entries(map).sort((a, b) => b[1] - a[1])
   }, [projects])
 
-  // ── Par statut ──
   const perStatus = useMemo(() => {
     const map: Partial<Record<ProjectStatus, number>> = {}
     for (const p of projects) map[p.status] = (map[p.status] ?? 0) + 1
     return columns.map(col => ({ status: col.status, label: col.label, count: map[col.status] ?? 0 }))
   }, [projects])
 
-  // ── Typologie ──
   const typologie = useMemo(() => {
     const map: Record<string, number> = {}
     for (const p of projects) {
@@ -220,23 +466,37 @@ function OnboardingDashboard({ projects }: { projects: OnboardingProject[] }) {
               <th className="text-center px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Live</th>
               <th className="text-center px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Comptes</th>
               <th className="text-center px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">TTV moyen</th>
+              <th className="text-center px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">Charge</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {perPerson.map(row => (
-              <tr key={row.owner} className="hover:bg-slate-50">
-                <td className="px-5 py-3 font-medium text-slate-900">{row.owner}</td>
-                <td className="px-4 py-3 text-center text-slate-600 tabular-nums">{row.total}</td>
-                <td className="px-4 py-3 text-center tabular-nums">
-                  <span className={row.active > 0 ? 'font-semibold text-blue-700' : 'text-slate-400'}>{row.active}</span>
-                </td>
-                <td className="px-4 py-3 text-center tabular-nums">
-                  <span className={row.live > 0 ? 'font-semibold text-emerald-600' : 'text-slate-400'}>{row.live}</span>
-                </td>
-                <td className="px-4 py-3 text-center text-slate-600 tabular-nums">{row.accounts}</td>
-                <td className="px-4 py-3 text-center text-slate-600 tabular-nums">{fmtDays(row.avgTtv)}</td>
-              </tr>
-            ))}
+            {perPerson.map(row => {
+              const c = chargeColor(row.chargePercent)
+              return (
+                <tr key={row.owner} className="hover:bg-slate-50">
+                  <td className="px-5 py-3 font-medium text-slate-900">{row.owner}</td>
+                  <td className="px-4 py-3 text-center text-slate-600 tabular-nums">{row.total}</td>
+                  <td className="px-4 py-3 text-center tabular-nums">
+                    <span className={row.active > 0 ? 'font-semibold text-blue-700' : 'text-slate-400'}>{row.active}</span>
+                  </td>
+                  <td className="px-4 py-3 text-center tabular-nums">
+                    <span className={row.live > 0 ? 'font-semibold text-emerald-600' : 'text-slate-400'}>{row.live}</span>
+                  </td>
+                  <td className="px-4 py-3 text-center text-slate-600 tabular-nums">{row.accounts}</td>
+                  <td className="px-4 py-3 text-center text-slate-600 tabular-nums">{fmtDays(row.avgTtv)}</td>
+                  <td className="px-4 py-3 text-center">
+                    <span className={`text-sm font-bold tabular-nums ${c.text}`}>
+                      {row.chargePercent}%
+                    </span>
+                    {row.chargePercent > 100 && (
+                      <span className="ml-1.5 text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-medium">
+                        Surcharge
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
@@ -295,6 +555,13 @@ function OnboardingDashboard({ projects }: { projects: OnboardingProject[] }) {
           )}
         </div>
       </div>
+
+      {/* ── Satisfaction ── */}
+      <SatisfactionSection
+        data={satisfaction}
+        syncing={satisfactionSyncing}
+        onSync={onSatisfactionSync}
+      />
     </div>
   )
 }
@@ -307,6 +574,9 @@ export default function OnboardingPage() {
   const [error, setError] = useState<string | null>(null)
   const [view, setView] = useState<'board' | 'dashboard'>('dashboard')
   const [ownerFilter, setOwnerFilter] = useState<string>('')
+
+  const [satisfaction, setSatisfaction] = useState<SatisfactionRow[]>([])
+  const [satisfactionSyncing, setSatisfactionSyncing] = useState(false)
 
   useEffect(() => {
     fetch('/api/zoho/projects')
@@ -325,6 +595,29 @@ export default function OnboardingPage() {
       })
   }, [])
 
+  useEffect(() => {
+    fetch('/api/onboarding/satisfaction')
+      .then(res => res.ok ? res.json() : Promise.reject(res.status))
+      .then(({ data }) => setSatisfaction(data ?? []))
+      .catch(() => {/* silent — table may not exist yet */})
+  }, [])
+
+  async function handleSatisfactionSync() {
+    setSatisfactionSyncing(true)
+    try {
+      const res = await fetch('/api/integrations/zoho/satisfaction-sync', { method: 'POST' })
+      if (res.ok) {
+        const refreshed = await fetch('/api/onboarding/satisfaction')
+        if (refreshed.ok) {
+          const { data } = await refreshed.json()
+          setSatisfaction(data ?? [])
+        }
+      }
+    } finally {
+      setSatisfactionSyncing(false)
+    }
+  }
+
   const today = new Date()
 
   const owners = useMemo(
@@ -332,7 +625,6 @@ export default function OnboardingPage() {
     [projects],
   )
 
-  // Board owner workload
   const ownerMap = new Map<string, OnboardingProject[]>()
   for (const p of projects) {
     const key = p.ownerShort
@@ -397,11 +689,21 @@ export default function OnboardingPage() {
       ) : (
         <>
           {/* ── Dashboard ── */}
-          {view === 'dashboard' && <OnboardingDashboard projects={projects} />}
+          {view === 'dashboard' && (
+            <OnboardingDashboard
+              projects={projects}
+              satisfaction={satisfaction}
+              satisfactionSyncing={satisfactionSyncing}
+              onSatisfactionSync={handleSatisfactionSync}
+            />
+          )}
 
           {/* ── Board ── */}
           {view === 'board' && (
             <div className="p-6 space-y-6">
+              {/* Charge alerts */}
+              <ChargeAlertsBlock projects={projects} />
+
               {/* Owner filter */}
               <div className="flex items-center gap-2 flex-wrap">
                 <button
