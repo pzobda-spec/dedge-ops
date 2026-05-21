@@ -1,3 +1,4 @@
+import { revalidateTag } from 'next/cache'
 import { NextRequest, NextResponse } from 'next/server'
 import { fetchTickets, updateTicket } from '@/lib/zoho/client'
 import { openai } from '@/lib/openai/client'
@@ -130,6 +131,7 @@ export async function POST(_req: NextRequest) {
       }
     }
 
+    revalidateTag('zoho-tickets')
     return NextResponse.json({
       processed,
       skipped: tickets.length - toProcess.length,

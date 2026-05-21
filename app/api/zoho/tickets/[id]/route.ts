@@ -1,3 +1,4 @@
+import { revalidateTag } from 'next/cache'
 import { NextRequest, NextResponse } from 'next/server'
 import { fetchTicket, updateTicket } from '@/lib/zoho/client'
 import { mapZohoTicket } from '@/lib/zoho/mapper'
@@ -45,6 +46,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Champ status manquant' }, { status: 400 })
     }
     await updateTicket(params.id, { status })
+    revalidateTag('zoho-tickets')
     return NextResponse.json({ ok: true })
   } catch (err) {
     console.error(`[zoho/tickets/${params.id}] PATCH error:`, err)

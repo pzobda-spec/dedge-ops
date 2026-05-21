@@ -1,3 +1,4 @@
+import { revalidateTag } from 'next/cache'
 import { NextRequest, NextResponse } from 'next/server'
 import { createIssue } from '@/lib/linear/client'
 
@@ -16,6 +17,7 @@ export async function POST(req: NextRequest) {
     }
 
     const issue = await createIssue({ title, description, priority, labelIds })
+    revalidateTag('linear-issues')
     return NextResponse.json(issue, { status: 201 })
   } catch (err) {
     console.error('Linear createIssue error:', err)

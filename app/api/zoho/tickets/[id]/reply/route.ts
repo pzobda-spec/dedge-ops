@@ -1,3 +1,4 @@
+import { revalidateTag } from 'next/cache'
 import { NextRequest, NextResponse } from 'next/server'
 import { postTicketReply } from '@/lib/zoho/client'
 
@@ -22,6 +23,7 @@ export async function POST(
       contentType: body.contentType ?? 'html',
     })
 
+    revalidateTag('zoho-tickets')
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error(`[zoho/tickets/${params.id}/reply] POST error:`, err)
