@@ -2,7 +2,11 @@ import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/server'
 
-const CALLBACK_URL = `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`
+function getCallbackUrl(request: NextRequest): string {
+  const host = request.headers.get('host') ?? ''
+  const proto = host.startsWith('localhost') ? 'http' : 'https'
+  return `${proto}://${host}/auth/callback`
+}
 
 export async function POST(request: NextRequest) {
   const body = await request.json()
@@ -12,43 +16,68 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: 'error', error: 'Email requis' }, { status: 400 })
   }
 
+  const callbackUrl = getCallbackUrl(request)
+  console.log('[auth/login] email:', email, '| callback:', callbackUrl)
+
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
   // Admin email bypass — always allowed, creates account if needed
-  if (email === (process.env.ADMIN_EMAIL ?? '').toLowerCase()) {
+  const adminEmail = (process.env.ADMIN_EMAIL ?? '').trim().toLowerCase()
+  if (adminEmail && email === adminEmail) {
+    console.log('[auth/login] admin bypass → sending OTP')
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { shouldCreateUser: true, emailRedirectTo: CALLBACK_URL },
+      options: { shouldCreateUser: true, emailRedirectTo: callbackUrl },
     })
-    if (error) return NextResponse.json({ status: 'error', error: error.message }, { status: 500 })
+    if (error) {
+      console.error('[auth/login] OTP error (admin):', error.message)
+      return NextResponse.json({ status: 'error', error: error.message }, { status: 500 })
+    }
     return NextResponse.json({ status: 'sent' })
   }
 
   // Check existing request
-  const { data: existing } = await supabaseAdmin
+  const { data: existing, error: dbError } = await supabaseAdmin
     .from('access_requests')
     .select('status')
     .eq('email', email)
     .maybeSingle()
 
+  if (dbError) {
+    console.error('[auth/login] DB error:', dbError.message)
+    return NextResponse.json({ status: 'error', error: 'Erreur base de données: ' + dbError.message }, { status: 500 })
+  }
+
   if (existing?.status === 'approved') {
+    console.log('[auth/login] approved user → sending OTP')
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { shouldCreateUser: false, emailRedirectTo: CALLBACK_URL },
+      options: { shouldCreateUser: false, emailRedirectTo: callbackUrl },
     })
-    if (error) return NextResponse.json({ status: 'error', error: error.message }, { status: 500 })
+    if (error) {
+      console.error('[auth/login] OTP error:', error.message)
+      return NextResponse.json({ status: 'error', error: error.message }, { status: 500 })
+    }
     return NextResponse.json({ status: 'sent' })
   }
 
   if (existing?.status === 'pending') {
+    console.log('[auth/login] already pending')
     return NextResponse.json({ status: 'pending' })
   }
 
-  // New request — save and notify
-  await supabaseAdmin.from('access_requests').insert({ email })
+  // New request
+  console.log('[auth/login] new access request for:', email)
+  const { error: insertError } = await supabaseAdmin
+    .from('access_requests')
+    .insert({ email })
+
+  if (insertError) {
+    console.error('[auth/login] insert error:', insertError.message)
+  }
 
   return NextResponse.json({ status: 'pending' })
 }

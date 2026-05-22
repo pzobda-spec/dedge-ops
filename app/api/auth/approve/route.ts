@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/server'
 
-const CALLBACK_URL = `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`
-
 export async function POST(request: NextRequest) {
   const { email, action } = await request.json()
 
@@ -16,9 +14,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true })
   }
 
+  const host = request.headers.get('host') ?? ''
+  const proto = host.startsWith('localhost') ? 'http' : 'https'
+  const callbackUrl = `${proto}://${host}/auth/callback`
+
   // Approve: invite the user in Supabase Auth (creates account + sends invite email)
   const { error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-    redirectTo: CALLBACK_URL,
+    redirectTo: callbackUrl,
   })
 
   if (inviteError && !inviteError.message.toLowerCase().includes('already')) {
