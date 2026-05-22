@@ -2,6 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { createBrowserClient } from '@supabase/ssr'
+import { useRouter } from 'next/navigation'
 
 interface NavChild {
   href: string
@@ -63,6 +65,16 @@ function isChildActive(href: string, pathname: string): boolean {
 
 export default function Sidebar() {
   const pathname = usePathname()
+  const router = useRouter()
+
+  async function handleLogout() {
+    const supabase = createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
 
   return (
     <aside className="fixed top-0 left-0 h-full w-56 bg-slate-900 text-white flex flex-col z-40">
@@ -114,8 +126,19 @@ export default function Sidebar() {
           })}
         </ul>
       </nav>
-      <div className="px-4 py-3 border-t border-slate-700 text-xs text-slate-500">
-        D-EDGE Ops · v2
+      <div className="px-4 py-3 border-t border-slate-700 flex items-center justify-between">
+        <span className="text-xs text-slate-500">D-EDGE Ops · v2</span>
+        <button
+          onClick={handleLogout}
+          className="text-xs text-slate-400 hover:text-white transition-colors"
+          title="Déconnexion"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+        </button>
       </div>
     </aside>
   )

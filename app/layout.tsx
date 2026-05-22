@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { DM_Sans } from 'next/font/google'
 import './globals.css'
-import Sidebar from '@/components/layout/Sidebar'
+import AppShell from '@/components/AppShell'
 
 const dmSans = DM_Sans({ subsets: ['latin'], variable: '--font-dm-sans' })
 
@@ -18,10 +18,7 @@ export default function RootLayout({
   return (
     <html lang="fr" className={dmSans.variable}>
       <body className="bg-slate-50 text-slate-900">
-        <div className="flex min-h-screen">
-          <Sidebar />
-          <main className="flex-1 ml-56 min-h-screen">{children}</main>
-        </div>
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   )
