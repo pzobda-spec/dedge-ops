@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/server'
 
 function getCallbackUrl(request: NextRequest): string {
+  if (process.env.NEXT_PUBLIC_APP_URL) {
+    return `${process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '')}/auth/callback`
+  }
   const host = request.headers.get('host') ?? ''
   const proto = host.startsWith('localhost') ? 'http' : 'https'
   return `${proto}://${host}/auth/callback`

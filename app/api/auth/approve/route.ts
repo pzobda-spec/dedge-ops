@@ -14,9 +14,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true })
   }
 
-  const host = request.headers.get('host') ?? ''
-  const proto = host.startsWith('localhost') ? 'http' : 'https'
-  const callbackUrl = `${proto}://${host}/auth/callback`
+  let callbackUrl: string
+  if (process.env.NEXT_PUBLIC_APP_URL) {
+    callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '')}/auth/callback`
+  } else {
+    const host = request.headers.get('host') ?? ''
+    const proto = host.startsWith('localhost') ? 'http' : 'https'
+    callbackUrl = `${proto}://${host}/auth/callback`
+  }
+  console.log('[auth/approve] callbackUrl:', callbackUrl)
 
   // Approve: invite the user in Supabase Auth (creates account + sends invite email)
   const { error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
