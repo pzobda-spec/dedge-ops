@@ -1,53 +1,49 @@
-# D-EDGE Ops
+# DEDGE OPS
 
-Stack: Next.js 14 App Router · TS · Tailwind · Supabase
+Next14 AppRouter · TS · Tailwind · Supabase
 Prod: https://dedge-ops-6zer.vercel.app
 
-## Rules
-- Zoho CRM = READ ONLY, never write
-- UI français, dates DD/MM/YYYY
-- Never call Zoho token endpoint outside app (kills server cache)
+## NEVER
+- Write Zoho CRM
+- Call Zoho token endpoint outside app (kills cache)
+- UI english / dates non-DD/MM/YYYY
 
-## Auth (Supabase magic link)
-- middleware.ts protects all routes except /login /auth/* /api/auth/*
-- Magic link flow: /login → /api/auth/login → OTP email → /auth/callback → /dashboard
-- ADMIN_EMAIL env = Pablo, bypasses approval, shouldCreateUser:true
-- Others: insert access_requests → admin approves in /settings → inviteUserByEmail
-- Callback URL: uses NEXT_PUBLIC_APP_URL env (= https://dedge-ops-6zer.vercel.app). Fallback: host header
-- Supabase: Site URL = https://dedge-ops-6zer.vercel.app, redirect = https://dedge-ops-6zer.vercel.app/auth/callback
-- Table access_requests needs grant to anon role (PostgREST schema cache)
-- Rate limit: ~3 emails/h free tier. Don't spam during debug
+## AUTH
+Magic link. No password.
+middleware.ts blocks all except /login /auth/* /api/auth/*
+ADMIN_EMAIL = Pablo, skip approval, shouldCreateUser:true
+Others: access_requests table → approve in /settings → inviteUserByEmail
+Callback URL = NEXT_PUBLIC_APP_URL env (https://dedge-ops-6zer.vercel.app). Fallback: host header.
+Supabase site URL + redirect must match prod URL.
+access_requests needs `grant all to anon` (PostgREST cache).
+Rate limit 3 emails/h. Don't spam.
 
-## Zoho Desk
-- Org: 20063299426
-- Dept Support: 5861000000007061 — CSM: 5861000019985859 (hidden in tickets)
-- OAuth refresh token (accounts.zoho.eu) → ZOHO_REFRESH_TOKEN
+## ZOHO DESK
+Org 20063299426
+Support dept 5861000000007061 · CSM 5861000019985859 (hide from UI)
+OAuth → ZOHO_REFRESH_TOKEN (accounts.zoho.eu)
 
-## Zoho CRM
-- ZOHO_CRM_REFRESH_TOKEN, read only
-- MRR: Strategic >4000€, Gold ≥750€, Silver ≥200€, Bronze <200€
-- Cache 1h: lib/zoho/accountCache.ts
+## ZOHO CRM
+ZOHO_CRM_REFRESH_TOKEN · read only
+MRR: Strategic>4k Gold≥750 Silver≥200 Bronze<200
+Cache 1h: lib/zoho/accountCache.ts
 
-## Linear
-- Workspace loungeup, team BUGS
-- URL: https://linear.app/loungeup/issue/{id}/{slug}
+## LINEAR
+workspace loungeup · team BUGS
+https://linear.app/loungeup/issue/{id}/{slug}
 
-## Acuity
-- Sessions grouped by classID, hotel = "Company Name" field
+## ACUITY
+Sessions by classID · hotel = "Company Name"
 
-## Risk score (tickets)
-0–100. Segment: Strategic+40 Gold+30 Silver+15 Bronze+0 unknown+10
-Age (lastClientMessageAt): >48h+25 >24h+15 >8h+8
-Negative sentiment+20, urgent/high prio+20/+10, reopened+10
+## RISK SCORE 0-100
+Strategic+40 Gold+30 Silver+15 Bronze+0 unknown+10
+age>48h+25 >24h+15 >8h+8 · negative+20 · urgent+20 high+10 · reopened+10
 
-## Cache
-unstable_cache: tickets 2min, Linear 5min, Projects 5min, Acuity 10min
-Invalidation by tag on mutations.
-TODO: parallelize while-loop pagination (tickets + CRM accounts)
+## CACHE
+tickets 2min · linear 5min · projects 5min · acuity 10min
+invalidate by tag on mutations
+TODO: parallelize while-loop pagination (tickets + CRM)
 
-## Done / Todo
-Done: tickets, risk score, detail+convos, reply, AI actions, Linear escalations, Acuity trainings, Zoho projects, onboarding board
-
-Todo:
-- Webhook RAG: app/api/webhooks/zoho-desk/route.ts, table ticket_chunks (pgvector text-embedding-3-small), lib/rag/ingest.ts — vars ZOHO_WEBHOOK_SECRET/ID — enable pgvector first
-- Zoho Desk stats: 7d/30d volume, status breakdown, FCR, response/resolution time
+## TODO
+- RAG webhook: app/api/webhooks/zoho-desk · table ticket_chunks (pgvector) · lib/rag/ingest.ts · enable pgvector first
+- Desk stats: 7d/30d volume, status split, FCR, response/resolution time
