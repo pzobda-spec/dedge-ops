@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { openai } from '@/lib/openai/client'
+import { createJsonCompletion } from '@/lib/openai/json'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,15 +31,6 @@ Return only valid JSON, no markdown.`
     userContent.additionalInstructions = additionalInstructions
   }
 
-  const completion = await openai.chat.completions.create({
-    model: 'gpt-4o',
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: JSON.stringify(userContent) },
-    ],
-    response_format: { type: 'json_object' },
-  })
-
-  const result = JSON.parse(completion.choices[0].message.content || '{}')
+  const result = await createJsonCompletion({ systemPrompt, userContent })
   return NextResponse.json(result)
 }

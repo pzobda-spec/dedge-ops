@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { openai } from '@/lib/openai/client'
+import { createJsonCompletion } from '@/lib/openai/json'
 import { fetchTickets, searchKBArticles, fetchTicketConversationSummaries } from '@/lib/zoho/client'
 import { supabaseAdmin } from '@/lib/supabase/server'
+import { ZOHO_SUPPORT_DEPARTMENT_ID } from '@/lib/zoho/constants'
 
 export const dynamic = 'force-dynamic'
-
-const SUPPORT_DEPT_ID = '5861000000007061'
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
@@ -24,7 +23,7 @@ export async function POST(req: NextRequest) {
       .limit(5),
 
     // 3. Recent resolved Zoho tickets in the same dept
-    fetchTickets({ limit: 50, from: 0, departmentId: SUPPORT_DEPT_ID, status: 'Solved', sortBy: 'modifiedTime' }),
+    fetchTickets({ limit: 50, from: 0, departmentId: ZOHO_SUPPORT_DEPARTMENT_ID, status: 'Solved', sortBy: 'modifiedTime' }),
   ])
 
   // Zoho KB articles
@@ -102,12 +101,8 @@ export async function POST(req: NextRequest) {
     ? `\n\nRETOUR SUR LE DRAFT PRÉCÉDENT :\n${feedback ? `Problème identifié : ${feedback}\n` : ''}${userDraftReply ? `Réponse rédigée par l'agent (à utiliser comme référence de style et de contenu) :\n${userDraftReply}` : ''}`
     : ''
 
-  const completion = await openai.chat.completions.create({
-    model: 'gpt-4o',
-    messages: [
-      {
-        role: 'system',
-        content: `Tu es un expert support SaaS pour une CRM hôtelière (D-EDGE / LoungeUp).
+  const result = await createJsonCompletion<Record<string, unknown>>({
+    systemPrompt: `Tu es un expert support SaaS pour une CRM hôtelière (D-EDGE / LoungeUp).
 Tu dois rédiger un draft de réponse client basé sur :
 1. Les articles de la knowledge base Zoho Desk (source principale)
 2. Les fiches KB internes (source principale)
@@ -129,20 +124,12 @@ Retourne un objet JSON :
 - body: string (réponse complète, prête à envoyer)
 - sources: string[] (titres des sources utilisées)
 - tone: string`,
-      },
-      {
-        role: 'user',
-        content: JSON.stringify({
-          ticket: { ticketId, subject, clientName, segment, productArea, issueDescription, tone },
-          knowledgeContext,
-          ...(feedbackContext && { feedbackContext }),
-        }),
-      },
-    ],
-    response_format: { type: 'json_object' },
+    userContent: {
+      ticket: { ticketId, subject, clientName, segment, productArea, issueDescription, tone },
+      knowledgeContext,
+      ...(feedbackContext && { feedbackContext }),
+    },
   })
-
-  const result = JSON.parse(completion.choices[0].message.content || '{}')
 
   // Attach metadata for UI display
   result._context = {

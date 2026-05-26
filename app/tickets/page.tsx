@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useDeferredValue, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import type { ZohoMappedTicket, MappedConversation } from '@/lib/zoho/mapper'
 import Badge from '@/components/ui/Badge'
@@ -667,6 +667,7 @@ export default function TicketsPage() {
   const [filterUndefined, setFilterUndefined] = useState(false)
   const [sortBy, setSortBy] = useState('riskScore')
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
+  const deferredSearch = useDeferredValue(filterSearch)
 
   const loadTickets = useCallback(async (isInitial = false) => {
     try {
@@ -696,13 +697,14 @@ export default function TicketsPage() {
 
   // ─── Filtres communs (liste + board) ─────────────────────────────────────────
 
-  const assignees = Array.from(
+  const assignees = useMemo(() => Array.from(
     new Set(tickets.map(t => t.assigneeName).filter(Boolean))
-  ).sort() as string[]
+  ).sort() as string[], [tickets])
 
-  const searchLower = filterSearch.toLowerCase()
-  const filtered = tickets
-    .filter(t => {
+  const filtered = useMemo(() => {
+    const searchLower = deferredSearch.trim().toLowerCase()
+
+    return tickets.filter(t => {
       if (filterStatus && t.zohoStatus !== filterStatus) return false
       if (filterAssignee && t.assigneeName !== filterAssignee) return false
       if (filterProduct && t.productArea !== filterProduct) return false
@@ -718,6 +720,35 @@ export default function TicketsPage() {
       if (sortBy === 'riskScore') return b.riskScore - a.riskScore
       return new Date(b.lastClientMessageAt).getTime() - new Date(a.lastClientMessageAt).getTime()
     })
+  }, [deferredSearch, filterAssignee, filterPriority, filterProduct, filterStatus, filterUndefined, sortBy, tickets])
+
+  const boardTicketsByStatus = useMemo(() => {
+    const byStatus = new Map<string, ZohoMappedTicket[]>()
+    for (const ticket of filtered) {
+      const statusTickets = byStatus.get(ticket.zohoStatus)
+      if (statusTickets) statusTickets.push(ticket)
+      else byStatus.set(ticket.zohoStatus, [ticket])
+    }
+    return byStatus
+  }, [filtered])
+
+  const riskRailTickets = useMemo(() => {
+    const rails = new Map<string, ZohoMappedTicket[]>()
+    for (const rail of RISK_RAILS) {
+      rails.set(rail.key, [])
+    }
+
+    for (const ticket of filtered) {
+      const key = riskBand(ticket.riskScore)
+      rails.get(key)?.push(ticket)
+    }
+
+    for (const tickets of rails.values()) {
+      tickets.sort((a, b) => b.riskScore - a.riskScore)
+    }
+
+    return rails
+  }, [filtered])
 
   // ─── Render ───────────────────────────────────────────────────────────────────
 
@@ -978,7 +1009,7 @@ export default function TicketsPage() {
             <div className="overflow-x-auto">
               <div className="flex gap-4 min-w-max pb-4">
                 {BOARD_COLUMNS.map(col => {
-                  const colTickets = filtered.filter(t => t.zohoStatus === col.status)
+                  const colTickets = boardTicketsByStatus.get(col.status) ?? []
                   return (
                     <div key={col.status} className="w-64 flex-shrink-0 flex flex-col max-h-[calc(100vh-180px)]">
                       <div className={`rounded-t-lg px-3 py-2 flex items-center justify-between flex-shrink-0 ${col.header}`}>
@@ -1005,9 +1036,7 @@ export default function TicketsPage() {
           {!loading && !error && view === 'triage' && (
             <div className="space-y-5">
               {RISK_RAILS.map(rail => {
-                const railTickets = filtered
-                  .filter(rail.filter)
-                  .sort((a, b) => b.riskScore - a.riskScore)
+                const railTickets = riskRailTickets.get(rail.key) ?? []
                 return (
                   <div key={rail.key} className={`rounded-xl ${rail.bg} p-4`}>
                     <div className="flex items-center gap-3 mb-3">

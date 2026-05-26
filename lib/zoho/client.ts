@@ -1,55 +1,18 @@
-const ZOHO_TOKEN_URL = 'https://accounts.zoho.eu/oauth/v2/token'
-const ZOHO_DESK_BASE = 'https://desk.zoho.eu/api/v1'
+import { ZOHO_DESK_BASE_URL } from './constants'
+import { createZohoTokenProvider } from './oauth'
+
 // Auth: accounts.zoho.eu — Desk: desk.zoho.eu — client_id prefix: 1000.
 
-let cachedToken: string | null = null
-let tokenExpiresAt = 0
-
-async function getAccessToken(): Promise<string> {
-  if (cachedToken && Date.now() < tokenExpiresAt) {
-    return cachedToken
-  }
-
-  // Si un token valide est fourni directement dans l'env (override temporaire)
-  if (process.env.ZOHO_ACCESS_TOKEN) {
-    cachedToken = process.env.ZOHO_ACCESS_TOKEN
-    tokenExpiresAt = Date.now() + 55 * 60 * 1000 // 55 min
-    return cachedToken
-  }
-
-  const params = new URLSearchParams({
-    grant_type: 'refresh_token',
-    client_id: process.env.ZOHO_CLIENT_ID!,
-    client_secret: process.env.ZOHO_CLIENT_SECRET!,
-    refresh_token: process.env.ZOHO_REFRESH_TOKEN!,
-  })
-
-  const res = await fetch(ZOHO_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params.toString(),
-  })
-
-  if (!res.ok) {
-    throw new Error(`Zoho token refresh failed: ${res.status} ${await res.text()}`)
-  }
-
-  const data = await res.json()
-
-  if (data.error) {
-    throw new Error(`Zoho token error: ${data.error}`)
-  }
-
-  cachedToken = data.access_token
-  tokenExpiresAt = Date.now() + (data.expires_in - 60) * 1000
-
-  return cachedToken!
-}
+const getAccessToken = createZohoTokenProvider({
+  label: 'Zoho Desk',
+  refreshTokenEnv: 'ZOHO_REFRESH_TOKEN',
+  accessTokenEnv: 'ZOHO_ACCESS_TOKEN',
+})
 
 async function zohoFetch<T>(path: string, options: RequestInit = {}, retry = true): Promise<T> {
   const token = await getAccessToken()
 
-  const res = await fetch(`${ZOHO_DESK_BASE}${path}`, {
+  const res = await fetch(`${ZOHO_DESK_BASE_URL}${path}`, {
     ...options,
     cache: 'no-store',
     headers: {
@@ -62,8 +25,7 @@ async function zohoFetch<T>(path: string, options: RequestInit = {}, retry = tru
 
   // On 401, force a token refresh and retry once
   if (res.status === 401 && retry) {
-    cachedToken = null
-    tokenExpiresAt = 0
+    await getAccessToken(true)
     return zohoFetch<T>(path, options, false)
   }
 

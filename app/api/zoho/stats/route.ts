@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { fetchTickets } from '@/lib/zoho/client'
+import { computeTicketPeriodMetrics, topCategories } from '@/lib/zoho/ticketAnalytics'
 
 export const dynamic = 'force-dynamic'
 
-const SUPPORT_DEPT_ID = '5861000000007061'
-const PAGE_SIZE = 100
-const CLOSED_STATUSES = new Set(['Closed', 'Solved', 'Fermé'])
 const LOOKBACK_DAYS = 90
 
 interface PeriodStats {
@@ -16,76 +13,15 @@ interface PeriodStats {
   topSubjects: { name: string; count: number }[]
 }
 
-async function fetchTicketsCreatedInRange(from: Date, to: Date) {
-  const fromMs = from.getTime()
-  const toMs = to.getTime()
-  const result: Awaited<ReturnType<typeof fetchTickets>>['data'] = []
-  let offset = 0
-
-  while (true) {
-    let page
-    try {
-      const res = await fetchTickets({
-        limit: PAGE_SIZE,
-        from: offset,
-        sortBy: 'createdTime',
-      })
-      page = res.data ?? []
-    } catch (err) {
-      if (offset === 0) throw err
-      break
-    }
-
-    if (page.length === 0) break
-
-    let pastWindow = false
-    for (const ticket of page) {
-      const ts = new Date(ticket.createdTime).getTime()
-      if (ts > toMs) { pastWindow = true; break }
-      if (ts >= fromMs) result.push(ticket)
-    }
-
-    if (pastWindow || page.length < PAGE_SIZE) break
-    offset += PAGE_SIZE
-  }
-
-  return result
-}
-
 async function fetchPeriodStats(from: Date, to: Date, label: string): Promise<PeriodStats> {
-  const fromMs = from.getTime()
-  const toMs = to.getTime()
-
-  const extendedFrom = new Date(fromMs - LOOKBACK_DAYS * 24 * 3600 * 1000)
-  const fetched = await fetchTicketsCreatedInRange(extendedFrom, to)
-
-  const createdInPeriod = fetched.filter(t => {
-    const ts = new Date(t.createdTime).getTime()
-    return ts >= fromMs && ts <= toMs
-  })
-  const opened = createdInPeriod.length
-
-  const closedInPeriod = fetched.filter(t => {
-    if (!t.closedTime) return false
-    const ts = new Date(t.closedTime).getTime()
-    return ts >= fromMs && ts <= toMs
-  })
-  const closed = closedInPeriod.length
-
-  const fcrCount = closedInPeriod.filter(t => (Number(t.threadCount) || 0) <= 2).length
-  const fcr = closed > 0 ? Math.round((fcrCount / closed) * 100) : 0
-
-  const subjectCounts: Record<string, number> = {}
-  for (const t of createdInPeriod) {
-    const subject = t.category || 'Autre'
-    subjectCounts[subject] = (subjectCounts[subject] ?? 0) + 1
+  const metrics = await computeTicketPeriodMetrics(from, to, LOOKBACK_DAYS)
+  return {
+    label,
+    opened: metrics.opened,
+    closed: metrics.closed,
+    fcr: metrics.fcr,
+    topSubjects: topCategories(metrics.createdInPeriod, 3),
   }
-  const topSubjects = Object.entries(subjectCounts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([name, count]) => ({ name, count }))
-
-  return { label, opened, closed, fcr, topSubjects }
 }
 
 export async function GET(req: NextRequest) {

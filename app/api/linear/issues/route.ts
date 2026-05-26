@@ -1,13 +1,14 @@
 import { unstable_cache } from 'next/cache'
 import { NextResponse } from 'next/server'
 import { fetchIssues } from '@/lib/linear/client'
+import { LINEAR_ISSUES_CACHE_SECONDS } from '@/lib/zoho/constants'
 
 export const dynamic = 'force-dynamic'
 
 const getIssuesData = unstable_cache(
   async () => fetchIssues(),
   ['linear-issues'],
-  { revalidate: 300, tags: ['linear-issues'] }
+  { revalidate: LINEAR_ISSUES_CACHE_SECONDS, tags: ['linear-issues'] }
 )
 
 export async function GET() {

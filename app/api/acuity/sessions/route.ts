@@ -1,6 +1,7 @@
 import { unstable_cache } from 'next/cache'
 import { NextRequest, NextResponse } from 'next/server'
 import { fetchSessions, fetchUpcomingSessions, fetchRecentSessions } from '@/lib/acuity/client'
+import { ACUITY_SESSIONS_CACHE_SECONDS } from '@/lib/zoho/constants'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,7 +18,7 @@ const getSessionsData = unstable_cache(
     }
   },
   ['acuity-sessions'],
-  { revalidate: 600, tags: ['acuity-sessions'] }
+  { revalidate: ACUITY_SESSIONS_CACHE_SECONDS, tags: ['acuity-sessions'] }
 )
 
 export async function GET(req: NextRequest) {

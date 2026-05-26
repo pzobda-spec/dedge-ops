@@ -1,38 +1,15 @@
-const ZOHO_TOKEN_URL = 'https://accounts.zoho.eu/oauth/v2/token'
-const FORMS_BASE = 'https://forms.zoho.eu/api/v1'
+import { ZOHO_FORMS_BASE_URL } from './constants'
+import { createZohoTokenProvider } from './oauth'
 
 // Requires ZohoForms.form.READ scope on ZOHO_REFRESH_TOKEN
 // Form/report link names come from the Zoho Forms URL — adjust via env vars if needed
 const FORM_LINK_NAME = process.env.ZOHO_FORMS_SATISFACTION_FORM ?? 'SatisfactionOnboarding'
 const REPORT_LINK_NAME = process.env.ZOHO_FORMS_SATISFACTION_REPORT ?? 'SatisfactionOnboarding_Report'
 
-let cachedToken: string | null = null
-let tokenExpiresAt = 0
-
-async function getAccessToken(): Promise<string> {
-  if (cachedToken && Date.now() < tokenExpiresAt) return cachedToken
-
-  const params = new URLSearchParams({
-    grant_type: 'refresh_token',
-    client_id: process.env.ZOHO_CLIENT_ID!,
-    client_secret: process.env.ZOHO_CLIENT_SECRET!,
-    refresh_token: process.env.ZOHO_REFRESH_TOKEN!,
-  })
-
-  const res = await fetch(ZOHO_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params.toString(),
-  })
-
-  if (!res.ok) throw new Error(`Zoho Forms token refresh failed: ${res.status} ${await res.text()}`)
-  const data = await res.json()
-  if (data.error) throw new Error(`Zoho Forms token error: ${data.error}`)
-
-  cachedToken = data.access_token
-  tokenExpiresAt = Date.now() + (data.expires_in - 60) * 1000
-  return cachedToken!
-}
+const getAccessToken = createZohoTokenProvider({
+  label: 'Zoho Forms',
+  refreshTokenEnv: 'ZOHO_REFRESH_TOKEN',
+})
 
 export interface SatisfactionResponse {
   id: string
@@ -85,7 +62,7 @@ export async function fetchSatisfactionResponses(): Promise<SatisfactionResponse
 
   while (true) {
     const params = new URLSearchParams({ page: String(page), per_page: '100' })
-    const url = `${FORMS_BASE}/form/${FORM_LINK_NAME}/report/${REPORT_LINK_NAME}/records?${params}`
+    const url = `${ZOHO_FORMS_BASE_URL}/form/${FORM_LINK_NAME}/report/${REPORT_LINK_NAME}/records?${params}`
 
     const res = await fetch(url, {
       headers: { Authorization: `Zoho-oauthtoken ${token}` },

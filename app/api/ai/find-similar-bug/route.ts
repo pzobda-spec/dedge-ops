@@ -2,11 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { fetchTickets } from '@/lib/zoho/client'
 import { mapZohoTicket } from '@/lib/zoho/mapper'
 import { fetchIssues } from '@/lib/linear/client'
-import { openai } from '@/lib/openai/client'
+import { createJsonCompletion } from '@/lib/openai/json'
+import { ZOHO_SUPPORT_DEPARTMENT_ID } from '@/lib/zoho/constants'
 
 export const dynamic = 'force-dynamic'
-
-const SUPPORT_DEPT_ID = '5861000000007061'
 
 export async function POST(req: NextRequest) {
   try {
@@ -26,8 +25,8 @@ export async function POST(req: NextRequest) {
     // and Linear issues in parallel
     const [zohoRes, linearRes] = await Promise.allSettled([
       Promise.all([
-        fetchTickets({ limit: 100, from: 0, departmentId: SUPPORT_DEPT_ID, sortBy: 'modifiedTime' }),
-        fetchTickets({ limit: 100, from: 0, departmentId: SUPPORT_DEPT_ID, sortBy: 'modifiedTime', status: 'Solved' }),
+        fetchTickets({ limit: 100, from: 0, departmentId: ZOHO_SUPPORT_DEPARTMENT_ID, sortBy: 'modifiedTime' }),
+        fetchTickets({ limit: 100, from: 0, departmentId: ZOHO_SUPPORT_DEPARTMENT_ID, sortBy: 'modifiedTime', status: 'Solved' }),
       ]),
       fetchIssues(100),
     ])
@@ -69,12 +68,8 @@ export async function POST(req: NextRequest) {
       url: i.url,
     }))
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        {
-          role: 'system',
-          content: `Tu es un assistant support SaaS chargé de trouver des cas similaires déjà traités.
+    const result = await createJsonCompletion({
+      systemPrompt: `Tu es un assistant support SaaS chargé de trouver des cas similaires déjà traités.
 
 SOURCES DISPONIBLES (par ordre de priorité) :
 1. TICKETS ZOHO (source principale) — historique des tickets support clients
@@ -108,24 +103,17 @@ FORMAT DE RÉPONSE — objet JSON avec :
 Pour les tickets Zoho : url = null, identifier = numéro de ticket (externalId), clientName = nom client.
 Pour les issues Linear : url = lien Linear, identifier = identifiant BUGS-XXX.
 Réponds uniquement en JSON valide, sans markdown.`,
+      userContent: {
+        currentTicket: {
+          subject,
+          productArea: productArea || null,
+          conversationHistory: conversationHistory || null,
         },
-        {
-          role: 'user',
-          content: JSON.stringify({
-            currentTicket: {
-              subject,
-              productArea: productArea || null,
-              conversationHistory: conversationHistory || null,
-            },
-            zohoTickets: zohoForPrompt,
-            linearIssues: linearForPrompt,
-          }),
-        },
-      ],
-      response_format: { type: 'json_object' },
+        zohoTickets: zohoForPrompt,
+        linearIssues: linearForPrompt,
+      },
     })
 
-    const result = JSON.parse(completion.choices[0].message.content || '{}')
     return NextResponse.json(result)
   } catch (err) {
     console.error('[ai/find-similar-bug] error:', err)

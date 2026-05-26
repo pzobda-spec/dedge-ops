@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 import { fetchTickets } from '@/lib/zoho/client'
 import { mapZohoTicket } from '@/lib/zoho/mapper'
 import { fetchIssues } from '@/lib/linear/client'
-import { openai } from '@/lib/openai/client'
+import { createJsonCompletion } from '@/lib/openai/json'
+import { ZOHO_SUPPORT_DEPARTMENT_ID } from '@/lib/zoho/constants'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,7 +12,7 @@ const CLOSED = new Set(['Fermé', 'Closed', 'Solved'])
 export async function POST() {
   try {
     const [ticketsRes, issuesRes] = await Promise.allSettled([
-      fetchTickets({ limit: 50, status: 'Open', departmentId: '5861000000007061', sortBy: 'modifiedTime' }),
+      fetchTickets({ limit: 50, status: 'Open', departmentId: ZOHO_SUPPORT_DEPARTMENT_ID, sortBy: 'modifiedTime' }),
       fetchIssues(100),
     ])
 
@@ -41,12 +42,17 @@ export async function POST() {
         url: i.url,
       }))
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        {
-          role: 'system',
-          content: `Tu es un analyste support SaaS pour une CRM hôtelière.
+    const raw = await createJsonCompletion<{
+      suggestions?: Array<{
+        theme: string
+        productArea: string
+        rationale: string
+        zohoTicketIds: string[]
+        linearIdentifier: string | null
+        suggestKB: boolean
+      }>
+    }>({
+      systemPrompt: `Tu es un analyste support SaaS pour une CRM hôtelière.
 Tu reçois une liste de tickets Zoho support ouverts et d'issues Linear (bugs/escalades non résolus).
 Identifie des clusters de tickets Zoho qui traitent du même problème ou thème, en recoupant avec les issues Linear existantes.
 Retourne un objet JSON avec un tableau "suggestions" (max 6 entrées), chaque entrée ayant :
@@ -58,25 +64,10 @@ Retourne un objet JSON avec un tableau "suggestions" (max 6 entrées), chaque en
 - suggestKB: boolean (true si le problème est récurrent et mérite une fiche KB)
 Trie par pertinence décroissante (volume + criticité segment).
 Réponds uniquement en JSON valide, sans markdown.`,
-        },
-        {
-          role: 'user',
-          content: JSON.stringify({ tickets, linearIssues: openLinear }),
-        },
-      ],
-      response_format: { type: 'json_object' },
+      userContent: { tickets, linearIssues: openLinear },
     })
 
-    const raw = JSON.parse(completion.choices[0].message.content || '{"suggestions":[]}')
-
-    const suggestions = (raw.suggestions ?? []).map((s: {
-      theme: string
-      productArea: string
-      rationale: string
-      zohoTicketIds: string[]
-      linearIdentifier: string | null
-      suggestKB: boolean
-    }) => {
+    const suggestions = (raw.suggestions ?? []).map(s => {
       const matchedTickets = tickets.filter(t => s.zohoTicketIds.includes(t.id))
       const matchedLinear = openLinear.find(i => i.identifier === s.linearIdentifier) ?? null
       return {

@@ -1,36 +1,14 @@
-const ZOHO_TOKEN_URL = 'https://accounts.zoho.eu/oauth/v2/token'
-const ZOHO_CRM_BASE = 'https://www.zohoapis.eu/crm/v2'
+import { ZOHO_CRM_BASE_URL } from './constants'
+import { createZohoTokenProvider } from './oauth'
 
-let cachedToken: string | null = null
-let tokenExpiresAt = 0
-
-async function getAccessToken(): Promise<string> {
-  if (cachedToken && Date.now() < tokenExpiresAt) return cachedToken
-
-  const params = new URLSearchParams({
-    grant_type: 'refresh_token',
-    client_id: process.env.ZOHO_CLIENT_ID!,
-    client_secret: process.env.ZOHO_CLIENT_SECRET!,
-    refresh_token: process.env.ZOHO_CRM_REFRESH_TOKEN!,
-  })
-
-  const res = await fetch(ZOHO_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params.toString(),
-  })
-
-  const data = await res.json()
-  if (!data.access_token) throw new Error(`CRM token error: ${JSON.stringify(data)}`)
-
-  cachedToken = data.access_token
-  tokenExpiresAt = Date.now() + (data.expires_in - 60) * 1000
-  return cachedToken!
-}
+const getAccessToken = createZohoTokenProvider({
+  label: 'Zoho CRM',
+  refreshTokenEnv: 'ZOHO_CRM_REFRESH_TOKEN',
+})
 
 async function crmFetch<T>(path: string): Promise<T> {
   const token = await getAccessToken()
-  const res = await fetch(`${ZOHO_CRM_BASE}${path}`, {
+  const res = await fetch(`${ZOHO_CRM_BASE_URL}${path}`, {
     headers: { Authorization: `Zoho-oauthtoken ${token}` },
   })
   if (!res.ok) throw new Error(`CRM API error ${res.status}: ${await res.text()}`)

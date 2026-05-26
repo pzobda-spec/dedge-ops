@@ -1,41 +1,13 @@
-const ZOHO_TOKEN_URL = 'https://accounts.zoho.eu/oauth/v2/token'
+import { ZOHO_PROJECTS_API_BASE_URL } from './constants'
+import { createZohoTokenProvider } from './oauth'
+
 const PORTAL_ID = process.env.ZOHO_PROJECTS_PORTAL_ID!
-const BASE = `https://projectsapi.zoho.eu/restapi/portal/${PORTAL_ID}`
+const BASE = `${ZOHO_PROJECTS_API_BASE_URL}/portal/${PORTAL_ID}`
 
-let cachedToken: string | null = null
-let tokenExpiresAt = 0
-
-async function getAccessToken(): Promise<string> {
-  if (cachedToken && Date.now() < tokenExpiresAt) return cachedToken
-
-  const params = new URLSearchParams({
-    grant_type: 'refresh_token',
-    client_id: process.env.ZOHO_CLIENT_ID!,
-    client_secret: process.env.ZOHO_CLIENT_SECRET!,
-    refresh_token: process.env.ZOHO_PROJECTS_REFRESH_TOKEN!,
-  })
-
-  const res = await fetch(ZOHO_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params.toString(),
-  })
-
-  if (!res.ok) {
-    throw new Error(`Zoho Projects token refresh failed: ${res.status} ${await res.text()}`)
-  }
-
-  const data = await res.json()
-
-  if (data.error) {
-    throw new Error(`Zoho Projects token error: ${data.error}`)
-  }
-
-  cachedToken = data.access_token
-  tokenExpiresAt = Date.now() + (data.expires_in - 60) * 1000
-
-  return cachedToken!
-}
+const getAccessToken = createZohoTokenProvider({
+  label: 'Zoho Projects',
+  refreshTokenEnv: 'ZOHO_PROJECTS_REFRESH_TOKEN',
+})
 
 async function projectsFetch<T>(path: string): Promise<T> {
   const token = await getAccessToken()
