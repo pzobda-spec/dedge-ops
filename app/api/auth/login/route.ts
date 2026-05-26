@@ -1,4 +1,3 @@
-import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/server'
 
@@ -8,6 +7,15 @@ function getCallbackUrl(request: NextRequest): string {
     return `http://${host}/auth/callback`
   }
   return 'https://dedge-ops-6zer.vercel.app/auth/callback'
+}
+
+async function sendOtp(email: string, callbackUrl: string) {
+  const { error } = await supabaseAdmin.auth.admin.generateLink({
+    type: 'magiclink',
+    email,
+    options: { redirectTo: callbackUrl },
+  })
+  return error
 }
 
 export async function POST(request: NextRequest) {
@@ -21,19 +29,11 @@ export async function POST(request: NextRequest) {
   const callbackUrl = getCallbackUrl(request)
   console.log('[auth/login] email:', email, '| callback:', callbackUrl)
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
-
   // Admin email bypass — always allowed, creates account if needed
   const adminEmail = (process.env.ADMIN_EMAIL ?? '').trim().toLowerCase()
   if (adminEmail && email === adminEmail) {
     console.log('[auth/login] admin bypass → sending OTP')
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { shouldCreateUser: true, emailRedirectTo: callbackUrl },
-    })
+    const error = await sendOtp(email, callbackUrl)
     if (error) {
       console.error('[auth/login] OTP error (admin):', error.message)
       return NextResponse.json({ status: 'error', error: error.message }, { status: 500 })
@@ -55,10 +55,7 @@ export async function POST(request: NextRequest) {
 
   if (existing?.status === 'approved') {
     console.log('[auth/login] approved user → sending OTP')
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { shouldCreateUser: false, emailRedirectTo: callbackUrl },
-    })
+    const error = await sendOtp(email, callbackUrl)
     if (error) {
       console.error('[auth/login] OTP error:', error.message)
       return NextResponse.json({ status: 'error', error: error.message }, { status: 500 })
