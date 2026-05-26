@@ -10,7 +10,13 @@ const getSatisfaction = unstable_cache(
       .from('onboarding_satisfaction')
       .select('*')
       .order('submitted_at', { ascending: false })
-    if (error) throw new Error(error.message)
+    if (error) {
+      if (isMissingSatisfactionTable(error)) {
+        console.warn('[onboarding/satisfaction] onboarding_satisfaction table is missing; returning empty data set')
+        return []
+      }
+      throw new Error(error.message)
+    }
     return data ?? []
   },
   ['onboarding-satisfaction'],
@@ -23,6 +29,11 @@ export async function GET() {
     return NextResponse.json({ data })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
+    console.error('[onboarding/satisfaction] GET error:', msg)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
+}
+
+function isMissingSatisfactionTable(error: { code?: string; message?: string }) {
+  return error.code === '42P01' || /onboarding_satisfaction/i.test(error.message ?? '')
 }

@@ -102,6 +102,23 @@ CREATE TABLE IF NOT EXISTS onboarding_projects (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Onboarding satisfaction responses
+CREATE TABLE IF NOT EXISTS onboarding_satisfaction (
+  zoho_id TEXT PRIMARY KEY,
+  establishment TEXT NOT NULL DEFAULT '',
+  respondent_name TEXT NOT NULL DEFAULT '',
+  owner TEXT NOT NULL DEFAULT '',
+  score_global NUMERIC(3,2) NOT NULL DEFAULT 0,
+  score_onboarding NUMERIC(3,2) NOT NULL DEFAULT 0,
+  score_simplicity NUMERIC(3,2) NOT NULL DEFAULT 0,
+  score_tool NUMERIC(3,2) NOT NULL DEFAULT 0,
+  score_training NUMERIC(3,2) NOT NULL DEFAULT 0,
+  comment TEXT,
+  submitted_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Knowledge articles
 CREATE TABLE IF NOT EXISTS knowledge_articles (
   id TEXT PRIMARY KEY,
@@ -181,5 +198,7 @@ CREATE INDEX IF NOT EXISTS idx_escalations_ticket_id ON escalations(ticket_id);
 CREATE INDEX IF NOT EXISTS idx_escalations_status ON escalations(status);
 CREATE INDEX IF NOT EXISTS idx_training_registrations_training_id ON training_registrations(training_id);
 CREATE INDEX IF NOT EXISTS idx_onboarding_client_id ON onboarding_projects(client_id);
+CREATE INDEX IF NOT EXISTS idx_onboarding_satisfaction_submitted_at ON onboarding_satisfaction(submitted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_onboarding_satisfaction_owner ON onboarding_satisfaction(owner);
 CREATE INDEX IF NOT EXISTS idx_ai_actions_ticket_id ON ai_actions(ticket_id);
 CREATE INDEX IF NOT EXISTS idx_monthly_metrics_month_year ON monthly_metrics(year DESC, month DESC);
