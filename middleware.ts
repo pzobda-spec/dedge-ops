@@ -29,17 +29,18 @@ export async function middleware(request: NextRequest) {
     path.startsWith('/auth') ||
     path.startsWith('/api/auth')
 
-  if (!user && !isPublic) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    return NextResponse.redirect(url)
-  }
+  // AUTH BYPASS — temporaire, à remettre
+  // if (!user && !isPublic) {
+  //   const url = request.nextUrl.clone()
+  //   url.pathname = '/login'
+  //   return NextResponse.redirect(url)
+  // }
 
-  if (user && path === '/login') {
-    const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
-    return NextResponse.redirect(url)
-  }
+  // if (user && path === '/login') {
+  //   const url = request.nextUrl.clone()
+  //   url.pathname = '/dashboard'
+  //   return NextResponse.redirect(url)
+  // }
 
   return supabaseResponse
 }
