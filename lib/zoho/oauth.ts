@@ -6,6 +6,11 @@ interface TokenResponse {
   error?: string
 }
 
+interface RefreshedToken {
+  token: string
+  expiresInSeconds: number
+}
+
 interface ZohoTokenProviderOptions {
   label: string
   refreshTokenEnv: string
@@ -23,7 +28,7 @@ function requireEnv(name: string): string {
 export function createZohoTokenProvider(options: ZohoTokenProviderOptions) {
   let cachedToken: string | null = null
   let tokenExpiresAt = 0
-  let refreshPromise: Promise<string> | null = null
+  let refreshPromise: Promise<RefreshedToken> | null = null
 
   return async function getAccessToken(forceRefresh = false): Promise<string> {
     if (!forceRefresh && cachedToken && Date.now() < tokenExpiresAt) {
@@ -38,22 +43,26 @@ export function createZohoTokenProvider(options: ZohoTokenProviderOptions) {
     }
 
     if (refreshPromise) {
-      return refreshPromise
+      const refreshed = await refreshPromise
+      cacheToken(refreshed)
+      return refreshed.token
     }
 
     refreshPromise = refreshToken(options).finally(() => {
       refreshPromise = null
     })
 
-    const token = await refreshPromise
-    cachedToken = token
-    tokenExpiresAt = nextExpiryMs(lastExpiresInSeconds)
-    return token
+    const refreshed = await refreshPromise
+    cacheToken(refreshed)
+    return refreshed.token
   }
 
-  let lastExpiresInSeconds = 3600
+  function cacheToken(refreshed: RefreshedToken) {
+    cachedToken = refreshed.token
+    tokenExpiresAt = nextExpiryMs(refreshed.expiresInSeconds)
+  }
 
-  async function refreshToken(providerOptions: ZohoTokenProviderOptions): Promise<string> {
+  async function refreshToken(providerOptions: ZohoTokenProviderOptions): Promise<RefreshedToken> {
     const params = new URLSearchParams({
       grant_type: 'refresh_token',
       client_id: requireEnv('ZOHO_CLIENT_ID'),
@@ -77,8 +86,10 @@ export function createZohoTokenProvider(options: ZohoTokenProviderOptions) {
       throw new Error(`${providerOptions.label} token error: ${data.error ?? JSON.stringify(data)}`)
     }
 
-    lastExpiresInSeconds = Number(data.expires_in ?? 3600)
-    return data.access_token
+    return {
+      token: data.access_token,
+      expiresInSeconds: Number(data.expires_in ?? 3600),
+    }
   }
 }
 

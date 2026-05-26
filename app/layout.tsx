@@ -8,6 +8,9 @@ const dmSans = DM_Sans({ subsets: ['latin'], variable: '--font-dm-sans' })
 export const metadata: Metadata = {
   title: 'D-EDGE Ops Cockpit',
   description: 'Cockpit opérationnel D-EDGE CRM',
+  icons: {
+    icon: '/favicon.ico',
+  },
 }
 
 export default function RootLayout({
