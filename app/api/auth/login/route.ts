@@ -2,13 +2,16 @@ import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/server'
 
+const PROD_URL = 'https://dedge-ops-6zer.vercel.app'
+
 function getCallbackUrl(request: NextRequest): string {
-  if (process.env.NEXT_PUBLIC_APP_URL) {
-    return `${process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '')}/auth/callback`
-  }
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+  if (appUrl) return `${appUrl.replace(/\/$/, '')}/auth/callback`
   const host = request.headers.get('host') ?? ''
-  const proto = host.startsWith('localhost') ? 'http' : 'https'
-  return `${proto}://${host}/auth/callback`
+  if (!host.startsWith('localhost') && !host.startsWith('127.')) {
+    return `${PROD_URL}/auth/callback`
+  }
+  return `http://${host}/auth/callback`
 }
 
 export async function POST(request: NextRequest) {
