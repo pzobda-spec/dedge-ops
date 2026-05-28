@@ -1,6 +1,6 @@
 import { unstable_cache } from 'next/cache'
 import { NextRequest, NextResponse } from 'next/server'
-import { computeTicketPeriodMetrics, topCategories } from '@/lib/zoho/ticketAnalytics'
+import { computeTicketPeriodMetrics, countOtherCategories, topCategories } from '@/lib/zoho/ticketAnalytics'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,6 +19,7 @@ export interface PeriodMetrics {
   avgFirstReplyHours: number | null
   avgResolutionHours: number | null
   topCategories: { name: string; count: number }[]
+  otherCategoryCount: number
 }
 
 interface DebugInfo {
@@ -43,6 +44,7 @@ async function computePeriodRaw(fromISO: string, toISO: string, label: string, d
     avgFirstReplyHours: metrics.avgFirstReplyHours,
     avgResolutionHours: metrics.avgResolutionHours,
     topCategories: topCategories(metrics.createdInPeriod, 5),
+    otherCategoryCount: countOtherCategories(metrics.createdInPeriod),
   }
   if (debug) {
     result._debug = metrics.debug

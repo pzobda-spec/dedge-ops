@@ -145,6 +145,15 @@ export function topCategories(
     .map(([name, count]) => ({ name, count }))
 }
 
+export function isOtherCategory(category: string | null | undefined): boolean {
+  const normalized = (category ?? '').trim().toLowerCase()
+  return normalized === '' || normalized === 'autre' || normalized === 'other'
+}
+
+export function countOtherCategories(tickets: ZohoTicketRecord[]): number {
+  return tickets.filter(ticket => isOtherCategory(ticket.category)).length
+}
+
 function averageRounded(samples: number[]): number | null {
   if (samples.length === 0) return null
   return Math.round((samples.reduce((a, b) => a + b, 0) / samples.length) * 10) / 10

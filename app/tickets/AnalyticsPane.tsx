@@ -4,12 +4,15 @@ import { useState } from 'react'
 
 export interface PeriodMetrics {
   label: string
+  from: string
+  to: string
   opened: number
   closed: number
   fcr: number
   avgFirstReplyHours: number | null
   avgResolutionHours: number | null
   topCategories: { name: string; count: number }[]
+  otherCategoryCount: number
 }
 
 interface AnalyticsResult {
@@ -201,6 +204,9 @@ export default function AnalyticsPane() {
 
   const p = result?.primary
   const c = result?.comparison
+  const otherTicketsHref = p
+    ? `/tickets/analytics/other?${new URLSearchParams({ from: p.from.slice(0, 10), to: p.to.slice(0, 10), label: p.label })}`
+    : ''
 
   return (
     <div className="p-6 max-w-5xl">
@@ -401,9 +407,22 @@ export default function AnalyticsPane() {
             <div className="grid grid-cols-2 gap-4">
               {/* Primary */}
               <div className="bg-white rounded-xl border border-slate-200 p-5">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">
-                  Top catégories · {p.label}
-                </p>
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                    Top catégories · {p.label}
+                  </p>
+                  {p.otherCategoryCount > 0 && (
+                    <a
+                      href={otherTicketsHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700"
+                    >
+                      Corriger Autre/Other
+                      <span className="rounded bg-white/15 px-1.5 py-0.5 tabular-nums">{p.otherCategoryCount}</span>
+                    </a>
+                  )}
+                </div>
                 <div className="space-y-2.5">
                   {p.topCategories.map(cat => {
                     const maxCount = p.topCategories[0]?.count || 1

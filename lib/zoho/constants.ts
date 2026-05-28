@@ -1,5 +1,6 @@
 export const ZOHO_TOKEN_URL = 'https://accounts.zoho.eu/oauth/v2/token'
 export const ZOHO_DESK_BASE_URL = 'https://desk.zoho.eu/api/v1'
+export const ZOHO_DESK_AGENT_TICKET_BASE_URL = 'https://support.loungeup.com/agent/loungeup/loungeup-support-team/tickets'
 export const ZOHO_CRM_BASE_URL = 'https://www.zohoapis.eu/crm/v2'
 export const ZOHO_FORMS_BASE_URL = 'https://forms.zoho.eu/api/v1'
 export const ZOHO_PROJECTS_API_BASE_URL = 'https://projectsapi.zoho.eu/restapi'
