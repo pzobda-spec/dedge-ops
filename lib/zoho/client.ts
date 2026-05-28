@@ -14,6 +14,7 @@ async function zohoFetch<T>(path: string, options: RequestInit = {}, retry = tru
 
   const res = await fetch(`${ZOHO_DESK_BASE_URL}${path}`, {
     ...options,
+    signal: AbortSignal.timeout(12000),
     cache: 'no-store',
     headers: {
       Authorization: `Zoho-oauthtoken ${token}`,

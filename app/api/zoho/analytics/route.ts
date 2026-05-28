@@ -1,3 +1,4 @@
+import { unstable_cache } from 'next/cache'
 import { NextRequest, NextResponse } from 'next/server'
 import { computeTicketPeriodMetrics, topCategories } from '@/lib/zoho/ticketAnalytics'
 
@@ -5,6 +6,8 @@ export const dynamic = 'force-dynamic'
 
 // Fenêtre étendue avant la période pour capturer les tickets créés avant mais fermés pendant
 const LOOKBACK_DAYS = 90
+// 15 min — each uncached request fans out to 20-40 Zoho API calls
+const ANALYTICS_CACHE_SECONDS = 900
 
 export interface PeriodMetrics {
   label: string
@@ -26,12 +29,14 @@ interface DebugInfo {
   closedInPeriodCount: number
 }
 
-async function computePeriod(from: Date, to: Date, label: string, debug = false): Promise<PeriodMetrics & { _debug?: DebugInfo }> {
+async function computePeriodRaw(fromISO: string, toISO: string, label: string, debug: boolean): Promise<PeriodMetrics & { _debug?: DebugInfo }> {
+  const from = new Date(fromISO)
+  const to = new Date(toISO)
   const metrics = await computeTicketPeriodMetrics(from, to, LOOKBACK_DAYS)
   const result: PeriodMetrics & { _debug?: DebugInfo } = {
     label,
-    from: from.toISOString(),
-    to: to.toISOString(),
+    from: fromISO,
+    to: toISO,
     opened: metrics.opened,
     closed: metrics.closed,
     fcr: metrics.fcr,
@@ -44,6 +49,12 @@ async function computePeriod(from: Date, to: Date, label: string, debug = false)
   }
   return result
 }
+
+const computePeriod = unstable_cache(
+  computePeriodRaw,
+  ['zoho-analytics'],
+  { revalidate: ANALYTICS_CACHE_SECONDS, tags: ['zoho-analytics'] }
+)
 
 export async function GET(req: NextRequest) {
   try {
@@ -59,16 +70,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Paramètres from/to manquants' }, { status: 400 })
     }
 
-    const from = new Date(`${fromParam}T00:00:00.000Z`)
-    const to = new Date(`${toParam}T23:59:59.999Z`)
-
+    const fromISO = `${fromParam}T00:00:00.000Z`
+    const toISO = `${toParam}T23:59:59.999Z`
     const isDebug = sp.get('debug') === '1'
-    const primaryPromise = computePeriod(from, to, label || `${fromParam} → ${toParam}`, isDebug)
+
+    const primaryPromise = computePeriod(fromISO, toISO, label || `${fromParam} → ${toParam}`, isDebug)
     const comparisonPromise =
       compareFromParam && compareToParam
         ? computePeriod(
-            new Date(`${compareFromParam}T00:00:00.000Z`),
-            new Date(`${compareToParam}T23:59:59.999Z`),
+            `${compareFromParam}T00:00:00.000Z`,
+            `${compareToParam}T23:59:59.999Z`,
             compareLabel || `${compareFromParam} → ${compareToParam}`,
             isDebug,
           )

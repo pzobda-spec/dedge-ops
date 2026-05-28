@@ -1,3 +1,4 @@
+import { revalidateTag } from 'next/cache'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/server'
 
@@ -30,6 +31,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  revalidateTag('knowledge-articles')
   return NextResponse.json(data)
 }
 
@@ -43,5 +45,6 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  revalidateTag('knowledge-articles')
   return new NextResponse(null, { status: 204 })
 }

@@ -1,20 +1,30 @@
+import { revalidateTag, unstable_cache } from 'next/cache'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
-  const { data, error } = await supabaseAdmin
-    .from('knowledge_articles')
-    .select('*')
-    .order('created_at', { ascending: false })
+const getKnowledgeArticles = unstable_cache(
+  async () => {
+    const { data, error } = await supabaseAdmin
+      .from('knowledge_articles')
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (error) throw new Error(error.message)
+    return data ?? []
+  },
+  ['knowledge-articles'],
+  { revalidate: 300, tags: ['knowledge-articles'] }
+)
 
-  if (error) {
-    console.error('[knowledge] GET error:', error)
+export async function GET() {
+  try {
+    const articles = await getKnowledgeArticles()
+    return NextResponse.json({ articles })
+  } catch (err) {
+    console.error('[knowledge] GET error:', err)
     return NextResponse.json({ error: 'Erreur lors de la récupération des articles' }, { status: 500 })
   }
-
-  return NextResponse.json({ articles: data ?? [] })
 }
 
 export async function POST(req: Request) {
@@ -30,5 +40,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  revalidateTag('knowledge-articles')
   return NextResponse.json(data, { status: 201 })
 }

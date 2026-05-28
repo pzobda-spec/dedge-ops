@@ -1,9 +1,12 @@
+import { unstable_cache } from 'next/cache'
 import { NextRequest, NextResponse } from 'next/server'
 import { computeTicketPeriodMetrics, topCategories } from '@/lib/zoho/ticketAnalytics'
 
 export const dynamic = 'force-dynamic'
 
 const LOOKBACK_DAYS = 90
+// 15 min — each uncached request fans out to 4-40 Zoho API calls across two periods
+const STATS_CACHE_SECONDS = 900
 
 interface PeriodStats {
   label: string
@@ -13,8 +16,8 @@ interface PeriodStats {
   topSubjects: { name: string; count: number }[]
 }
 
-async function fetchPeriodStats(from: Date, to: Date, label: string): Promise<PeriodStats> {
-  const metrics = await computeTicketPeriodMetrics(from, to, LOOKBACK_DAYS)
+async function fetchPeriodStatsRaw(fromISO: string, toISO: string, label: string): Promise<PeriodStats> {
+  const metrics = await computeTicketPeriodMetrics(new Date(fromISO), new Date(toISO), LOOKBACK_DAYS)
   return {
     label,
     opened: metrics.opened,
@@ -23,6 +26,12 @@ async function fetchPeriodStats(from: Date, to: Date, label: string): Promise<Pe
     topSubjects: topCategories(metrics.createdInPeriod, 3),
   }
 }
+
+const fetchPeriodStats = unstable_cache(
+  fetchPeriodStatsRaw,
+  ['zoho-stats'],
+  { revalidate: STATS_CACHE_SECONDS, tags: ['zoho-stats'] }
+)
 
 export async function GET(req: NextRequest) {
   try {
@@ -49,8 +58,8 @@ export async function GET(req: NextRequest) {
     const monthNames = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre']
 
     const [current, yoy] = await Promise.all([
-      fetchPeriodStats(startCurrent, endCurrent, `${monthNames[month - 1]} ${year}`),
-      fetchPeriodStats(startYoY, endYoY, `${monthNames[month - 1]} ${year - 1}`),
+      fetchPeriodStats(startCurrent.toISOString(), endCurrent.toISOString(), `${monthNames[month - 1]} ${year}`),
+      fetchPeriodStats(startYoY.toISOString(), endYoY.toISOString(), `${monthNames[month - 1]} ${year - 1}`),
     ])
 
     return NextResponse.json({ current, yoy })

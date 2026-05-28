@@ -3,6 +3,7 @@ const ENDPOINT = 'https://api.linear.app/graphql'
 async function linearQuery<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
   const res = await fetch(ENDPOINT, {
     method: 'POST',
+    signal: AbortSignal.timeout(10000),
     cache: 'no-store',
     headers: {
       Authorization: process.env.LINEAR_API_KEY!,

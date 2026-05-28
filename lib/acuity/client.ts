@@ -9,6 +9,7 @@ function getAuthHeader(): string {
 async function acuityFetch<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { Authorization: getAuthHeader() },
+    signal: AbortSignal.timeout(10000),
     cache: 'no-store',
   })
   if (!res.ok) throw new Error(`Acuity API error ${res.status}: ${await res.text()}`)

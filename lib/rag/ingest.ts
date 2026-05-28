@@ -6,18 +6,18 @@ import { getCRMAccountsMap, matchAccountByName } from '@/lib/zoho/accountCache'
 const OPENAI_EMBED_URL = 'https://api.openai.com/v1/embeddings'
 const EMBED_MODEL = 'text-embedding-3-small'
 
-async function embed(text: string): Promise<number[]> {
+async function embedBatch(texts: string[]): Promise<number[][]> {
   const res = await fetch(OPENAI_EMBED_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
     },
-    body: JSON.stringify({ model: EMBED_MODEL, input: text }),
+    body: JSON.stringify({ model: EMBED_MODEL, input: texts }),
   })
   if (!res.ok) throw new Error(`Embedding error ${res.status}: ${await res.text()}`)
   const data = await res.json()
-  return data.data[0].embedding
+  return (data.data as Array<{ embedding: number[] }>).map(d => d.embedding)
 }
 
 function truncate(text: string, maxChars = 6000): string {
@@ -79,17 +79,21 @@ export async function ingestSingleTicket(zohoTicketId: string): Promise<void> {
     chunks.push({ chunk_type: 'resolution', content: truncate(resolutionContent) })
   }
 
-  // Embed and upsert each chunk
-  for (const chunk of chunks) {
-    const embedding = await embed(chunk.content)
-    await supabaseAdmin.from('ticket_chunks').insert({
+  if (chunks.length === 0) return
+
+  // Batch-embed all chunks in a single OpenAI API call
+  const embeddings = await embedBatch(chunks.map(c => c.content))
+
+  // Batch-insert all chunks in a single Supabase call
+  await supabaseAdmin.from('ticket_chunks').insert(
+    chunks.map((chunk, i) => ({
       ticket_id: zohoTicketId,
       chunk_type: chunk.chunk_type,
       content: chunk.content,
-      embedding,
+      embedding: embeddings[i],
       zoho_status: ticket.zohoStatus,
       product_area: ticket.productArea,
       segment,
-    })
-  }
+    }))
+  )
 }
