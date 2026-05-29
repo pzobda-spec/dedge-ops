@@ -99,14 +99,24 @@ interface AccessRequest {
 function AccessRequests() {
   const [requests, setRequests] = useState<AccessRequest[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [acting, setActing] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const res = await fetch('/api/auth/pending')
-    const data = await res.json()
-    setRequests(data.requests ?? [])
-    setLoading(false)
+    setError(null)
+    try {
+      const res = await fetch('/api/auth/pending', { cache: 'no-store' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
+      setRequests(data.requests ?? [])
+    } catch (err) {
+      console.error(err)
+      setError(err instanceof Error ? err.message : 'Impossible de charger les demandes.')
+      setRequests([])
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
   useEffect(() => { load() }, [load])
@@ -126,6 +136,9 @@ function AccessRequests() {
   const others = requests.filter(r => r.status !== 'pending')
 
   if (loading) return <p className="text-sm text-slate-400">Chargement…</p>
+  if (error) return (
+    <p className="text-sm text-red-500">Impossible de charger les demandes d&apos;accès : {error}</p>
+  )
   if (requests.length === 0) return (
     <p className="text-sm text-slate-400 italic">Aucune demande d&apos;accès.</p>
   )
