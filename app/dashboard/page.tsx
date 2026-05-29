@@ -8,8 +8,7 @@ import type { AcuitySession } from '@/lib/acuity/client'
 import type { OnboardingProject } from '@/lib/zoho/projectsClient'
 import Badge from '@/components/ui/Badge'
 import { formatDate } from '@/lib/utils/dates'
-
-const EXCLUDED_OWNERS = ['Bruno', 'Admin', 'Dominic', 'Lauren']
+import { isExcludedOnboardingOwner } from '@/lib/onboarding/constants'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -189,7 +188,7 @@ export default function DashboardPage() {
     [sessions])
 
   const baseProjects = useMemo(() =>
-    projects.filter(p => !EXCLUDED_OWNERS.includes(p.ownerShort ?? '')),
+    projects.filter(p => !isExcludedOnboardingOwner(p.ownerShort)),
     [projects])
 
   const blockedProjects = useMemo(() =>

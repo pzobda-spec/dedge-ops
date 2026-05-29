@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { OnboardingProject, ProjectStatus } from '@/lib/zoho/projectsClient'
 import { formatDate } from '@/lib/utils/dates'
+import { IMPLEMENTATION_GROUP, isExcludedOnboardingOwner } from '@/lib/onboarding/constants'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -16,8 +17,6 @@ const columns: { status: ProjectStatus; label: string }[] = [
 ]
 
 const CAPACITY_THRESHOLD = 50
-const IMPLEMENTATION_GROUP = ['Lan', 'Thuy-Tien', 'Dalia', 'Winli']
-const EXCLUDED_OWNERS = ['Bruno', 'Admin', 'Dominic', 'Lauren']
 
 const productColors: Record<string, string> = {
   'LoungeUp':    'bg-blue-100 text-blue-700',
@@ -323,7 +322,7 @@ export default function OnboardingDashboardPage() {
 
   // Base: exclude unwanted owners
   const baseProjects = useMemo(
-    () => projects.filter(p => !EXCLUDED_OWNERS.includes(p.ownerShort ?? '')),
+    () => projects.filter(p => !isExcludedOnboardingOwner(p.ownerShort)),
     [projects],
   )
 

@@ -3,9 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { OnboardingProject, ProjectStatus } from '@/lib/zoho/projectsClient'
 import { formatDate } from '@/lib/utils/dates'
-
-const IMPLEMENTATION_GROUP = ['Lan', 'Thuy-Tien', 'Dalia', 'Winli']
-const EXCLUDED_OWNERS = ['Bruno', 'Admin', 'Dominic', 'Lauren']
+import { IMPLEMENTATION_GROUP, isExcludedOnboardingOwner } from '@/lib/onboarding/constants'
 
 const columns: { status: ProjectStatus; label: string }[] = [
   { status: 'not_started',    label: 'Non démarré' },
@@ -70,7 +68,7 @@ export default function OnboardingBoardPage() {
   }, [])
 
   const baseProjects = useMemo(
-    () => projects.filter(p => !EXCLUDED_OWNERS.includes(p.ownerShort ?? '')),
+    () => projects.filter(p => !isExcludedOnboardingOwner(p.ownerShort)),
     [projects],
   )
 

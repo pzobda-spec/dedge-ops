@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { OnboardingProject } from '@/lib/zoho/projectsClient'
+import { isExcludedOnboardingOwner } from '@/lib/onboarding/constants'
 
 const CAPACITY_THRESHOLD = 50
 
@@ -23,11 +24,11 @@ export default function OnboardingChargePage() {
       .catch(err => { console.error(err); setError('Impossible de charger les projets.'); setLoading(false) })
   }, [])
 
-  const today = new Date()
-
   const rows = useMemo(() => {
+    const today = new Date()
     const map = new Map<string, OnboardingProject[]>()
     for (const p of projects) {
+      if (isExcludedOnboardingOwner(p.ownerShort)) continue
       const key = p.ownerShort || p.ownerName || '—'
       if (!map.has(key)) map.set(key, [])
       map.get(key)!.push(p)
@@ -47,7 +48,7 @@ export default function OnboardingChargePage() {
         return { owner, total: ps.length, active, live, blocked, goLiveThisMonth, highRisk, pct }
       })
       .sort((a, b) => b.pct - a.pct)
-  }, [projects, today])
+  }, [projects])
 
   const overloaded = rows.filter(r => r.pct > 100).length
 
