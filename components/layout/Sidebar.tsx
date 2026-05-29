@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
+import { useEffect, useMemo, useState } from 'react'
+import { canAccessRestrictedOps } from '@/lib/auth/access'
 
 interface NavChild {
   href: string
@@ -13,6 +15,7 @@ interface NavChild {
 interface NavItem {
   href: string
   label: string
+  restricted?: boolean
   children?: NavChild[]
 }
 
@@ -37,6 +40,7 @@ const navItems: NavItem[] = [
   {
     href: '/trainings',
     label: 'Formations',
+    restricted: true,
     children: [
       { href: '/trainings', label: 'Sessions' },
       { href: '/trainings/analytics', label: 'Analytiques' },
@@ -45,6 +49,7 @@ const navItems: NavItem[] = [
   {
     href: '/onboarding',
     label: 'Onboarding',
+    restricted: true,
     children: [
       { href: '/onboarding', label: 'Dashboard' },
       { href: '/onboarding/board', label: 'Board' },
@@ -66,6 +71,22 @@ function isChildActive(href: string, pathname: string): boolean {
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
+  const [canAccessRestricted, setCanAccessRestricted] = useState(false)
+
+  useEffect(() => {
+    const supabase = createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+    supabase.auth.getUser().then(({ data }) => {
+      setCanAccessRestricted(canAccessRestrictedOps(data.user?.email))
+    })
+  }, [])
+
+  const visibleNavItems = useMemo(
+    () => navItems.filter(item => !item.restricted || canAccessRestricted),
+    [canAccessRestricted],
+  )
 
   async function handleLogout() {
     const supabase = createBrowserClient(
@@ -84,7 +105,7 @@ export default function Sidebar() {
       </div>
       <nav className="flex-1 py-4 overflow-y-auto">
         <ul className="space-y-0.5 px-2">
-          {navItems.map(item => {
+          {visibleNavItems.map(item => {
             const parentActive = isParentActive(item.href, pathname)
             return (
               <li key={item.href}>

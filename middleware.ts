@@ -1,5 +1,20 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextRequest, NextResponse } from 'next/server'
+import { canAccessRestrictedOps } from '@/lib/auth/access'
+
+const RESTRICTED_PATHS = [
+  '/onboarding',
+  '/trainings',
+  '/api/onboarding',
+  '/api/integrations/zoho/satisfaction-sync',
+  '/api/zoho/projects',
+  '/api/acuity',
+  '/api/google/meet',
+]
+
+function isRestrictedPath(path: string): boolean {
+  return RESTRICTED_PATHS.some(prefix => path === prefix || path.startsWith(prefix + '/'))
+}
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -36,6 +51,16 @@ export async function middleware(request: NextRequest) {
   }
 
   if (user && path === '/login') {
+    const url = request.nextUrl.clone()
+    url.pathname = '/dashboard'
+    return NextResponse.redirect(url)
+  }
+
+  if (user && isRestrictedPath(path) && !canAccessRestrictedOps(user.email)) {
+    if (path.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Accès restreint' }, { status: 403 })
+    }
+
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)

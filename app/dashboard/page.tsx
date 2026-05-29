@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
+import { createBrowserClient } from '@supabase/ssr'
 import type { ZohoMappedTicket } from '@/lib/zoho/mapper'
 import type { LinearIssue } from '@/lib/linear/client'
 import type { AcuitySession } from '@/lib/acuity/client'
@@ -9,6 +10,7 @@ import type { OnboardingProject } from '@/lib/zoho/projectsClient'
 import Badge from '@/components/ui/Badge'
 import { formatDate } from '@/lib/utils/dates'
 import { isExcludedOnboardingOwner } from '@/lib/onboarding/constants'
+import { canAccessRestrictedOps } from '@/lib/auth/access'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -70,6 +72,7 @@ export default function DashboardPage() {
   const [projects, setProjects] = useState<OnboardingProject[]>([])
   const [loadingTickets, setLoadingTickets] = useState(true)
   const [loadingOther, setLoadingOther] = useState(true)
+  const [canAccessRestricted, setCanAccessRestricted] = useState(false)
   const [normalizing, setNormalizing] = useState(false)
   const [normalizeMsg, setNormalizeMsg] = useState<string | null>(null)
   const [fixingUndefined, setFixingUndefined] = useState(false)
@@ -80,12 +83,22 @@ export default function DashboardPage() {
   const loadAll = useCallback(async () => {
     setLoadingTickets(true)
     setLoadingOther(true)
-    const [ticketsRes, escalationsRes, sessionsRes, projectsRes] = await Promise.allSettled([
+    const supabase = createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+    const { data: { user } } = await supabase.auth.getUser()
+    const allowedRestricted = canAccessRestrictedOps(user?.email)
+    setCanAccessRestricted(allowedRestricted)
+
+    const requests = [
       fetch('/api/zoho/tickets').then(r => r.json()),
       fetch('/api/linear/issues').then(r => r.json()),
-      fetch('/api/acuity/sessions?period=upcoming').then(r => r.json()),
-      fetch('/api/zoho/projects').then(r => r.json()),
-    ])
+      allowedRestricted ? fetch('/api/acuity/sessions?period=upcoming').then(r => r.json()) : Promise.resolve({ sessions: [] }),
+      allowedRestricted ? fetch('/api/zoho/projects').then(r => r.json()) : Promise.resolve({ projects: [] }),
+    ] as const
+
+    const [ticketsRes, escalationsRes, sessionsRes, projectsRes] = await Promise.allSettled(requests)
     if (ticketsRes.status === 'fulfilled') setTickets(ticketsRes.value.tickets ?? [])
     setLoadingTickets(false)
     if (escalationsRes.status === 'fulfilled') setEscalations(escalationsRes.value.issues ?? [])
@@ -337,33 +350,34 @@ export default function DashboardPage() {
           {/* Sidebar */}
           <div className="col-span-1 space-y-4">
 
-            {/* Formations */}
-            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-              <SectionHeader title="Formations" href="/trainings" />
-              {loadingOther ? (
-                <div className="flex items-center gap-2 px-4 py-4 text-sm text-slate-400"><Spinner />Chargement…</div>
-              ) : todaySessions.length === 0 && upcomingSessions.length === 0 ? (
-                <p className="px-4 py-4 text-xs text-slate-400">Aucune formation cette semaine</p>
-              ) : (
-                <div className="divide-y divide-slate-100">
-                  {todaySessions.map(s => (
-                    <div key={s.classID} className="px-4 py-2.5 bg-blue-50">
-                      <p className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-0.5">Aujourd&apos;hui</p>
-                      <p className="text-sm font-medium text-slate-900 line-clamp-1">{s.title}</p>
-                      <p className="text-xs text-slate-500">
-                        {new Date(s.datetime).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} · {s.totalRegistered} inscrit{s.totalRegistered > 1 ? 's' : ''}
-                      </p>
-                    </div>
-                  ))}
-                  {upcomingSessions.slice(0, 3).map(s => (
-                    <div key={s.classID} className="px-4 py-2.5">
-                      <p className="text-sm font-medium text-slate-900 line-clamp-1">{s.title}</p>
-                      <p className="text-xs text-slate-500">{formatDate(s.datetime)} · {s.totalRegistered} inscrit{s.totalRegistered > 1 ? 's' : ''}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            {canAccessRestricted && (
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                <SectionHeader title="Formations" href="/trainings" />
+                {loadingOther ? (
+                  <div className="flex items-center gap-2 px-4 py-4 text-sm text-slate-400"><Spinner />Chargement…</div>
+                ) : todaySessions.length === 0 && upcomingSessions.length === 0 ? (
+                  <p className="px-4 py-4 text-xs text-slate-400">Aucune formation cette semaine</p>
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {todaySessions.map(s => (
+                      <div key={s.classID} className="px-4 py-2.5 bg-blue-50">
+                        <p className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-0.5">Aujourd&apos;hui</p>
+                        <p className="text-sm font-medium text-slate-900 line-clamp-1">{s.title}</p>
+                        <p className="text-xs text-slate-500">
+                          {new Date(s.datetime).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} · {s.totalRegistered} inscrit{s.totalRegistered > 1 ? 's' : ''}
+                        </p>
+                      </div>
+                    ))}
+                    {upcomingSessions.slice(0, 3).map(s => (
+                      <div key={s.classID} className="px-4 py-2.5">
+                        <p className="text-sm font-medium text-slate-900 line-clamp-1">{s.title}</p>
+                        <p className="text-xs text-slate-500">{formatDate(s.datetime)} · {s.totalRegistered} inscrit{s.totalRegistered > 1 ? 's' : ''}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Escalades */}
             <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -390,7 +404,7 @@ export default function DashboardPage() {
             </div>
 
             {/* Onboarding alerts — only shown if there is something to show */}
-            {!loadingOther && (blockedProjects.length > 0 || goLiveSoon.length > 0) && (
+            {canAccessRestricted && !loadingOther && (blockedProjects.length > 0 || goLiveSoon.length > 0) && (
               <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
                 <SectionHeader title="Onboarding" href="/onboarding/board" label="Board →" />
                 <div className="divide-y divide-slate-100">
