@@ -34,6 +34,19 @@ async function sendOtp(email: string, callbackUrl: string, shouldCreateUser: boo
   return error
 }
 
+function isAccessRequestsMissing(error: { message?: string; code?: string }): boolean {
+  return error.code === '42P01' || /access_requests/i.test(error.message ?? '')
+}
+
+function isEmergencyAllowed(email: string): boolean {
+  const configured = (process.env.AUTH_ALLOWED_EMAILS ?? '')
+    .split(',')
+    .map(e => e.trim().toLowerCase())
+    .filter(Boolean)
+
+  return new Set([...configured, 'grohaut@d-edge.com']).has(email)
+}
+
 export async function POST(request: NextRequest) {
   const body = await request.json()
   const email: string = (body.email ?? '').trim().toLowerCase()
@@ -66,6 +79,15 @@ export async function POST(request: NextRequest) {
 
   if (dbError) {
     console.error('[auth/login] DB error:', dbError.message)
+    if (isAccessRequestsMissing(dbError) && isEmergencyAllowed(email)) {
+      console.log('[auth/login] access_requests missing; allowed email fallback → sending OTP')
+      const error = await sendOtp(email, callbackUrl, true)
+      if (error) {
+        console.error('[auth/login] OTP error (fallback):', error.message)
+        return NextResponse.json({ status: 'error', error: error.message }, { status: 500 })
+      }
+      return NextResponse.json({ status: 'sent' })
+    }
     return NextResponse.json({ status: 'error', error: 'Erreur base de données: ' + dbError.message }, { status: 500 })
   }
 

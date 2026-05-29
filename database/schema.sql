@@ -86,6 +86,15 @@ CREATE TABLE IF NOT EXISTS training_registrations (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Auth access requests
+CREATE TABLE IF NOT EXISTS access_requests (
+  id BIGSERIAL PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Onboarding projects
 CREATE TABLE IF NOT EXISTS onboarding_projects (
   id TEXT PRIMARY KEY,
@@ -197,8 +206,12 @@ CREATE INDEX IF NOT EXISTS idx_tickets_risk_score ON tickets(risk_score DESC);
 CREATE INDEX IF NOT EXISTS idx_escalations_ticket_id ON escalations(ticket_id);
 CREATE INDEX IF NOT EXISTS idx_escalations_status ON escalations(status);
 CREATE INDEX IF NOT EXISTS idx_training_registrations_training_id ON training_registrations(training_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_access_requests_email ON access_requests(email);
 CREATE INDEX IF NOT EXISTS idx_onboarding_client_id ON onboarding_projects(client_id);
 CREATE INDEX IF NOT EXISTS idx_onboarding_satisfaction_submitted_at ON onboarding_satisfaction(submitted_at DESC);
 CREATE INDEX IF NOT EXISTS idx_onboarding_satisfaction_owner ON onboarding_satisfaction(owner);
 CREATE INDEX IF NOT EXISTS idx_ai_actions_ticket_id ON ai_actions(ticket_id);
 CREATE INDEX IF NOT EXISTS idx_monthly_metrics_month_year ON monthly_metrics(year DESC, month DESC);
+
+GRANT ALL ON TABLE access_requests TO anon;
+GRANT ALL ON SEQUENCE access_requests_id_seq TO anon;
