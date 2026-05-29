@@ -50,7 +50,7 @@ function formatISODate(iso: string | null): string {
 
 function resolveOwnerFilter(filter: string, availableOwners: string[]): string[] {
   if (filter === 'Tous') return availableOwners
-  if (filter === 'Implémentation') return IMPLEMENTATION_GROUP.filter(o => availableOwners.includes(o))
+  if (filter === 'Implémentation') return [...IMPLEMENTATION_GROUP]
   return [filter]
 }
 
@@ -78,7 +78,7 @@ export default function OnboardingBoardPage() {
   )
 
   const ownerPills = useMemo(
-    () => ['Tous', 'Implémentation', ...availableOwners],
+    () => ['Tous', 'Implémentation', ...new Set([...IMPLEMENTATION_GROUP, ...availableOwners])],
     [availableOwners],
   )
 
