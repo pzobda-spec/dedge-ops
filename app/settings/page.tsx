@@ -89,120 +89,12 @@ const INTEGRATIONS: Integration[] = [
   },
 ]
 
-interface AccessRequest {
-  id: string
-  email: string
-  requested_at: string
-  status: string
-}
-
 interface AppSetting {
   key: string
   value: string | null
   description: string | null
   updated_by: string | null
   updated_at: string
-}
-
-function AccessRequests() {
-  const [requests, setRequests] = useState<AccessRequest[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [acting, setActing] = useState<string | null>(null)
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/auth/pending', { cache: 'no-store' })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
-      setRequests(data.requests ?? [])
-    } catch (err) {
-      console.error(err)
-      setError(err instanceof Error ? err.message : 'Impossible de charger les demandes.')
-      setRequests([])
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => { load() }, [load])
-
-  async function handleAction(email: string, action: 'approve' | 'reject') {
-    setActing(email)
-    await fetch('/api/auth/approve', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, action }),
-    })
-    await load()
-    setActing(null)
-  }
-
-  const pending = requests.filter(r => r.status === 'pending')
-  const others = requests.filter(r => r.status !== 'pending')
-
-  if (loading) return <p className="text-sm text-slate-400">Chargement…</p>
-  if (error) return (
-    <p className="text-sm text-red-500">Impossible de charger les demandes d&apos;accès : {error}</p>
-  )
-  if (requests.length === 0) return (
-    <p className="text-sm text-slate-400 italic">Aucune demande d&apos;accès.</p>
-  )
-
-  return (
-    <div className="space-y-2">
-      {pending.length > 0 && (
-        <>
-          <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">En attente</p>
-          {pending.map(r => (
-            <div key={r.id} className="bg-white rounded-xl border border-amber-200 p-4 flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium text-slate-900">{r.email}</p>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  {new Date(r.requested_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                </p>
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <button
-                  onClick={() => handleAction(r.email, 'approve')}
-                  disabled={acting === r.email}
-                  className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-medium rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50"
-                >
-                  {acting === r.email ? '…' : 'Approuver'}
-                </button>
-                <button
-                  onClick={() => handleAction(r.email, 'reject')}
-                  disabled={acting === r.email}
-                  className="px-3 py-1.5 bg-slate-100 text-slate-600 text-xs font-medium rounded-lg hover:bg-slate-200 transition-colors disabled:opacity-50"
-                >
-                  Refuser
-                </button>
-              </div>
-            </div>
-          ))}
-        </>
-      )}
-      {others.length > 0 && (
-        <>
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mt-4">Traitées</p>
-          {others.map(r => (
-            <div key={r.id} className="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between gap-4 opacity-70">
-              <p className="text-sm text-slate-700">{r.email}</p>
-              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                r.status === 'approved'
-                  ? 'bg-emerald-50 text-emerald-700'
-                  : 'bg-slate-100 text-slate-500'
-              }`}>
-                {r.status === 'approved' ? 'Approuvé' : 'Refusé'}
-              </span>
-            </div>
-          ))}
-        </>
-      )}
-    </div>
-  )
 }
 
 function StatusBadge({ ok }: { ok: boolean }) {
@@ -331,11 +223,6 @@ export default function SettingsPage() {
       </div>
 
       <div className="p-6 max-w-4xl space-y-8">
-        <div>
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-4">Demandes d&apos;accès</p>
-          <AccessRequests />
-        </div>
-
         <div>
           <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-4">Intégrations externes</p>
           <AppSettingsEditor />

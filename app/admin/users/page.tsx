@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Role } from '@/lib/auth/roles'
 
 interface AdminUser {
@@ -11,6 +11,13 @@ interface AdminUser {
   active: boolean
   invited_at: string | null
   last_login_at: string | null
+}
+
+interface AccessRequest {
+  id: string
+  email: string
+  requested_at: string
+  status: string
 }
 
 const roles: Role[] = ['admin', 'onboarder', 'support', 'commercial_readonly']
@@ -37,6 +44,100 @@ function formatDate(value: string | null): string {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function AccessRequests() {
+  const [requests, setRequests] = useState<AccessRequest[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [acting, setActing] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/auth/pending', { cache: 'no-store' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
+      setRequests(data.requests ?? [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Impossible de charger les demandes.')
+      setRequests([])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  async function handleAction(email: string, action: 'approve' | 'reject') {
+    setActing(email)
+    await fetch('/api/auth/approve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, action }),
+    })
+    await load()
+    setActing(null)
+  }
+
+  const pending = requests.filter(r => r.status === 'pending')
+  const others = requests.filter(r => r.status !== 'pending')
+
+  if (loading) return <p className="text-sm text-slate-400">Chargement…</p>
+  if (error) return <p className="text-sm text-red-500">Impossible de charger les demandes d&apos;accès : {error}</p>
+  if (requests.length === 0) return <p className="text-sm text-slate-400 italic">Aucune demande d&apos;accès.</p>
+
+  return (
+    <div className="space-y-3">
+      {pending.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">En attente</p>
+          {pending.map(r => (
+            <div key={r.id} className="bg-white rounded-xl border border-amber-200 p-4 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-slate-900">{r.email}</p>
+                <p className="text-xs text-slate-400 mt-0.5">{formatDate(r.requested_at)}</p>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  onClick={() => handleAction(r.email, 'approve')}
+                  disabled={acting === r.email}
+                  className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-medium rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {acting === r.email ? '…' : 'Approuver'}
+                </button>
+                <button
+                  onClick={() => handleAction(r.email, 'reject')}
+                  disabled={acting === r.email}
+                  className="px-3 py-1.5 bg-slate-100 text-slate-600 text-xs font-medium rounded-lg hover:bg-slate-200 disabled:opacity-50"
+                >
+                  Refuser
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {others.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Traitées</p>
+          {others.map(r => (
+            <div key={r.id} className="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between gap-4 opacity-70">
+              <p className="text-sm text-slate-700">{r.email}</p>
+              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                r.status === 'approved'
+                  ? 'bg-emerald-50 text-emerald-700'
+                  : 'bg-slate-100 text-slate-500'
+              }`}>
+                {r.status === 'approved' ? 'Approuvé' : 'Refusé'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function AdminUsersPage() {
@@ -97,6 +198,10 @@ export default function AdminUsersPage() {
       <div className="p-6">
         {error && <p className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
         {message && <p className="mb-4 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{message}</p>}
+        <div className="mb-8">
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-4">Demandes d&apos;accès</p>
+          <AccessRequests />
+        </div>
         {loading ? (
           <div className="py-12 text-sm text-slate-400">Chargement…</div>
         ) : (
