@@ -20,21 +20,14 @@ export const ONBOARDING_PROJECT_DETAIL_SELECT =
   'id, zoho_project_id, zoho_status, hotel_name, product, owner, owner_email, start_date, target_go_live, actual_go_live, last_synced_at, executive_summary, executive_summary_generated_at'
 
 export async function getOnboardingProjectByIdOrZohoId(id: string): Promise<OnboardingProjectDetail | null> {
-  const { data: projectById, error: idError } = await supabaseAdmin
+  const filterValue = id.replace(/\\/g, '\\\\').replace(/,/g, '\\,').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
+  const { data: project, error } = await supabaseAdmin
     .from('onboarding_projects')
     .select(ONBOARDING_PROJECT_DETAIL_SELECT)
-    .eq('id', id)
+    .or(`id.eq.${filterValue},zoho_project_id.eq.${filterValue}`)
+    .limit(1)
     .maybeSingle()
 
-  if (idError) throw new Error(idError.message)
-  if (projectById) return projectById as OnboardingProjectDetail
-
-  const { data: projectByZohoId, error: zohoError } = await supabaseAdmin
-    .from('onboarding_projects')
-    .select(ONBOARDING_PROJECT_DETAIL_SELECT)
-    .eq('zoho_project_id', id)
-    .maybeSingle()
-
-  if (zohoError) throw new Error(zohoError.message)
-  return (projectByZohoId as OnboardingProjectDetail | null) ?? null
+  if (error) throw new Error(error.message)
+  return (project as OnboardingProjectDetail | null) ?? null
 }

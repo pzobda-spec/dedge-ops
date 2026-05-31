@@ -1,9 +1,9 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest, NextResponse } from 'next/server'
 import { canAccessRestrictedOps } from '@/lib/auth/access'
 import { getSessionUserEmail } from '@/lib/auth/session'
 import { getProjectTimeline } from '@/lib/onboarding/events'
 import { getOnboardingProjectByIdOrZohoId } from '@/lib/onboarding/projects'
+import { openai } from '@/lib/openai/client'
 import { supabaseAdmin } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
@@ -36,32 +36,32 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return NextResponse.json({ error: 'ANTHROPIC_API_KEY non configurée' }, { status: 503 })
+  if (!process.env.OPENAI_API_KEY) {
+    return NextResponse.json({ error: 'OPENAI_API_KEY non configurée' }, { status: 503 })
   }
 
   const events = (await getProjectTimeline(project.id)).slice(0, 20)
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-  const completion = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
     max_tokens: 260,
     temperature: 0.2,
-    system: 'Tu rédiges des résumés exécutifs en français pour des projets onboarding D-EDGE. Réponds uniquement avec 3 phrases courtes.',
-    messages: [{
-      role: 'user',
-      content: JSON.stringify({
-        instruction: 'Rédige exactement 3 phrases. Format attendu: Le projet X est à Y%. [Dernière étape clé]. [Prochaine étape]. [Risque si présent].',
-        project,
-        events,
-      }),
-    }],
+    messages: [
+      {
+        role: 'system',
+        content: 'Tu rédiges des résumés exécutifs en français pour des projets onboarding D-EDGE. Réponds uniquement avec 3 phrases courtes.',
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({
+          instruction: 'Rédige exactement 3 phrases. Format attendu: Le projet X est à Y%. [Dernière étape clé]. [Prochaine étape]. [Risque si présent].',
+          project,
+          events,
+        }),
+      },
+    ],
   })
 
-  const text = completion.content
-    .filter(block => block.type === 'text')
-    .map(block => block.text)
-    .join('\n')
-    .trim()
+  const text = completion.choices[0]?.message?.content?.trim() ?? ''
 
   const generatedAt = new Date().toISOString()
   const { error } = await supabaseAdmin
