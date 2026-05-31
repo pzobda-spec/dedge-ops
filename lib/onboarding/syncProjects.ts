@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '@/lib/supabase/server'
 import { fetchAllZohoProjects, type OnboardingProject } from '@/lib/zoho/projectsClient'
+import type { ProjectEventType } from './events'
 
 export interface OnboardingProjectsSyncResult {
   synced: number
@@ -13,6 +14,15 @@ interface ExistingOnboardingProject {
   id: string
   zoho_project_id: string | null
   zoho_status: string | null
+}
+
+interface OnboardingEventInsert {
+  project_id: string
+  event_type: ProjectEventType
+  event_label: string
+  actor_email: string | null
+  metadata: Record<string, unknown>
+  occurred_at: string
 }
 
 function legacyStatusFromZoho(status: OnboardingProject['status']): string {
@@ -35,6 +45,28 @@ function legacyStatusFromZoho(status: OnboardingProject['status']): string {
 
 function clientIdForProject(project: OnboardingProject): string {
   return `zoho-project-${project.id}`
+}
+
+async function hasRecentStatusTransition(params: {
+  projectId: string
+  eventType: ProjectEventType
+  from: string | null
+  to: string
+}): Promise<boolean> {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  const { data, error } = await supabaseAdmin
+    .from('onboarding_events')
+    .select('metadata')
+    .eq('project_id', params.projectId)
+    .eq('event_type', params.eventType)
+    .gte('occurred_at', since)
+
+  if (error) throw new Error(error.message)
+
+  return (data ?? []).some(row => {
+    const metadata = (row.metadata ?? {}) as Record<string, unknown>
+    return metadata.from === params.from && metadata.to === params.to
+  })
 }
 
 export async function syncOnboardingProjects(options?: {
@@ -137,11 +169,14 @@ export async function syncOnboardingProjects(options?: {
   })
   const goLiveProjects = statusChangedProjects.filter(project => project.status === 'live')
   const blockedProjects = statusChangedProjects.filter(project => project.status === 'blocked')
+  const regularStatusChangedProjects = statusChangedProjects.filter(
+    project => project.status !== 'live' && project.status !== 'blocked',
+  )
 
-  const eventRows = [
+  const eventRows: OnboardingEventInsert[] = [
     ...createdProjects.map(project => ({
       project_id: insertedByZohoId.get(project.id)?.id ?? project.id,
-      event_type: 'project_created',
+      event_type: 'project_created' as const,
       event_label: 'Projet créé',
       actor_email: 'system',
       metadata: {
@@ -151,31 +186,55 @@ export async function syncOnboardingProjects(options?: {
       },
       occurred_at: now,
     })),
-    ...goLiveProjects.map(project => ({
-      project_id: existingByZohoId.get(project.id)?.id ?? project.id,
-      event_type: 'go_live',
-      event_label: 'Projet passé live',
-      actor_email: 'system',
-      metadata: {
-        zoho_project_id: project.id,
-        previous_status: existingByZohoId.get(project.id)?.zoho_status,
-        new_status: project.status,
-      },
-      occurred_at: now,
-    })),
-    ...blockedProjects.map(project => ({
-      project_id: existingByZohoId.get(project.id)?.id ?? project.id,
-      event_type: 'project_blocked',
-      event_label: 'Projet bloqué',
-      actor_email: 'system',
-      metadata: {
-        zoho_project_id: project.id,
-        previous_status: existingByZohoId.get(project.id)?.zoho_status,
-        new_status: project.status,
-      },
-      occurred_at: now,
-    })),
   ]
+
+  for (const project of goLiveProjects) {
+    const projectId = existingByZohoId.get(project.id)?.id ?? project.id
+    const from = existingByZohoId.get(project.id)?.zoho_status ?? null
+    const duplicate = await hasRecentStatusTransition({ projectId, eventType: 'go_live', from, to: project.status })
+    if (!duplicate) {
+      eventRows.push({
+        project_id: projectId,
+        event_type: 'go_live',
+        event_label: 'Go-live',
+        actor_email: 'system',
+        metadata: { zoho_project_id: project.id, from, to: project.status },
+        occurred_at: now,
+      })
+    }
+  }
+
+  for (const project of blockedProjects) {
+    const projectId = existingByZohoId.get(project.id)?.id ?? project.id
+    const from = existingByZohoId.get(project.id)?.zoho_status ?? null
+    const duplicate = await hasRecentStatusTransition({ projectId, eventType: 'project_blocked', from, to: project.status })
+    if (!duplicate) {
+      eventRows.push({
+        project_id: projectId,
+        event_type: 'project_blocked',
+        event_label: 'Projet bloqué',
+        actor_email: 'system',
+        metadata: { zoho_project_id: project.id, from, to: project.status },
+        occurred_at: now,
+      })
+    }
+  }
+
+  for (const project of regularStatusChangedProjects) {
+    const projectId = existingByZohoId.get(project.id)?.id ?? project.id
+    const from = existingByZohoId.get(project.id)?.zoho_status ?? null
+    const duplicate = await hasRecentStatusTransition({ projectId, eventType: 'status_changed', from, to: project.status })
+    if (!duplicate) {
+      eventRows.push({
+        project_id: projectId,
+        event_type: 'status_changed',
+        event_label: 'Statut mis à jour',
+        actor_email: 'system',
+        metadata: { zoho_project_id: project.id, from, to: project.status },
+        occurred_at: now,
+      })
+    }
+  }
 
   if (eventRows.length > 0) {
     const { error: eventsError } = await supabaseAdmin
