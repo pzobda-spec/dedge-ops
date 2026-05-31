@@ -118,7 +118,7 @@ La synchronisation des projets onboarding est planifiée côté Vercel via `verc
 
 ```json
 {
-  "crons": [{ "path": "/api/cron/sync-onboarding", "schedule": "0 */2 * * *" }]
+  "crons": [{ "path": "/api/cron/sync-onboarding", "schedule": "0 8 * * *" }]
 }
 ```
 

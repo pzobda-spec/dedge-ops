@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { createBrowserClient } from '@supabase/ssr'
 import type { OnboardingProject, ProjectStatus } from '@/lib/zoho/projectsClient'
 import { formatDate } from '@/lib/utils/dates'
 import { IMPLEMENTATION_GROUP, isExcludedOnboardingOwner } from '@/lib/onboarding/constants'
@@ -17,6 +18,7 @@ const columns: { status: ProjectStatus; label: string }[] = [
 ]
 
 const CAPACITY_THRESHOLD = 50
+const PABLO_EMAIL = 'pzobda@d-edge.com'
 
 const productColors: Record<string, string> = {
   'LoungeUp':    'bg-blue-100 text-blue-700',
@@ -284,6 +286,9 @@ export default function OnboardingDashboardPage() {
   const [error, setError] = useState<string | null>(null)
   const [satisfaction, setSatisfaction] = useState<SatisfactionRow[]>([])
   const [satisfactionSyncing, setSatisfactionSyncing] = useState(false)
+  const [canRunProjectsSync, setCanRunProjectsSync] = useState(false)
+  const [projectsSyncing, setProjectsSyncing] = useState(false)
+  const [projectsSyncToast, setProjectsSyncToast] = useState<string | null>(null)
 
   const [activeOwner, setActiveOwner] = useState<string>('Tous')
   const [datePreset, setDatePreset] = useState<DatePreset>('all')
@@ -295,6 +300,17 @@ export default function OnboardingDashboardPage() {
       .then(res => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.json() })
       .then((data: { projects: OnboardingProject[] }) => { setProjects(data.projects); setLoading(false) })
       .catch(err => { console.error(err); setError('Impossible de charger les projets.'); setLoading(false) })
+  }, [])
+
+  useEffect(() => {
+    const supabase = createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    )
+
+    supabase.auth.getUser().then(({ data }) => {
+      setCanRunProjectsSync((data.user?.email ?? '').trim().toLowerCase() === PABLO_EMAIL)
+    })
   }, [])
 
   useEffect(() => {
@@ -314,6 +330,23 @@ export default function OnboardingDashboardPage() {
       }
     } finally {
       setSatisfactionSyncing(false)
+    }
+  }
+
+  async function handleProjectsSync() {
+    setProjectsSyncing(true)
+    setProjectsSyncToast(null)
+    try {
+      const res = await fetch('/api/integrations/zoho/projects-sync', { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
+      setProjectsSyncToast(JSON.stringify(data, null, 2))
+    } catch (err) {
+      setProjectsSyncToast(JSON.stringify({
+        error: err instanceof Error ? err.message : 'Erreur inconnue',
+      }, null, 2))
+    } finally {
+      setProjectsSyncing(false)
     }
   }
 
@@ -425,16 +458,45 @@ export default function OnboardingDashboardPage() {
 
   return (
     <div>
-      <div className="bg-white border-b border-slate-200 px-6 py-4">
-        <h1 className="text-xl font-semibold text-slate-900">Dashboard</h1>
-        {loading ? (
-          <p className="text-sm text-slate-400 mt-0.5">Chargement…</p>
-        ) : error ? (
-          <p className="text-sm text-red-500 mt-0.5">{error}</p>
-        ) : (
-          <p className="text-sm text-slate-500 mt-0.5">{baseProjects.length} projets · {new Set(baseProjects.map(p => p.hotelName)).size} comptes</p>
+      <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">Dashboard</h1>
+          {loading ? (
+            <p className="text-sm text-slate-400 mt-0.5">Chargement…</p>
+          ) : error ? (
+            <p className="text-sm text-red-500 mt-0.5">{error}</p>
+          ) : (
+            <p className="text-sm text-slate-500 mt-0.5">{baseProjects.length} projets · {new Set(baseProjects.map(p => p.hotelName)).size} comptes</p>
+          )}
+        </div>
+        {canRunProjectsSync && (
+          <button
+            onClick={handleProjectsSync}
+            disabled={projectsSyncing}
+            className="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-700 disabled:opacity-50 transition-colors"
+          >
+            {projectsSyncing ? 'Synchronisation…' : 'Synchroniser avec Zoho Projects'}
+          </button>
         )}
       </div>
+
+      {projectsSyncToast && (
+        <div className="fixed right-4 bottom-4 z-50 w-96 max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 bg-white shadow-lg">
+          <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-2">
+            <span className="text-sm font-semibold text-slate-800">Sync Zoho Projects</span>
+            <button
+              onClick={() => setProjectsSyncToast(null)}
+              className="text-sm text-slate-400 hover:text-slate-700"
+              aria-label="Fermer"
+            >
+              ×
+            </button>
+          </div>
+          <pre className="max-h-64 overflow-auto whitespace-pre-wrap px-4 py-3 text-xs text-slate-700">
+            {projectsSyncToast}
+          </pre>
+        </div>
+      )}
 
       {loading ? (
         <div className="p-12 text-center text-slate-400 text-sm">Chargement des projets…</div>

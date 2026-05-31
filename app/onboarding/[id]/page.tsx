@@ -67,24 +67,45 @@ async function getCurrentUserEmail(): Promise<string | null> {
   return data.user?.email ?? null
 }
 
+async function getProjectByIdOrZohoId(id: string): Promise<{
+  project: OnboardingProjectRow | null
+  error: Error | null
+}> {
+  const select = 'id, zoho_project_id, zoho_status, hotel_name, product, owner, owner_email, start_date, target_go_live, actual_go_live, last_synced_at'
+
+  const { data: projectById, error: idError } = await supabaseAdmin
+    .from('onboarding_projects')
+    .select(select)
+    .eq('id', id)
+    .maybeSingle()
+
+  if (idError) return { project: null, error: new Error(idError.message) }
+  if (projectById) return { project: projectById as OnboardingProjectRow, error: null }
+
+  const { data: projectByZohoId, error: zohoError } = await supabaseAdmin
+    .from('onboarding_projects')
+    .select(select)
+    .eq('zoho_project_id', id)
+    .maybeSingle()
+
+  if (zohoError) return { project: null, error: new Error(zohoError.message) }
+  return { project: (projectByZohoId as OnboardingProjectRow | null) ?? null, error: null }
+}
+
 export default async function OnboardingProjectDetailPage({
   params,
 }: {
   params: { id: string }
 }) {
-  const [{ data: project, error }, userEmail] = await Promise.all([
-    supabaseAdmin
-      .from('onboarding_projects')
-      .select('id, zoho_project_id, zoho_status, hotel_name, product, owner, owner_email, start_date, target_go_live, actual_go_live, last_synced_at')
-      .eq('id', params.id)
-      .maybeSingle(),
+  const [{ project, error }, userEmail] = await Promise.all([
+    getProjectByIdOrZohoId(params.id),
     getCurrentUserEmail(),
   ])
 
-  if (error) throw new Error(error.message)
+  if (error) throw error
   if (!project) notFound()
 
-  const row = project as OnboardingProjectRow
+  const row = project
   const zohoUrl = row.zoho_project_id ? buildZohoProjectUrl(row.zoho_project_id) : null
   const isAdmin = canAccessRestrictedOps(userEmail)
 
