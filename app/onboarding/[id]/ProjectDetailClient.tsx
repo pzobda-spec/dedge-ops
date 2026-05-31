@@ -80,10 +80,16 @@ function ExecutiveSummary({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ project_id: project.id, force }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
-      setSummary(data.summary)
-      setGeneratedAt(data.generated_at)
+      const text = await res.text()
+      let data: { error?: string; summary?: string; generated_at?: string } = {}
+      try {
+        data = text ? JSON.parse(text) : {}
+      } catch {
+        data = { error: text || `HTTP ${res.status}` }
+      }
+      if (!res.ok) throw new Error(data.error ?? text ?? `HTTP ${res.status}`)
+      setSummary(data.summary ?? null)
+      setGeneratedAt(data.generated_at ?? null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Impossible de générer le résumé.')
     } finally {
