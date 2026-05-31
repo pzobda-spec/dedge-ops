@@ -7,7 +7,7 @@ Cockpit opérationnel interne pour l'équipe Customer Success & Support D-EDGE C
 - **Framework :** Next.js 14 (App Router)
 - **Language :** TypeScript
 - **Styles :** Tailwind CSS
-- **IA :** OpenAI GPT-4o
+- **IA :** OpenAI GPT-4o mini
 - **Base de données :** Supabase (Sprint 4)
 - **Sprint 1 :** Mock data uniquement
 
@@ -31,7 +31,7 @@ L'application est accessible sur [http://localhost:3000](http://localhost:3000).
 
 | Variable | Description | Requis |
 |----------|-------------|--------|
-| `OPENAI_API_KEY` | Clé API OpenAI (GPT-4o) | Oui pour les fonctions IA |
+| `OPENAI_API_KEY` | Clé API OpenAI (GPT-4o mini) | Oui pour les fonctions IA |
 | `NEXT_PUBLIC_SUPABASE_URL` | URL Supabase | Sprint 4 |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Clé publique Supabase | Sprint 4 |
 | `SUPABASE_SERVICE_ROLE_KEY` | Clé service Supabase | Sprint 4 |
@@ -64,7 +64,7 @@ L'application est accessible sur [http://localhost:3000](http://localhost:3000).
 - Scaffold Next.js 14 + TypeScript + Tailwind
 - Mock data (10 clients, 20 tickets, 6 escalades, 8 formations, 8 projets, 6 articles KB)
 - Toutes les pages navigables
-- 5 routes API OpenAI GPT-4o
+- 5 routes API OpenAI GPT-4o mini
 - Score de risque automatique
 
 ### Sprint 2 — Intégration Zoho Desk

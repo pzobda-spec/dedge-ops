@@ -1,6 +1,6 @@
 # D-EDGE Ops Cockpit — AI Prompts Documentation
 
-All AI actions use **GPT-4o** via the OpenAI API with `response_format: { type: 'json_object' }`.
+All AI actions use **GPT-4o mini** via the OpenAI API with `response_format: { type: 'json_object' }`.
 
 ---
 
@@ -236,7 +236,7 @@ Return only valid JSON, no markdown.
 ## Common Rules Across All Prompts
 
 1. Always use `response_format: { type: 'json_object' }` to ensure structured output
-2. Model: `gpt-4o`
+2. Model: `gpt-4o-mini`
 3. Language detection: respond in the same language as the input (FR/EN)
 4. Never include markdown in responses (no ``` blocks)
 5. All prompts are optimistic — no disclaimers, no refusals for reasonable requests

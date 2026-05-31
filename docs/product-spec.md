@@ -64,7 +64,7 @@ D-EDGE Ops Cockpit is an internal operational dashboard for the D-EDGE CRM Custo
 - Integration status (all future integrations listed)
 - UI preferences
 
-## AI Actions (5 prompts via OpenAI GPT-4o)
+## AI Actions (5 prompts via OpenAI GPT-4o mini)
 
 1. **Summarize ticket** — Structured analysis of a support ticket
 2. **Generate client reply** — Professional email body

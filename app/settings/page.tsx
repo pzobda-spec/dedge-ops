@@ -84,7 +84,7 @@ const INTEGRATIONS: Integration[] = [
     name: 'OpenAI',
     type: 'API Key',
     description: 'Actions IA sur les tickets, suggestions',
-    scope: 'GPT-4o · Chat Completions · Embeddings (text-embedding-3-small)',
+    scope: 'GPT-4o mini · Chat Completions · Embeddings (text-embedding-3-small)',
     envVars: ['OPENAI_API_KEY'],
   },
 ]
