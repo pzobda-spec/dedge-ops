@@ -1,7 +1,7 @@
 import { revalidateTag } from 'next/cache'
 import { NextRequest, NextResponse } from 'next/server'
 import { fetchTickets, updateTicket } from '@/lib/zoho/client'
-import { openai } from '@/lib/openai/client'
+import { OPENAI_CHAT_MODEL, openai } from '@/lib/openai/client'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 290
@@ -65,7 +65,7 @@ Tickets:
 ${batch.map(t => `id=${t.id} | client="${t.client}" | subject="${t.subject}"`).join('\n')}`
 
   const res = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
+    model: OPENAI_CHAT_MODEL,
     temperature: 0,
     response_format: { type: 'json_object' },
     messages: [{ role: 'user', content: prompt }],

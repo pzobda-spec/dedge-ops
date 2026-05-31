@@ -3,7 +3,7 @@ import { canAccessRestrictedOps } from '@/lib/auth/access'
 import { getSessionUserEmail } from '@/lib/auth/session'
 import { getProjectTimeline } from '@/lib/onboarding/events'
 import { getOnboardingProjectByIdOrZohoId } from '@/lib/onboarding/projects'
-import { openai } from '@/lib/openai/client'
+import { OPENAI_CHAT_MODEL, openai } from '@/lib/openai/client'
 import { supabaseAdmin } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
 
   const events = (await getProjectTimeline(project.id)).slice(0, 20)
   const completion = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
+    model: OPENAI_CHAT_MODEL,
     max_tokens: 260,
     temperature: 0.2,
     messages: [

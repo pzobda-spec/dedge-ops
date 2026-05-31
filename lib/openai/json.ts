@@ -1,4 +1,4 @@
-import { openai } from './client'
+import { OPENAI_CHAT_MODEL, openai } from './client'
 
 interface JsonCompletionInput {
   systemPrompt: string
@@ -9,7 +9,7 @@ interface JsonCompletionInput {
 export async function createJsonCompletion<T = Record<string, unknown>>({
   systemPrompt,
   userContent,
-  model = 'gpt-4o',
+  model = OPENAI_CHAT_MODEL,
 }: JsonCompletionInput): Promise<T> {
   const completion = await openai.chat.completions.create({
     model,
