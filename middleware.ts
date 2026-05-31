@@ -7,6 +7,7 @@ const RESTRICTED_PATHS = [
   '/trainings',
   '/api/onboarding',
   '/api/integrations/zoho/satisfaction-sync',
+  '/api/integrations/zoho/projects-sync',
   '/api/zoho/projects',
   '/api/acuity',
   '/api/google/meet',
@@ -42,7 +43,8 @@ export async function middleware(request: NextRequest) {
   const isPublic =
     path.startsWith('/login') ||
     path.startsWith('/auth') ||
-    path.startsWith('/api/auth')
+    path.startsWith('/api/auth') ||
+    path.startsWith('/api/cron')
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone()

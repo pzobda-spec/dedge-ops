@@ -30,6 +30,10 @@ async function projectsFetch<T>(path: string): Promise<T> {
 const PORTAL_SLUG = 'loungeup'
 const PORTFOLIO_ID = '31465000000078005'
 
+export function buildZohoProjectUrl(projectId: string): string {
+  return `https://projects.zoho.eu/portal/${PORTAL_SLUG}#allprojects/${PORTFOLIO_ID}/proj-detail/${projectId}`
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -52,6 +56,7 @@ export interface OnboardingProject {
   status: ProjectStatus
   statusLabel: string
   ownerName: string
+  ownerEmail: string | null
   ownerShort: string
   startDate: string | null
   endDate: string | null
@@ -195,6 +200,7 @@ function mapProject(raw: RawProject): OnboardingProject {
     status,
     statusLabel,
     ownerName: raw.owner_name,
+    ownerEmail: raw.owner_email ?? null,
     ownerShort,
     startDate,
     endDate,
@@ -207,7 +213,7 @@ function mapProject(raw: RawProject): OnboardingProject {
     clientType,
     isOverdue,
     isBlocked,
-    projectUrl: `https://projects.zoho.eu/portal/${PORTAL_SLUG}#allprojects/${PORTFOLIO_ID}/proj-detail/${id}`,
+    projectUrl: buildZohoProjectUrl(id),
   }
 }
 
@@ -240,4 +246,8 @@ export async function fetchProjects(options?: {
   }
 
   return all
+}
+
+export async function fetchAllZohoProjects(): Promise<OnboardingProject[]> {
+  return fetchProjects()
 }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import type { OnboardingProject, ProjectStatus } from '@/lib/zoho/projectsClient'
 import { formatDate } from '@/lib/utils/dates'
 import { IMPLEMENTATION_GROUP, isExcludedOnboardingOwner } from '@/lib/onboarding/constants'
@@ -146,40 +147,52 @@ export default function OnboardingBoardPage() {
                         colProjects.map(p => {
                           const border = p.isBlocked ? 'border-2 border-red-400' : 'border border-slate-200'
                           return (
-                            <a
+                            <div
                               key={p.id}
-                              href={p.projectUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className={`block bg-white rounded-lg ${border} p-3 shadow-sm hover:shadow-md hover:border-blue-300 transition-all cursor-pointer`}
+                              className={`relative bg-white rounded-lg ${border} p-3 shadow-sm hover:shadow-md hover:border-blue-300 transition-all`}
                             >
-                              <p className="text-xs font-semibold text-slate-800 line-clamp-2 mb-1">{p.hotelName}</p>
-                              <div className="flex flex-wrap gap-1 mb-2">
-                                {p.product && (
-                                  <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${productBadgeClass(p.product)}`}>
-                                    {p.product}
-                                  </span>
+                              <Link
+                                href={`/onboarding/${p.id}`}
+                                className="absolute top-2 right-2 w-6 h-6 rounded-full border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 inline-flex items-center justify-center text-xs font-bold transition-colors"
+                                title="Voir le détail"
+                                aria-label={`Voir le détail de ${p.hotelName}`}
+                              >
+                                i
+                              </Link>
+                              <a
+                                href={p.projectUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block pr-7"
+                              >
+                                <p className="text-xs font-semibold text-slate-800 line-clamp-2 mb-1">{p.hotelName}</p>
+                                <div className="flex flex-wrap gap-1 mb-2">
+                                  {p.product && (
+                                    <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${productBadgeClass(p.product)}`}>
+                                      {p.product}
+                                    </span>
+                                  )}
+                                </div>
+                                {p.isBlocked && <span className="block text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded mb-1 font-medium">Bloqué</span>}
+                                {p.isOverdue && <span className="block text-xs bg-red-50 text-red-600 px-1.5 py-0.5 rounded mb-1">Go-live dépassé</span>}
+                                {(p.riskLevel === 'high' || p.riskLevel === 'critical') && (
+                                  <span className="block text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded mb-1 font-medium">Risque élevé</span>
                                 )}
-                              </div>
-                              {p.isBlocked && <span className="block text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded mb-1 font-medium">Bloqué</span>}
-                              {p.isOverdue && <span className="block text-xs bg-red-50 text-red-600 px-1.5 py-0.5 rounded mb-1">Go-live dépassé</span>}
-                              {(p.riskLevel === 'high' || p.riskLevel === 'critical') && (
-                                <span className="block text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded mb-1 font-medium">Risque élevé</span>
-                              )}
-                              <div className="mb-2">
-                                <div className="flex items-center justify-between mb-0.5">
-                                  <span className="text-xs text-slate-400">Avancement</span>
-                                  <span className="text-xs text-slate-500 font-medium">{p.percentComplete}%</span>
+                                <div className="mb-2">
+                                  <div className="flex items-center justify-between mb-0.5">
+                                    <span className="text-xs text-slate-400">Avancement</span>
+                                    <span className="text-xs text-slate-500 font-medium">{p.percentComplete}%</span>
+                                  </div>
+                                  <div className="w-full bg-slate-100 rounded-full h-1.5">
+                                    <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${Math.min(p.percentComplete, 100)}%` }} />
+                                  </div>
                                 </div>
-                                <div className="w-full bg-slate-100 rounded-full h-1.5">
-                                  <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${Math.min(p.percentComplete, 100)}%` }} />
+                                <div className="flex items-center justify-between">
+                                  <span className="inline-flex items-center text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">{p.ownerShort}</span>
+                                  {p.endDate && <span className="text-xs text-slate-400">{formatISODate(p.endDate)}</span>}
                                 </div>
-                              </div>
-                              <div className="flex items-center justify-between">
-                                <span className="inline-flex items-center text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">{p.ownerShort}</span>
-                                {p.endDate && <span className="text-xs text-slate-400">{formatISODate(p.endDate)}</span>}
-                              </div>
-                            </a>
+                              </a>
+                            </div>
                           )
                         })
                       )}

@@ -112,6 +112,20 @@ npm run build    # Build de production
 npm run lint     # Vérification ESLint
 ```
 
+## Cron onboarding
+
+La synchronisation des projets onboarding est planifiée côté Vercel via `vercel.json` :
+
+```json
+{
+  "crons": [{ "path": "/api/cron/sync-onboarding", "schedule": "0 */2 * * *" }]
+}
+```
+
+Configurer `CRON_SECRET` dans les variables d'environnement. Pour un test manuel, appeler
+`/api/cron/sync-onboarding` avec `Authorization: Bearer $CRON_SECRET`,
+`x-cron-secret: $CRON_SECRET`, ou `?secret=$CRON_SECRET`.
+
 ## Structure du projet
 
 ```
