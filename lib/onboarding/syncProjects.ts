@@ -6,6 +6,7 @@ export interface OnboardingProjectsSyncResult {
   created: number
   updated: number
   status_changes: number
+  events_created: number
 }
 
 interface ExistingOnboardingProject {
@@ -59,7 +60,7 @@ export async function syncOnboardingProjects(options?: {
     : allProjects
 
   if (projects.length === 0) {
-    return { synced: 0, created: 0, updated: 0, status_changes: 0 }
+    return { synced: 0, created: 0, updated: 0, status_changes: 0, events_created: 0 }
   }
 
   const zohoIds = projects.map(project => project.id)
@@ -111,24 +112,38 @@ export async function syncOnboardingProjects(options?: {
     updated_at: now,
   }))
 
+  const { data: insertedRows, error: insertError } = await supabaseAdmin
+    .from('onboarding_projects')
+    .upsert(projectRows, { onConflict: 'zoho_project_id', ignoreDuplicates: true })
+    .select('id, zoho_project_id')
+
+  if (insertError) throw new Error(insertError.message)
+
+  const insertedByZohoId = new Map<string, ExistingOnboardingProject>()
+  for (const row of (insertedRows ?? []) as ExistingOnboardingProject[]) {
+    if (row.zoho_project_id) insertedByZohoId.set(row.zoho_project_id, row)
+  }
+
   const { error: upsertError } = await supabaseAdmin
     .from('onboarding_projects')
     .upsert(projectRows, { onConflict: 'zoho_project_id' })
 
   if (upsertError) throw new Error(upsertError.message)
 
-  const createdProjects = projects.filter(project => !existingByZohoId.has(project.id))
+  const createdProjects = projects.filter(project => insertedByZohoId.has(project.id))
   const statusChangedProjects = projects.filter(project => {
     const existing = existingByZohoId.get(project.id)
     return existing && existing.zoho_status !== project.status
   })
+  const goLiveProjects = statusChangedProjects.filter(project => project.status === 'live')
+  const blockedProjects = statusChangedProjects.filter(project => project.status === 'blocked')
 
   const eventRows = [
     ...createdProjects.map(project => ({
-      project_id: existingByZohoId.get(project.id)?.id ?? project.id,
+      project_id: insertedByZohoId.get(project.id)?.id ?? project.id,
       event_type: 'project_created',
-      event_label: 'Projet importe depuis Zoho Projects',
-      actor_email: options?.actorEmail ?? null,
+      event_label: 'Projet créé',
+      actor_email: 'system',
       metadata: {
         zoho_project_id: project.id,
         hotel_name: project.name,
@@ -136,11 +151,23 @@ export async function syncOnboardingProjects(options?: {
       },
       occurred_at: now,
     })),
-    ...statusChangedProjects.map(project => ({
+    ...goLiveProjects.map(project => ({
       project_id: existingByZohoId.get(project.id)?.id ?? project.id,
-      event_type: 'status_changed',
-      event_label: 'Statut Zoho Projects modifie',
-      actor_email: options?.actorEmail ?? null,
+      event_type: 'go_live',
+      event_label: 'Projet passé live',
+      actor_email: 'system',
+      metadata: {
+        zoho_project_id: project.id,
+        previous_status: existingByZohoId.get(project.id)?.zoho_status,
+        new_status: project.status,
+      },
+      occurred_at: now,
+    })),
+    ...blockedProjects.map(project => ({
+      project_id: existingByZohoId.get(project.id)?.id ?? project.id,
+      event_type: 'project_blocked',
+      event_label: 'Projet bloqué',
+      actor_email: 'system',
       metadata: {
         zoho_project_id: project.id,
         previous_status: existingByZohoId.get(project.id)?.zoho_status,
@@ -163,5 +190,6 @@ export async function syncOnboardingProjects(options?: {
     created: createdProjects.length,
     updated: projects.length - createdProjects.length,
     status_changes: statusChangedProjects.length,
+    events_created: eventRows.length,
   }
 }
