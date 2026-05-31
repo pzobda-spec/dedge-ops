@@ -1,20 +1,59 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextRequest, NextResponse } from 'next/server'
-import { canAccessRestrictedOps } from '@/lib/auth/access'
+import { isHardcodedAccessEmail } from '@/lib/auth/access'
+import type { Role } from '@/lib/auth/roles'
 
-const RESTRICTED_PATHS = [
-  '/onboarding',
-  '/trainings',
-  '/api/onboarding',
-  '/api/integrations/zoho/satisfaction-sync',
-  '/api/integrations/zoho/projects-sync',
-  '/api/zoho/projects',
-  '/api/acuity',
-  '/api/google/meet',
+const RESTRICTED_ROUTES: Array<{ prefixes: string[]; roles: Role[] }> = [
+  {
+    prefixes: [
+      '/onboarding',
+      '/trainings',
+      '/tickets',
+      '/api/onboarding',
+      '/api/integrations/zoho',
+      '/api/zoho/projects',
+      '/api/acuity',
+      '/api/google/meet',
+    ],
+    roles: ['admin', 'onboarder', 'support'],
+  },
+  {
+    prefixes: ['/admin', '/api/admin'],
+    roles: ['admin'],
+  },
+  {
+    prefixes: ['/settings/me'],
+    roles: ['admin', 'onboarder', 'support', 'commercial_readonly'],
+  },
 ]
 
-function isRestrictedPath(path: string): boolean {
-  return RESTRICTED_PATHS.some(prefix => path === prefix || path.startsWith(prefix + '/'))
+interface MiddlewareUser {
+  email: string
+  role: Role
+  active: boolean
+}
+
+function getAllowedRoles(path: string): Role[] | null {
+  const match = RESTRICTED_ROUTES.find(route =>
+    route.prefixes.some(prefix => path === prefix || path.startsWith(prefix + '/'))
+  )
+  return match?.roles ?? null
+}
+
+async function getMiddlewareUser(email: string): Promise<MiddlewareUser | null> {
+  const normalized = email.trim().toLowerCase()
+  const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/users?select=email,role,active&email=eq.${encodeURIComponent(normalized)}&limit=1`
+  const res = await fetch(url, {
+    headers: {
+      apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+    },
+    cache: 'no-store',
+  })
+
+  if (!res.ok) return null
+  const rows = await res.json().catch(() => []) as MiddlewareUser[]
+  return rows[0] ?? null
 }
 
 export async function middleware(request: NextRequest) {
@@ -40,11 +79,13 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
 
   const path = request.nextUrl.pathname
+  const allowedRoles = getAllowedRoles(path)
   const isPublic =
     path.startsWith('/login') ||
     path.startsWith('/auth') ||
     path.startsWith('/api/auth') ||
-    path.startsWith('/api/cron')
+    path.startsWith('/api/cron') ||
+    path.startsWith('/forbidden')
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone()
@@ -58,14 +99,40 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  if (user && isRestrictedPath(path) && !canAccessRestrictedOps(user.email)) {
-    if (path.startsWith('/api/')) {
-      return NextResponse.json({ error: 'Accès restreint' }, { status: 403 })
+  if (user && allowedRoles) {
+    const appUser = user.email ? await getMiddlewareUser(user.email) : null
+    const fallbackAllowed = !appUser && isHardcodedAccessEmail(user.email)
+
+    if (!appUser && !fallbackAllowed) {
+      if (path.startsWith('/api/')) {
+        return NextResponse.json({ error: 'Utilisateur non autorisé' }, { status: 403 })
+      }
+
+      const url = request.nextUrl.clone()
+      url.pathname = '/login'
+      return NextResponse.redirect(url)
     }
 
-    const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
-    return NextResponse.redirect(url)
+    if (appUser && !appUser.active) {
+      if (path.startsWith('/api/')) {
+        return NextResponse.json({ error: 'Compte inactif' }, { status: 403 })
+      }
+
+      const url = request.nextUrl.clone()
+      url.pathname = '/forbidden'
+      return NextResponse.redirect(url)
+    }
+
+    const role = appUser?.role ?? 'admin'
+    if (!allowedRoles.includes(role)) {
+      if (path.startsWith('/api/')) {
+        return NextResponse.json({ error: 'Accès restreint' }, { status: 403 })
+      }
+
+      const url = request.nextUrl.clone()
+      url.pathname = '/forbidden'
+      return NextResponse.redirect(url)
+    }
   }
 
   return supabaseResponse

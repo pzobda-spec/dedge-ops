@@ -27,6 +27,19 @@ export async function GET(request: NextRequest) {
 
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     if (!error) {
+      const { data } = await supabase.auth.getUser()
+      const email = data.user?.email?.trim().toLowerCase()
+      if (email) {
+        const { supabaseAdmin } = await import('@/lib/supabase/server')
+        await supabaseAdmin
+          .from('users')
+          .update({
+            active: true,
+            last_login_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('email', email)
+      }
       return NextResponse.redirect(new URL(next, request.url))
     }
   }

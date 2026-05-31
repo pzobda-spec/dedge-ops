@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { canAccessRestrictedOps } from '@/lib/auth/access'
-import { getSessionUserEmail } from '@/lib/auth/session'
+import { authErrorResponse, requireRole } from '@/lib/auth/roles'
 import { getProjectTimeline } from '@/lib/onboarding/events'
 import { getOnboardingProjectByIdOrZohoId } from '@/lib/onboarding/projects'
 import { OPENAI_CHAT_MODEL, openai } from '@/lib/openai/client'
@@ -33,9 +32,10 @@ function getErrorMessage(err: unknown): string {
 }
 
 export async function POST(req: NextRequest) {
-  const email = await getSessionUserEmail()
-  if (!canAccessRestrictedOps(email)) {
-    return NextResponse.json({ error: 'Accès restreint' }, { status: 403 })
+  try {
+    await requireRole(req, ['admin', 'onboarder', 'support'])
+  } catch (err) {
+    return authErrorResponse(err) ?? NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 })
   }
 
   let body: { project_id?: unknown; force?: unknown }

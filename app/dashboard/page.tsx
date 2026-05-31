@@ -2,15 +2,14 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
-import { createBrowserClient } from '@supabase/ssr'
 import type { ZohoMappedTicket } from '@/lib/zoho/mapper'
 import type { LinearIssue } from '@/lib/linear/client'
 import type { AcuitySession } from '@/lib/acuity/client'
 import type { OnboardingProject } from '@/lib/zoho/projectsClient'
+import type { AppUser } from '@/lib/auth/roles'
 import Badge from '@/components/ui/Badge'
 import { formatDate } from '@/lib/utils/dates'
 import { isExcludedOnboardingOwner } from '@/lib/onboarding/constants'
-import { canAccessRestrictedOps } from '@/lib/auth/access'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -83,12 +82,9 @@ export default function DashboardPage() {
   const loadAll = useCallback(async () => {
     setLoadingTickets(true)
     setLoadingOther(true)
-    const supabase = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-    const { data: { user } } = await supabase.auth.getUser()
-    const allowedRestricted = canAccessRestrictedOps(user?.email)
+    const me = await fetch('/api/auth/me', { cache: 'no-store' }).then(r => r.ok ? r.json() : Promise.resolve({ user: null }))
+    const currentUser = me.user as AppUser | null
+    const allowedRestricted = !!currentUser && ['admin', 'onboarder', 'support'].includes(currentUser.role)
     setCanAccessRestricted(allowedRestricted)
 
     const requests = [

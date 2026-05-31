@@ -4,8 +4,9 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState } from 'react'
-import { canAccessRestrictedOps } from '@/lib/auth/access'
+import { useMemo } from 'react'
+import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
+import type { Role } from '@/lib/auth/roles'
 
 interface NavChild {
   href: string
@@ -15,15 +16,16 @@ interface NavChild {
 interface NavItem {
   href: string
   label: string
-  restricted?: boolean
+  roles: Role[]
   children?: NavChild[]
 }
 
 const navItems: NavItem[] = [
-  { href: '/dashboard', label: 'Tableau de bord' },
+  { href: '/dashboard', label: 'Tableau de bord', roles: ['admin', 'onboarder', 'support', 'commercial_readonly'] },
   {
     href: '/tickets',
     label: 'Tickets',
+    roles: ['admin', 'onboarder', 'support'],
     children: [
       { href: '/tickets', label: 'Tickets' },
       { href: '/tickets/analytics', label: 'Analytiques' },
@@ -32,6 +34,7 @@ const navItems: NavItem[] = [
   {
     href: '/escalations',
     label: 'Board Bug',
+    roles: ['admin', 'onboarder', 'support'],
     children: [
       { href: '/escalations', label: 'Board' },
       { href: '/escalations/analytics', label: 'Analytiques' },
@@ -40,7 +43,7 @@ const navItems: NavItem[] = [
   {
     href: '/trainings',
     label: 'Formations',
-    restricted: true,
+    roles: ['admin', 'onboarder'],
     children: [
       { href: '/trainings', label: 'Sessions' },
       { href: '/trainings/analytics', label: 'Analytiques' },
@@ -49,14 +52,25 @@ const navItems: NavItem[] = [
   {
     href: '/onboarding',
     label: 'Onboarding',
-    restricted: true,
+    roles: ['admin', 'onboarder', 'commercial_readonly'],
     children: [
       { href: '/onboarding', label: 'Dashboard' },
       { href: '/onboarding/board', label: 'Board' },
       { href: '/onboarding/charge', label: 'Charge' },
     ],
   },
-  { href: '/settings', label: 'Paramètres' },
+  { href: '/knowledge', label: 'Knowledge Base', roles: ['admin', 'onboarder', 'support'] },
+  { href: '/reporting', label: 'Reporting', roles: ['admin', 'onboarder', 'support'] },
+  { href: '/assistant', label: 'Assistant IA', roles: ['admin', 'onboarder', 'support'] },
+  { href: '/settings', label: 'Paramètres', roles: ['admin', 'onboarder', 'support', 'commercial_readonly'] },
+  {
+    href: '/admin/users',
+    label: 'Administration',
+    roles: ['admin'],
+    children: [
+      { href: '/admin/users', label: 'Utilisateurs' },
+    ],
+  },
 ]
 
 function isParentActive(href: string, pathname: string): boolean {
@@ -71,21 +85,11 @@ function isChildActive(href: string, pathname: string): boolean {
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
-  const [canAccessRestricted, setCanAccessRestricted] = useState(false)
-
-  useEffect(() => {
-    const supabase = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-    supabase.auth.getUser().then(({ data }) => {
-      setCanAccessRestricted(canAccessRestrictedOps(data.user?.email))
-    })
-  }, [])
+  const { user } = useCurrentUser()
 
   const visibleNavItems = useMemo(
-    () => navItems.filter(item => !item.restricted || canAccessRestricted),
-    [canAccessRestricted],
+    () => navItems.filter(item => user && item.roles.includes(user.role)),
+    [user],
   )
 
   async function handleLogout() {
@@ -94,6 +98,7 @@ export default function Sidebar() {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
     await supabase.auth.signOut()
+    sessionStorage.removeItem('dedge-current-user')
     router.push('/login')
   }
 

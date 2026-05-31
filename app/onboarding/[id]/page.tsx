@@ -1,9 +1,10 @@
 import { notFound } from 'next/navigation'
-import { canAccessRestrictedOps } from '@/lib/auth/access'
+import { isHardcodedAccessEmail } from '@/lib/auth/access'
 import { ProjectDetailTabs, ForceSyncButton } from './ProjectDetailClient'
 import { buildZohoProjectUrl } from '@/lib/zoho/projectsClient'
 import { getSessionUserEmail } from '@/lib/auth/session'
 import { getOnboardingProjectByIdOrZohoId } from '@/lib/onboarding/projects'
+import { getUserByEmail } from '@/lib/auth/roles'
 
 const statusLabels: Record<string, string> = {
   not_started: 'Non demarre',
@@ -44,7 +45,9 @@ export default async function OnboardingProjectDetailPage({
 
   const row = project
   const zohoUrl = row.zoho_project_id ? buildZohoProjectUrl(row.zoho_project_id) : null
-  const isAdmin = canAccessRestrictedOps(userEmail)
+  const appUser = userEmail ? await getUserByEmail(userEmail) : null
+  const isAdmin = appUser?.role === 'admin' || (!appUser && isHardcodedAccessEmail(userEmail))
+  const readonly = appUser?.role === 'commercial_readonly' || !isAdmin && appUser?.role !== 'onboarder'
 
   return (
     <div>
@@ -83,7 +86,7 @@ export default async function OnboardingProjectDetailPage({
       </div>
 
       <div className="p-6 max-w-5xl">
-        <ProjectDetailTabs project={row} readonly={!isAdmin} />
+        <ProjectDetailTabs project={row} readonly={readonly} />
       </div>
     </div>
   )
