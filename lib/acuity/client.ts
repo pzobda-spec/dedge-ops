@@ -80,12 +80,26 @@ export interface AcuitySession {
   status: 'scheduled' | 'completed' | 'cancelled'
 }
 
+export interface OnboardingAppointment {
+  acuity_id: number
+  type_name: string
+  datetime: string
+  duration: number
+  calendar: string
+  category: string
+  status: 'scheduled' | 'completed' | 'cancelled'
+  client_name: string
+  hotel_name: string
+  project_id: string | null
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 const TRAINING_CATEGORIES = ['formation', 'training']
 const EXCLUDED_KEYWORDS = ['meeting with', 'customer support', 'salons', 'reunión con']
+const ONBOARDING_KEYWORDS = ['onboarding', 'kick-off', 'kickoff', 'implementation', 'implémentation']
 
 function isTrainingCategory(category: string): boolean {
   const lower = category.toLowerCase()
@@ -117,6 +131,26 @@ function getHotelName(appt: AcuityRawAppointment): string {
     if (companyField?.value) return companyField.value
   }
   return `${appt.firstName} ${appt.lastName}`
+}
+
+function getCustomField(appt: AcuityRawAppointment, fieldName: string): string | null {
+  const target = fieldName.toLowerCase()
+  for (const form of appt.forms ?? []) {
+    const field = form.values.find(v => v.name.toLowerCase() === target)
+    if (field?.value) return field.value
+  }
+  return null
+}
+
+function isOnboardingAppointment(appt: AcuityRawAppointment): boolean {
+  const haystack = `${appt.category ?? ''} ${appt.type ?? ''}`.toLowerCase()
+  return ONBOARDING_KEYWORDS.some(keyword => haystack.includes(keyword))
+}
+
+function includesNormalized(value: string, needle: string): boolean {
+  const cleanValue = value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  const cleanNeedle = needle.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  return cleanValue.includes(cleanNeedle) || cleanNeedle.includes(cleanValue)
 }
 
 function formatDateDDMMYYYY(isoDatetime: string): string {
@@ -231,4 +265,38 @@ export async function fetchRecentSessions(months = 3): Promise<AcuitySession[]> 
   const minDate = new Date()
   minDate.setMonth(minDate.getMonth() - months)
   return fetchSessions({ minDate: minDate.toISOString().slice(0, 10) })
+}
+
+export async function fetchOnboardingAppointments(filter?: {
+  from?: Date
+  to?: Date
+  hotelName?: string
+}): Promise<OnboardingAppointment[]> {
+  let path = '/appointments?max=500'
+  if (filter?.from) path += `&minDate=${filter.from.toISOString().slice(0, 10)}`
+  if (filter?.to) path += `&maxDate=${filter.to.toISOString().slice(0, 10)}`
+
+  const appointments = await acuityFetch<AcuityRawAppointment[]>(path)
+  const now = new Date()
+
+  return appointments
+    .filter(appt => !appt.canceled)
+    .filter(isOnboardingAppointment)
+    .map(appt => {
+      const hotelName = getHotelName(appt)
+      return {
+        acuity_id: appt.id,
+        type_name: cleanTitle(appt.type),
+        datetime: appt.datetime,
+        duration: parseInt(appt.duration, 10) || 0,
+        calendar: appt.calendar,
+        category: appt.category,
+        status: new Date(appt.datetime) < now ? 'completed' as const : 'scheduled' as const,
+        client_name: `${appt.firstName} ${appt.lastName}`.trim(),
+        hotel_name: hotelName,
+        project_id: getCustomField(appt, 'project_id'),
+      }
+    })
+    .filter(appt => !filter?.hotelName || includesNormalized(appt.hotel_name, filter.hotelName))
+    .sort((a, b) => new Date(b.datetime).getTime() - new Date(a.datetime).getTime())
 }

@@ -52,6 +52,25 @@ function relativeDate(iso: string) {
   return formatDistanceToNow(new Date(iso), { addSuffix: true, locale: fr })
 }
 
+function metadataSummary(event: ProjectEvent): string | null {
+  const metadata = event.metadata ?? {}
+  if (event.event_type.startsWith('email_')) {
+    const subject = typeof metadata.subject === 'string' ? metadata.subject : ''
+    return subject ? `Sujet : ${subject.length > 60 ? `${subject.slice(0, 60)}...` : subject}` : null
+  }
+  if (event.event_type === 'recap_generated') {
+    const length = typeof metadata.transcript_length === 'number' ? metadata.transcript_length : null
+    return length !== null ? `Transcript de ${length} caractères` : null
+  }
+  if (event.event_type === 'kickoff_scheduled') return 'Lien Acuity 30 min ouvert'
+  if (event.event_type === 'implementation_scheduled') return 'Lien Acuity 60 min ouvert'
+  if (event.event_type === 'kickoff_completed' || event.event_type === 'implementation_completed') {
+    const date = typeof metadata.appointment_datetime === 'string' ? metadata.appointment_datetime : null
+    return date ? `RDV réalisé le ${new Date(date).toLocaleDateString('fr-FR')}` : null
+  }
+  return null
+}
+
 export default function Timeline({
   project_id,
   readonly = false,
@@ -202,6 +221,7 @@ export default function Timeline({
               const colors = colorClasses[meta.color]
               const Icon = ICONS[meta.icon] ?? StickyNote
               const hasMetadata = event.metadata && Object.keys(event.metadata).length > 0
+              const summary = metadataSummary(event)
               return (
                 <div key={event.id} className="relative">
                   <span className={`absolute -left-[1.35rem] top-2 h-4 w-4 rounded-full border-2 border-white ${colors.dot}`} />
@@ -218,6 +238,7 @@ export default function Timeline({
                           {relativeDate(event.occurred_at)}
                           {event.actor_email ? ` · ${event.actor_email}` : ''}
                         </p>
+                        {summary && <p className="text-xs text-slate-600 mt-2">{summary}</p>}
                       </div>
                       {hasMetadata && (
                         <button

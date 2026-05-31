@@ -1,8 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Calendar, Mail, Sparkles } from 'lucide-react'
+import AcuityAppointments from '@/components/onboarding/AcuityAppointments'
+import EmailComposer from '@/components/onboarding/EmailComposer'
 import ProjectProgress from '@/components/onboarding/ProjectProgress'
+import RecapModal from '@/components/onboarding/RecapModal'
 import Timeline from '@/components/onboarding/Timeline'
+import type { EmailTemplateKey } from '@/lib/onboarding/email-templates'
 import type { ProjectEvent } from '@/lib/onboarding/events'
 import type { OnboardingProjectDetail } from '@/lib/onboarding/projects'
 import { formatDate } from '@/lib/utils/dates'
@@ -135,6 +140,14 @@ function ExecutiveSummary({
   )
 }
 
+const emailActions: Array<{ key: EmailTemplateKey; label: string }> = [
+  { key: 'email_launch', label: 'Email de lancement (J+0)' },
+  { key: 'email_content_request', label: 'Email préparation contenu (J+1)' },
+  { key: 'email_backoffice', label: 'Email accès back-office (J+1)' },
+  { key: 'email_followup_1', label: 'Relance niveau 1' },
+  { key: 'email_followup_2', label: 'Relance niveau 2' },
+]
+
 export function ProjectDetailTabs({
   project,
   readonly = false,
@@ -144,16 +157,39 @@ export function ProjectDetailTabs({
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
   const [timeline, setTimeline] = useState<ProjectEvent[]>([])
+  const [emailComposer, setEmailComposer] = useState<EmailTemplateKey | null>(null)
+  const [recapOpen, setRecapOpen] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+
+  async function loadTimeline() {
+    try {
+      const res = await fetch(`/api/onboarding/projects/${encodeURIComponent(project.id)}/timeline`)
+      if (!res.ok) throw new Error(String(res.status))
+      const data = await res.json()
+      setTimeline(data.events ?? [])
+    } catch {
+      setTimeline([])
+    }
+  }
 
   useEffect(() => {
-    fetch(`/api/onboarding/projects/${encodeURIComponent(project.id)}/timeline`)
-      .then(res => res.ok ? res.json() : Promise.reject(res.status))
-      .then(data => setTimeline(data.events ?? []))
-      .catch(() => setTimeline([]))
+    loadTimeline()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id])
+
+  function handleLogged(message: string) {
+    setToast(message)
+    loadTimeline()
+    window.setTimeout(() => setToast(null), 3000)
+  }
 
   return (
     <div className="space-y-5">
+      {toast && (
+        <div className="fixed bottom-5 right-5 z-50 rounded-lg bg-slate-900 px-4 py-3 text-sm font-medium text-white shadow-lg">
+          {toast}
+        </div>
+      )}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <div className="border-b border-slate-200 px-5 pt-4">
           <div className="flex gap-1">
@@ -177,6 +213,47 @@ export function ProjectDetailTabs({
             <div className="space-y-5">
               <ProjectProgress timeline={timeline} zohoStatus={project.zoho_status} />
               <ExecutiveSummary project={project} canGenerate={!readonly} />
+              {!readonly && (
+                <div className="bg-white border border-slate-200 rounded-xl p-5">
+                  <div className="flex items-center justify-between gap-4 mb-4">
+                    <div>
+                      <h2 className="text-sm font-semibold text-slate-900">Communications client</h2>
+                      <p className="text-sm text-slate-500 mt-1">Prévisualiser, copier puis logger explicitement les emails envoyés.</p>
+                    </div>
+                    <Mail className="h-5 w-5 text-slate-400" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {emailActions.map(action => (
+                      <button
+                        key={action.key}
+                        onClick={() => setEmailComposer(action.key)}
+                        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        <Mail className="h-4 w-4" />
+                        {action.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {!readonly && (
+                <div className="bg-white border border-slate-200 rounded-xl p-5">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <h2 className="text-sm font-semibold text-slate-900">Récap du RDV d’implémentation</h2>
+                      <p className="text-sm text-slate-500 mt-1">Préparer le contexte à coller dans le Gem Gemini.</p>
+                    </div>
+                    <button
+                      onClick={() => setRecapOpen(true)}
+                      className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700"
+                    >
+                      <Sparkles className="h-4 w-4" />
+                      Générer le récap
+                    </button>
+                  </div>
+                </div>
+              )}
+              <AcuityAppointments project={project} onLogged={() => handleLogged('Lien Acuity loggé.')} />
               <div className="grid grid-cols-4 gap-3">
                 <MetricCard label="Début" value={project.start_date ? formatDate(project.start_date) : '—'} />
                 <MetricCard label="Go-live cible" value={project.target_go_live ? formatDate(project.target_go_live) : '—'} />
@@ -189,10 +266,28 @@ export function ProjectDetailTabs({
             <Timeline project_id={project.id} readonly={readonly} onTimelineChange={setTimeline} />
           )}
           {activeTab === 'documents' && (
-            <p className="text-sm text-slate-400">Documents projet - placeholder phase 4.</p>
+            <div className="flex items-center gap-2 text-sm text-slate-400">
+              <Calendar className="h-4 w-4" />
+              Documents projet - placeholder phase 4.
+            </div>
           )}
         </div>
       </div>
+      {emailComposer && (
+        <EmailComposer
+          project={project}
+          templateKey={emailComposer}
+          onClose={() => setEmailComposer(null)}
+          onLogged={() => handleLogged('Email loggé.')}
+        />
+      )}
+      {recapOpen && (
+        <RecapModal
+          project={project}
+          onClose={() => setRecapOpen(false)}
+          onLogged={() => handleLogged('Récap RDV loggé.')}
+        />
+      )}
     </div>
   )
 }

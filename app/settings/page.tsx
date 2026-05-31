@@ -96,6 +96,14 @@ interface AccessRequest {
   status: string
 }
 
+interface AppSetting {
+  key: string
+  value: string | null
+  description: string | null
+  updated_by: string | null
+  updated_at: string
+}
+
 function AccessRequests() {
   const [requests, setRequests] = useState<AccessRequest[]>([])
   const [loading, setLoading] = useState(true)
@@ -211,6 +219,89 @@ function StatusBadge({ ok }: { ok: boolean }) {
   )
 }
 
+function AppSettingsEditor() {
+  const [settings, setSettings] = useState<AppSetting[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/admin/settings', { cache: 'no-store' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
+      setSettings(data.settings ?? [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Impossible de charger les paramètres.')
+      setSettings([])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  function updateValue(key: string, value: string) {
+    setSettings(prev => prev.map(setting => setting.key === key ? { ...setting, value } : setting))
+  }
+
+  async function save(setting: AppSetting) {
+    setSaving(setting.key)
+    setMessage(null)
+    setError(null)
+    try {
+      const res = await fetch('/api/admin/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(setting),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
+      setSettings(prev => prev.map(row => row.key === setting.key ? data.setting : row))
+      setMessage('Paramètre enregistré.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Impossible d’enregistrer.')
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  if (loading) return <p className="text-sm text-slate-400">Chargement…</p>
+  if (error && settings.length === 0) return <p className="text-sm text-slate-400">{error}</p>
+
+  return (
+    <div className="space-y-3">
+      {settings.map(setting => (
+        <div key={setting.key} className="bg-white rounded-xl border border-slate-200 p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-slate-900">{setting.key}</p>
+              {setting.description && <p className="text-sm text-slate-500 mt-1">{setting.description}</p>}
+              <input
+                value={setting.value ?? ''}
+                onChange={e => updateValue(setting.key, e.target.value)}
+                className="mt-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+              />
+            </div>
+            <button
+              onClick={() => save(setting)}
+              disabled={saving === setting.key}
+              className="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-700 disabled:opacity-50"
+            >
+              {saving === setting.key ? '…' : 'Enregistrer'}
+            </button>
+          </div>
+        </div>
+      ))}
+      {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
+      {message && <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{message}</p>}
+    </div>
+  )
+}
+
 export default function SettingsPage() {
   const [health, setHealth] = useState<HealthStatus | null>(null)
   const [loading, setLoading] = useState(true)
@@ -243,6 +334,11 @@ export default function SettingsPage() {
         <div>
           <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-4">Demandes d&apos;accès</p>
           <AccessRequests />
+        </div>
+
+        <div>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-4">Intégrations externes</p>
+          <AppSettingsEditor />
         </div>
 
         <div>

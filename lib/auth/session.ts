@@ -2,6 +2,11 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
 export async function getSessionUserEmail(): Promise<string | null> {
+  const user = await getSessionUser()
+  return user?.email ?? null
+}
+
+export async function getSessionUser(): Promise<{ id: string; email: string } | null> {
   const cookieStore = await cookies()
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,5 +24,5 @@ export async function getSessionUserEmail(): Promise<string | null> {
   )
 
   const { data } = await supabase.auth.getUser()
-  return data.user?.email ?? null
+  return data.user?.email ? { id: data.user.id, email: data.user.email } : null
 }
