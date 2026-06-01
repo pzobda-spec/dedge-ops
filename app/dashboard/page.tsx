@@ -42,24 +42,24 @@ function isToday(dateStr: string): boolean {
 
 // ─── Micro components ─────────────────────────────────────────────────────────
 
-function Spinner({ color = 'border-t-slate-600' }: { color?: string }) {
-  return <div className={`w-3.5 h-3.5 border-2 border-slate-200 ${color} rounded-full animate-spin flex-shrink-0`} />
+function Spinner({ color = 'border-t-[#696969]' }: { color?: string }) {
+  return <div className={`w-3.5 h-3.5 border-2 border-[#e2e2e2] ${color} rounded-full animate-spin flex-shrink-0`} />
 }
 
 function SectionHeader({ title, href, label }: { title: string; href: string; label?: string }) {
   return (
-    <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-      <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
-      {href && <Link href={href} className="text-xs text-slate-400 hover:text-blue-600 transition-colors">{label ?? 'Voir tout →'}</Link>}
+    <div className="px-4 py-3 border-b border-[#e2e2e2] flex items-center justify-between">
+      <h2 className="text-sm font-semibold text-[#1a1a1a]">{title}</h2>
+      {href && <Link href={href} className="text-xs text-[#59319f] hover:underline transition-colors">{label ?? 'Voir tout →'}</Link>}
     </div>
   )
 }
 
 const PRIORITY_DOT: Record<string, string> = {
-  urgent: 'bg-red-500',
-  high:   'bg-orange-400',
-  medium: 'bg-blue-400',
-  low:    'bg-slate-300',
+  urgent: 'bg-[#b7221b]',
+  high:   'bg-[#903b07]',
+  medium: 'bg-[#2b5bb7]',
+  low:    'bg-[#b0b0b0]',
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -76,8 +76,6 @@ export default function DashboardPage() {
   const [normalizeMsg, setNormalizeMsg] = useState<string | null>(null)
   const [fixingUndefined, setFixingUndefined] = useState(false)
   const [fixUndefinedMsg, setFixUndefinedMsg] = useState<string | null>(null)
-
-  // ─── Data loading ────────────────────────────────────────────────────────────
 
   const loadAll = useCallback(async () => {
     setLoadingTickets(true)
@@ -104,8 +102,6 @@ export default function DashboardPage() {
   }, [])
 
   useEffect(() => { loadAll() }, [loadAll])
-
-  // ─── Admin handlers ──────────────────────────────────────────────────────────
 
   const handleNormalize = useCallback(async () => {
     setNormalizing(true)
@@ -146,34 +142,22 @@ export default function DashboardPage() {
     setFixingUndefined(false)
   }, [])
 
-  // ─── Derived state ───────────────────────────────────────────────────────────
-
   const noFirstReply = useMemo(() =>
     tickets
       .filter(t => (t.zohoStatus === 'Open' || t.zohoStatus === 'Escalated') && t.threadCount <= 1 && hoursAgo(t.createdAt) > 2)
       .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
     [tickets])
 
-  const highRisk = useMemo(() =>
-    tickets.filter(t => (t.riskScore ?? 0) >= 60),
-    [tickets])
-
+  const highRisk = useMemo(() => tickets.filter(t => (t.riskScore ?? 0) >= 60), [tickets])
   const noFirstReplyIds = useMemo(() => new Set(noFirstReply.map(t => t.id)), [noFirstReply])
 
   const attentionList = useMemo(() => [
     ...noFirstReply,
-    ...highRisk
-      .filter(t => !noFirstReplyIds.has(t.id))
-      .sort((a, b) => (b.riskScore ?? 0) - (a.riskScore ?? 0)),
+    ...highRisk.filter(t => !noFirstReplyIds.has(t.id)).sort((a, b) => (b.riskScore ?? 0) - (a.riskScore ?? 0)),
   ].slice(0, 8), [noFirstReply, highRisk, noFirstReplyIds])
 
-  const openEscalations = useMemo(() =>
-    escalations.filter(e => e.status !== 'resolved'),
-    [escalations])
-
-  const toQualify = useMemo(() =>
-    escalations.filter(e => e.status === 'to_qualify'),
-    [escalations])
+  const openEscalations = useMemo(() => escalations.filter(e => e.status !== 'resolved'), [escalations])
+  const toQualify = useMemo(() => escalations.filter(e => e.status === 'to_qualify'), [escalations])
 
   const topEscalades = useMemo(() =>
     [...openEscalations]
@@ -184,49 +168,36 @@ export default function DashboardPage() {
       .slice(0, 4),
     [openEscalations])
 
-  const todaySessions = useMemo(() =>
-    sessions.filter(s => isToday(s.datetime)),
-    [sessions])
-
+  const todaySessions = useMemo(() => sessions.filter(s => isToday(s.datetime)), [sessions])
   const upcomingSessions = useMemo(() =>
     sessions.filter(s => {
       if (isToday(s.datetime)) return false
       const diff = new Date(s.datetime).getTime() - Date.now()
       return diff > 0 && diff <= 7 * 86_400_000
-    }),
-    [sessions])
+    }), [sessions])
 
-  const baseProjects = useMemo(() =>
-    projects.filter(p => !isExcludedOnboardingOwner(p.ownerShort)),
-    [projects])
-
-  const blockedProjects = useMemo(() =>
-    baseProjects.filter(p => p.status === 'blocked'),
-    [baseProjects])
+  const baseProjects = useMemo(() => projects.filter(p => !isExcludedOnboardingOwner(p.ownerShort)), [projects])
+  const blockedProjects = useMemo(() => baseProjects.filter(p => p.status === 'blocked'), [baseProjects])
 
   const goLiveSoon = useMemo(() =>
     baseProjects
-      .filter(p => {
-        if (!p.endDate || p.status === 'live') return false
-        const d = daysUntil(p.endDate)
-        return d >= 0 && d <= 7
-      })
+      .filter(p => { if (!p.endDate || p.status === 'live') return false; const d = daysUntil(p.endDate); return d >= 0 && d <= 7 })
       .sort((a, b) => (a.endDate ?? '').localeCompare(b.endDate ?? '')),
     [baseProjects])
 
-  // ─── Render ──────────────────────────────────────────────────────────────────
+  const toolBtnCls = 'px-3 py-1.5 text-xs text-[#696969] border border-[#e2e2e2] rounded-lg hover:bg-[#f7f7f7] transition-colors disabled:opacity-50 flex items-center gap-1.5'
 
   return (
-    <div>
+    <div style={{ fontFamily: 'var(--font-sans)', backgroundColor: 'var(--bg-canvas)' }} className="min-h-screen">
       {/* Header */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
+      <div className="bg-white border-b border-[#e2e2e2] px-6 py-4 flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Bonjour Pablo</h1>
-          <p className="text-sm text-slate-500 mt-0.5 capitalize">{formatTodayFR()}</p>
+          <h1 className="text-xl font-semibold text-[#1a1a1a]">Bonjour Pablo</h1>
+          <p className="text-sm text-[#696969] mt-0.5 capitalize">{formatTodayFR()}</p>
         </div>
         <button
           onClick={loadAll}
-          className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-1.5"
+          className={toolBtnCls}
         >
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -237,102 +208,102 @@ export default function DashboardPage() {
 
       <div className="p-6 space-y-5 max-w-6xl">
 
-        {/* ── KPI strip ── */}
+        {/* KPI strip */}
         <div className="grid grid-cols-4 gap-3">
           {[
             {
               label: 'Sans 1ère réponse', value: noFirstReply.length,
               sub: '> 2h · tickets ouverts', href: '/tickets',
-              loading: loadingTickets, severity: 'red' as const,
+              loading: loadingTickets, severity: 'critical' as const,
             },
             {
               label: 'Tickets à risque', value: highRisk.length,
               sub: 'score ≥ 60', href: '/tickets',
-              loading: loadingTickets, severity: 'orange' as const,
+              loading: loadingTickets, severity: 'warning' as const,
             },
             {
               label: 'Escalades ouvertes', value: openEscalations.length,
               sub: toQualify.length > 0 ? `dont ${toQualify.length} à qualifier` : 'aucune à qualifier',
-              href: '/escalations', loading: loadingOther, severity: 'orange' as const,
+              href: '/escalations', loading: loadingOther, severity: 'warning' as const,
             },
             {
               label: 'Onboarding bloqués', value: blockedProjects.length,
               sub: 'projets en attente déblocage', href: '/onboarding/board',
-              loading: loadingOther, severity: 'red' as const,
+              loading: loadingOther, severity: 'critical' as const,
             },
           ].map(({ label, value, sub, href, loading, severity }) => {
             const isAlert = value > 0
-            const spinColor = severity === 'red' ? 'border-t-red-500' : 'border-t-orange-400'
-            const valColor = !isAlert ? 'text-emerald-600' : severity === 'red' ? 'text-red-600' : 'text-orange-500'
-            const borderColor = !isAlert ? 'border-slate-200' : severity === 'red' ? 'border-red-200' : 'border-orange-200'
-            const bg = !isAlert ? 'bg-white' : severity === 'red' ? 'bg-red-50' : 'bg-orange-50'
+            const spinColor = severity === 'critical' ? 'border-t-[#b7221b]' : 'border-t-[#903b07]'
+            const valColor = !isAlert ? 'text-[#1c6437]' : severity === 'critical' ? 'text-[#b7221b]' : 'text-[#903b07]'
+            const borderColor = !isAlert ? 'border-[#e2e2e2]' : severity === 'critical' ? 'border-[#fca5a5]' : 'border-[#fdba74]'
+            const bg = !isAlert ? 'bg-white' : severity === 'critical' ? 'bg-[#fff8f8]' : 'bg-[#fff7ed]'
             return (
-              <Link key={label} href={href} className={`block rounded-xl border ${borderColor} ${bg} p-4 hover:shadow-sm transition-shadow`}>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{label}</p>
+              <Link key={label} href={href} className={`block rounded-xl border ${borderColor} ${bg} p-4 hover:shadow-[0_4px_12px_rgba(0,0,0,0.10)] transition-shadow`}>
+                <p className="text-xs font-semibold text-[#696969] uppercase tracking-wide">{label}</p>
                 {loading
                   ? <div className="mt-2"><Spinner color={spinColor} /></div>
                   : <p className={`text-3xl font-bold tabular-nums mt-1.5 ${valColor}`}>{value}</p>
                 }
-                <p className="text-xs text-slate-400 mt-1">{sub}</p>
+                <p className="text-xs text-[#696969] mt-1">{sub}</p>
               </Link>
             )
           })}
         </div>
 
-        {/* ── Main grid — items-start prevents height stretching ── */}
+        {/* Main grid */}
         <div className="grid grid-cols-3 gap-5 items-start">
 
           {/* Tickets */}
-          <div className="col-span-2 bg-white rounded-xl border border-slate-200 overflow-hidden">
-            <div className="px-5 py-3 border-b border-slate-200 flex items-center justify-between">
+          <div className="col-span-2 bg-white rounded-xl border border-[#e2e2e2] shadow-[0_4px_8px_rgba(0,0,0,0.06)] overflow-hidden">
+            <div className="px-5 py-3 border-b border-[#e2e2e2] flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <h2 className="text-sm font-semibold text-slate-900">Tickets · à traiter</h2>
+                <h2 className="text-sm font-semibold text-[#1a1a1a]">Tickets · à traiter</h2>
                 {!loadingTickets && attentionList.length > 0 && (
-                  <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-semibold tabular-nums">
+                  <span className="text-xs bg-[#fee3e2] text-[#b7221b] px-2 py-0.5 rounded-full font-semibold tabular-nums">
                     {attentionList.length}
                   </span>
                 )}
               </div>
               {!loadingTickets && (
-                <Link href="/tickets" className="text-xs text-slate-400 hover:text-blue-600 transition-colors">
+                <Link href="/tickets" className="text-xs text-[#59319f] hover:underline">
                   {tickets.length} ouverts →
                 </Link>
               )}
             </div>
 
             {loadingTickets ? (
-              <div className="flex items-center gap-2.5 px-5 py-6 text-sm text-slate-400">
+              <div className="flex items-center gap-2.5 px-5 py-6 text-sm text-[#696969]">
                 <Spinner />Chargement…
               </div>
             ) : attentionList.length === 0 ? (
               <div className="px-5 py-8 text-center">
-                <p className="text-xl mb-1">✓</p>
-                <p className="text-sm text-slate-500 font-medium">Aucun ticket en attente</p>
-                <p className="text-xs text-slate-400 mt-0.5">Pas de ticket sans 1ère réponse depuis plus de 2h</p>
+                <p className="text-xl mb-1 text-[#1c6437]">✓</p>
+                <p className="text-sm text-[#696969] font-medium">Aucun ticket en attente</p>
+                <p className="text-xs text-[#b0b0b0] mt-0.5">Pas de ticket sans 1ère réponse depuis plus de 2h</p>
               </div>
             ) : (
-              <div className="divide-y divide-slate-100">
+              <div className="divide-y divide-[#f0f0f0]">
                 {attentionList.map(ticket => (
                   <Link
                     key={ticket.id}
                     href={`/tickets/${ticket.zohoInternalId}`}
-                    className="flex items-center gap-3 px-5 py-2.5 hover:bg-slate-50 transition-colors"
+                    className="flex items-center gap-3 px-5 py-2.5 hover:bg-[#f7f4fd] transition-colors"
                   >
-                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${PRIORITY_DOT[ticket.priority] ?? 'bg-slate-300'}`} />
+                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${PRIORITY_DOT[ticket.priority] ?? 'bg-[#b0b0b0]'}`} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-900 truncate">{ticket.subject}</p>
-                      <p className="text-xs text-slate-500 truncate">{ticket.clientName} · {ticket.productArea}</p>
+                      <p className="text-sm font-medium text-[#1a1a1a] truncate">{ticket.subject}</p>
+                      <p className="text-xs text-[#696969] truncate">{ticket.clientName} · {ticket.productArea}</p>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       {ticket.segment && (
                         <Badge label={ticket.segment} variant={ticket.segment.toLowerCase() as 'strategic' | 'gold' | 'silver' | 'bronze'} />
                       )}
                       {noFirstReplyIds.has(ticket.id) ? (
-                        <span className="text-xs font-semibold text-red-600 tabular-nums text-right w-14">
+                        <span className="text-xs font-semibold text-[#b7221b] tabular-nums text-right w-14">
                           {formatWait(ticket.createdAt)}
                         </span>
                       ) : (
-                        <span className="text-xs font-semibold text-orange-500 tabular-nums text-right w-14">
+                        <span className="text-xs font-semibold text-[#903b07] tabular-nums text-right w-14">
                           r.{ticket.riskScore}
                         </span>
                       )}
@@ -343,31 +314,31 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* Sidebar */}
+          {/* Sidebar cards */}
           <div className="col-span-1 space-y-4">
 
             {canAccessRestricted && (
-              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <div className="bg-white rounded-xl border border-[#e2e2e2] shadow-[0_4px_8px_rgba(0,0,0,0.06)] overflow-hidden">
                 <SectionHeader title="Formations" href="/trainings" />
                 {loadingOther ? (
-                  <div className="flex items-center gap-2 px-4 py-4 text-sm text-slate-400"><Spinner />Chargement…</div>
+                  <div className="flex items-center gap-2 px-4 py-4 text-sm text-[#696969]"><Spinner />Chargement…</div>
                 ) : todaySessions.length === 0 && upcomingSessions.length === 0 ? (
-                  <p className="px-4 py-4 text-xs text-slate-400">Aucune formation cette semaine</p>
+                  <p className="px-4 py-4 text-xs text-[#696969]">Aucune formation cette semaine</p>
                 ) : (
-                  <div className="divide-y divide-slate-100">
+                  <div className="divide-y divide-[#f0f0f0]">
                     {todaySessions.map(s => (
-                      <div key={s.classID} className="px-4 py-2.5 bg-blue-50">
-                        <p className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-0.5">Aujourd&apos;hui</p>
-                        <p className="text-sm font-medium text-slate-900 line-clamp-1">{s.title}</p>
-                        <p className="text-xs text-slate-500">
+                      <div key={s.classID} className="px-4 py-2.5 bg-[#d4e4f8]">
+                        <p className="text-xs font-bold text-[#2b5bb7] uppercase tracking-wide mb-0.5">Aujourd&apos;hui</p>
+                        <p className="text-sm font-medium text-[#1a1a1a] line-clamp-1">{s.title}</p>
+                        <p className="text-xs text-[#696969]">
                           {new Date(s.datetime).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} · {s.totalRegistered} inscrit{s.totalRegistered > 1 ? 's' : ''}
                         </p>
                       </div>
                     ))}
                     {upcomingSessions.slice(0, 3).map(s => (
                       <div key={s.classID} className="px-4 py-2.5">
-                        <p className="text-sm font-medium text-slate-900 line-clamp-1">{s.title}</p>
-                        <p className="text-xs text-slate-500">{formatDate(s.datetime)} · {s.totalRegistered} inscrit{s.totalRegistered > 1 ? 's' : ''}</p>
+                        <p className="text-sm font-medium text-[#1a1a1a] line-clamp-1">{s.title}</p>
+                        <p className="text-xs text-[#696969]">{formatDate(s.datetime)} · {s.totalRegistered} inscrit{s.totalRegistered > 1 ? 's' : ''}</p>
                       </div>
                     ))}
                   </div>
@@ -376,22 +347,22 @@ export default function DashboardPage() {
             )}
 
             {/* Escalades */}
-            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="bg-white rounded-xl border border-[#e2e2e2] shadow-[0_4px_8px_rgba(0,0,0,0.06)] overflow-hidden">
               <SectionHeader title="Escalades" href="/escalations" />
               {loadingOther ? (
-                <div className="flex items-center gap-2 px-4 py-4 text-sm text-slate-400"><Spinner />Chargement…</div>
+                <div className="flex items-center gap-2 px-4 py-4 text-sm text-[#696969]"><Spinner />Chargement…</div>
               ) : openEscalations.length === 0 ? (
-                <p className="px-4 py-4 text-xs text-slate-400">Aucune escalade ouverte</p>
+                <p className="px-4 py-4 text-xs text-[#696969]">Aucune escalade ouverte</p>
               ) : (
-                <div className="divide-y divide-slate-100">
+                <div className="divide-y divide-[#f0f0f0]">
                   {topEscalades.map(e => (
                     <a key={e.id} href={e.url} target="_blank" rel="noopener noreferrer"
-                      className="flex items-start gap-2.5 px-4 py-2.5 hover:bg-slate-50 transition-colors"
+                      className="flex items-start gap-2.5 px-4 py-2.5 hover:bg-[#f7f7f7] transition-colors"
                     >
-                      <span className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${e.status === 'to_qualify' ? 'bg-orange-400' : 'bg-blue-400'}`} />
+                      <span className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${e.status === 'to_qualify' ? 'bg-[#903b07]' : 'bg-[#2b5bb7]'}`} />
                       <div className="min-w-0">
-                        <p className="text-xs font-mono text-slate-400">{e.identifier}</p>
-                        <p className="text-sm text-slate-800 line-clamp-2">{e.title}</p>
+                        <p className="text-xs font-mono text-[#b0b0b0]">{e.identifier}</p>
+                        <p className="text-sm text-[#4a4a4a] line-clamp-2">{e.title}</p>
                       </div>
                     </a>
                   ))}
@@ -399,19 +370,19 @@ export default function DashboardPage() {
               )}
             </div>
 
-            {/* Onboarding alerts — only shown if there is something to show */}
+            {/* Onboarding alerts */}
             {canAccessRestricted && !loadingOther && (blockedProjects.length > 0 || goLiveSoon.length > 0) && (
-              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <div className="bg-white rounded-xl border border-[#e2e2e2] shadow-[0_4px_8px_rgba(0,0,0,0.06)] overflow-hidden">
                 <SectionHeader title="Onboarding" href="/onboarding/board" label="Board →" />
-                <div className="divide-y divide-slate-100">
+                <div className="divide-y divide-[#f0f0f0]">
                   {blockedProjects.slice(0, 3).map(p => (
                     <a key={p.id} href={p.projectUrl} target="_blank" rel="noopener noreferrer"
-                      className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-slate-50 transition-colors"
+                      className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-[#f7f7f7] transition-colors"
                     >
-                      <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-medium flex-shrink-0">Bloqué</span>
+                      <span className="text-xs bg-[#fee3e2] text-[#b7221b] px-1.5 py-0.5 rounded font-medium flex-shrink-0">Bloqué</span>
                       <div className="min-w-0">
-                        <p className="text-sm text-slate-800 truncate">{p.hotelName}</p>
-                        <p className="text-xs text-slate-400">{p.ownerShort}</p>
+                        <p className="text-sm text-[#1a1a1a] truncate">{p.hotelName}</p>
+                        <p className="text-xs text-[#696969]">{p.ownerShort}</p>
                       </div>
                     </a>
                   ))}
@@ -419,14 +390,14 @@ export default function DashboardPage() {
                     const d = daysUntil(p.endDate!)
                     return (
                       <a key={p.id} href={p.projectUrl} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-slate-50 transition-colors"
+                        className="flex items-center gap-2.5 px-4 py-2.5 hover:bg-[#f7f7f7] transition-colors"
                       >
-                        <span className="text-xs bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-medium flex-shrink-0 whitespace-nowrap">
+                        <span className="text-xs bg-[#cff7dc] text-[#1c6437] px-1.5 py-0.5 rounded font-medium flex-shrink-0 whitespace-nowrap">
                           {d === 0 ? 'Auj.' : `J-${d}`}
                         </span>
                         <div className="min-w-0">
-                          <p className="text-sm text-slate-800 truncate">{p.hotelName}</p>
-                          <p className="text-xs text-slate-400">{p.ownerShort}</p>
+                          <p className="text-sm text-[#1a1a1a] truncate">{p.hotelName}</p>
+                          <p className="text-xs text-[#696969]">{p.ownerShort}</p>
                         </div>
                       </a>
                     )
@@ -437,33 +408,25 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ── Outils admin ── */}
+        {/* Outils admin */}
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-slate-400 font-medium">Outils</span>
-          <span className="text-slate-200">·</span>
+          <span className="text-xs text-[#696969] font-medium">Outils</span>
+          <span className="text-[#e2e2e2]">·</span>
           <a
             href="https://dash.getsitecontrol.com/sites/44891/widgets?folderId=13236"
             target="_blank" rel="noopener noreferrer"
-            className="px-3 py-1.5 text-xs text-slate-500 border border-slate-200 rounded-md hover:bg-slate-50 transition-colors"
+            className={toolBtnCls}
           >
             Bannières GSC ↗
           </a>
-          <button
-            onClick={handleNormalize}
-            disabled={normalizing}
-            className="px-3 py-1.5 text-xs text-slate-500 border border-slate-200 rounded-md hover:bg-slate-50 transition-colors disabled:opacity-50 flex items-center gap-1.5"
-          >
+          <button onClick={handleNormalize} disabled={normalizing} className={toolBtnCls}>
             {normalizing ? <><Spinner />Normalisation…</> : 'Normaliser les tickets'}
           </button>
-          <button
-            onClick={handleFixUndefined}
-            disabled={fixingUndefined}
-            className="px-3 py-1.5 text-xs text-slate-500 border border-slate-200 rounded-md hover:bg-slate-50 transition-colors disabled:opacity-50 flex items-center gap-1.5"
-          >
+          <button onClick={handleFixUndefined} disabled={fixingUndefined} className={toolBtnCls}>
             {fixingUndefined ? <><Spinner />Correction…</> : 'Corriger les "Undefined"'}
           </button>
           {(normalizeMsg || fixUndefinedMsg) && (
-            <span className="text-xs text-slate-400">{fixUndefinedMsg ?? normalizeMsg}</span>
+            <span className="text-xs text-[#696969]">{fixUndefinedMsg ?? normalizeMsg}</span>
           )}
         </div>
 

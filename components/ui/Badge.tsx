@@ -17,22 +17,22 @@ type BadgeVariant =
   | 'default'
 
 const variantClasses: Record<BadgeVariant, string> = {
-  strategic: 'bg-red-100 text-red-800',
-  gold: 'bg-amber-100 text-amber-800',
-  silver: 'bg-slate-200 text-slate-700',
-  bronze: 'bg-orange-50 text-orange-700',
-  open: 'bg-blue-100 text-blue-800',
-  pending: 'bg-yellow-100 text-yellow-800',
-  resolved: 'bg-green-100 text-green-800',
-  reopened: 'bg-purple-100 text-purple-800',
-  urgent: 'bg-red-100 text-red-800',
-  high: 'bg-orange-100 text-orange-800',
-  medium: 'bg-blue-100 text-blue-800',
-  low: 'bg-slate-100 text-slate-600',
-  fr: 'bg-blue-100 text-blue-800',
-  en: 'bg-green-100 text-green-800',
-  es: 'bg-yellow-100 text-yellow-800',
-  default: 'bg-slate-100 text-slate-600',
+  strategic: 'bg-[#fee3e2] text-[#b7221b]',
+  gold:      'bg-[#ffe7cf] text-[#903b07]',
+  silver:    'bg-[#e2e2e2] text-[#4a4a4a]',
+  bronze:    'bg-[#ffe7cf] text-[#903b07]',
+  open:      'bg-[#d4e4f8] text-[#2b5bb7]',
+  pending:   'bg-[#fbf1ca] text-[#84550e]',
+  resolved:  'bg-[#cff7dc] text-[#1c6437]',
+  reopened:  'bg-[#e8dbfa] text-[#59319f]',
+  urgent:    'bg-[#fee3e2] text-[#b7221b]',
+  high:      'bg-[#ffe7cf] text-[#903b07]',
+  medium:    'bg-[#d4e4f8] text-[#2b5bb7]',
+  low:       'bg-[#e2e2e2] text-[#4a4a4a]',
+  fr:        'bg-[#d4e4f8] text-[#2b5bb7]',
+  en:        'bg-[#cff7dc] text-[#1c6437]',
+  es:        'bg-[#ffe7cf] text-[#903b07]',
+  default:   'bg-[#e2e2e2] text-[#4a4a4a]',
 }
 
 export default function Badge({

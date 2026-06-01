@@ -20,7 +20,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="fr" className={dmSans.variable}>
-      <body className="bg-slate-50 text-slate-900">
+      <head>
+        <link rel="stylesheet" href="/design-system/colors_and_type.css" />
+      </head>
+      <body className="text-[#1a1a1a]" style={{ fontFamily: 'var(--font-sans)', backgroundColor: 'var(--bg-canvas)' }}>
         <AppShell>{children}</AppShell>
       </body>
     </html>

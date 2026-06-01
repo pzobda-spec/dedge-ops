@@ -9,7 +9,11 @@ export default function NavShell({ children }: { children: React.ReactNode }) {
   const isAuthPage = pathname === '/login' || pathname?.startsWith('/auth')
 
   if (isAuthPage) {
-    return <div className="min-h-screen bg-slate-50">{children}</div>
+    return (
+      <div className="min-h-screen" style={{ backgroundColor: 'var(--bg-canvas)' }}>
+        {children}
+      </div>
+    )
   }
 
   return (

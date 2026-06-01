@@ -118,7 +118,7 @@ export default function Sidebar() {
                   href={item.href}
                   className={`flex items-center px-3 py-2 rounded-md text-sm transition-colors ${
                     parentActive && !item.children
-                      ? 'bg-slate-700 text-white font-medium'
+                      ? 'bg-[#3f2175] text-white font-medium'
                       : parentActive && item.children
                       ? 'text-white font-medium'
                       : 'text-slate-300 hover:bg-slate-800 hover:text-white'
@@ -130,16 +130,13 @@ export default function Sidebar() {
                   <ul className="mt-0.5 mb-1 space-y-0.5 pl-3">
                     {item.children.map(child => {
                       const childActive = isChildActive(child.href, pathname)
-                      const isOnboarding = child.href.startsWith('/onboarding')
                       return (
                         <li key={child.href}>
                           <Link
                             href={child.href}
                             className={`flex items-center px-3 py-1.5 rounded-md text-xs transition-colors ${
-                              childActive && isOnboarding
+                              childActive
                                 ? 'bg-[#e8dbfa] text-[#59319f] font-medium'
-                                : childActive
-                                ? 'bg-slate-700 text-white font-medium'
                                 : 'text-slate-400 hover:bg-slate-800 hover:text-white'
                             }`}
                           >

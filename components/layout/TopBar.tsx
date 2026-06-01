@@ -20,10 +20,10 @@ const roleLabels: Record<Role, string> = {
 }
 
 const roleClasses: Record<Role, string> = {
-  admin: 'bg-red-50 text-red-700 border-red-200',
-  onboarder: 'bg-blue-50 text-blue-700 border-blue-200',
-  support: 'bg-purple-50 text-purple-700 border-purple-200',
-  commercial_readonly: 'bg-slate-100 text-slate-600 border-slate-200',
+  admin:               'bg-[#fee3e2] text-[#b7221b] border-[#fca5a5]',
+  onboarder:           'bg-[#e8dbfa] text-[#59319f] border-[#c0a4f0]',
+  support:             'bg-[#d4e4f8] text-[#2b5bb7] border-[#93c5fd]',
+  commercial_readonly: 'bg-[#e2e2e2] text-[#4a4a4a] border-[#d1d5db]',
 }
 
 function initials(email: string, fullName: string | null): string {
@@ -52,31 +52,31 @@ export default function TopBar({ title, subtitle }: TopBarProps) {
   }
 
   return (
-    <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between gap-4">
+    <div className="bg-white border-b border-[#e2e2e2] px-6 py-4 flex items-center justify-between gap-4">
       <div>
-        {title && <h1 className="text-xl font-semibold text-slate-900">{title}</h1>}
-        {subtitle && <p className="text-sm text-slate-500 mt-0.5">{subtitle}</p>}
+        {title && <h1 className="text-xl font-semibold text-[#1a1a1a]">{title}</h1>}
+        {subtitle && <p className="text-sm text-[#696969] mt-0.5">{subtitle}</p>}
       </div>
       {user && (
         <div className="relative">
           <button
             onClick={() => setOpen(value => !value)}
-            className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 hover:bg-slate-50"
+            className="flex items-center gap-2 rounded-lg border border-[#e2e2e2] bg-white px-2.5 py-1.5 hover:bg-[#f7f7f7] transition-colors"
           >
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#59319f] text-xs font-semibold text-white">
               {initials(user.email, user.full_name)}
             </span>
-            <span className="max-w-[180px] truncate text-sm text-slate-700">{user.email}</span>
+            <span className="max-w-[180px] truncate text-sm text-[#4a4a4a]">{user.email}</span>
             <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${roleClasses[user.role]}`}>
               {roleLabels[user.role]}
             </span>
           </button>
           {open && (
-            <div className="absolute right-0 z-50 mt-2 w-56 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
-              <Link href="/settings/me" className="block rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+            <div className="absolute right-0 z-50 mt-2 w-56 rounded-xl border border-[#e2e2e2] bg-white p-2 shadow-[0_8px_24px_rgba(0,0,0,0.12)]">
+              <Link href="/settings/me" className="block rounded-lg px-3 py-2 text-sm text-[#4a4a4a] hover:bg-[#f7f7f7]">
                 Mes paramètres
               </Link>
-              <button onClick={logout} className="block w-full rounded-lg px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50">
+              <button onClick={logout} className="block w-full rounded-lg px-3 py-2 text-left text-sm text-[#b7221b] hover:bg-[#fee3e2]">
                 Déconnexion
               </button>
             </div>

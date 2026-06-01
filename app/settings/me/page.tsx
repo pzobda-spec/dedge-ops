@@ -18,6 +18,9 @@ const emptySettings: UserSettings = {
   signature: '',
 }
 
+const inputCls = 'mt-1 w-full rounded-lg border border-[#e2e2e2] px-3 py-2 text-sm text-[#1a1a1a] focus:outline-none focus:ring-2 focus:ring-[#3b72d1]'
+const labelCls = 'text-xs font-semibold text-[#696969] uppercase tracking-wide'
+
 export default function MySettingsPage() {
   const [settings, setSettings] = useState<UserSettings>(emptySettings)
   const [loading, setLoading] = useState(true)
@@ -62,56 +65,56 @@ export default function MySettingsPage() {
   }
 
   return (
-    <div>
-      <div className="bg-white border-b border-slate-200 px-6 py-4">
-        <h1 className="text-xl font-semibold text-slate-900">Mes paramètres</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Liens de réservation et signature utilisés dans l’onboarding.</p>
+    <div style={{ fontFamily: 'var(--font-sans)', backgroundColor: 'var(--bg-canvas)' }} className="min-h-screen">
+      <div className="bg-white border-b border-[#e2e2e2] px-6 py-4">
+        <h1 className="text-xl font-semibold text-[#1a1a1a]">Mes paramètres</h1>
+        <p className="text-sm text-[#696969] mt-0.5">Liens de réservation et signature utilisés dans l&apos;onboarding.</p>
       </div>
 
       <div className="p-6 max-w-3xl">
         {loading ? (
-          <div className="py-12 text-sm text-slate-400">Chargement…</div>
+          <div className="py-12 text-sm text-[#696969]">Chargement…</div>
         ) : (
-          <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-5">
+          <div className="bg-white border border-[#e2e2e2] shadow-[0_4px_8px_rgba(0,0,0,0.06)] rounded-xl p-6 space-y-5">
             <div>
-              <h2 className="text-sm font-semibold text-slate-900">Mes liens de réservation</h2>
-              <p className="text-sm text-slate-500 mt-1">Ces liens sont utilisés sur les boutons Acuity de la page projet.</p>
+              <h2 className="text-sm font-semibold text-[#1a1a1a]">Liens de réservation</h2>
+              <p className="text-sm text-[#696969] mt-1">Ces liens sont utilisés sur les boutons Acuity de la page projet.</p>
             </div>
 
             <label className="block">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Lien Acuity 15 min</span>
+              <span className={labelCls}>Lien Acuity 15 min</span>
               <input
                 value={settings.acuity_link_15min ?? ''}
                 onChange={e => update('acuity_link_15min', e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
-                placeholder="https://app.acuityscheduling.com/schedule.php?owner=..."
+                className={inputCls}
+                placeholder="https://app.acuityscheduling.com/schedule.php?owner=…"
               />
             </label>
 
             <label className="block">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Lien Acuity 30 min</span>
+              <span className={labelCls}>Lien Acuity 30 min</span>
               <input
                 value={settings.acuity_link_30min ?? ''}
                 onChange={e => update('acuity_link_30min', e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                className={inputCls}
               />
             </label>
 
             <label className="block">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Lien Acuity 60 min</span>
+              <span className={labelCls}>Lien Acuity 60 min</span>
               <input
                 value={settings.acuity_link_60min ?? ''}
                 onChange={e => update('acuity_link_60min', e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                className={inputCls}
               />
             </label>
 
             <label className="block">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Langue par défaut</span>
+              <span className={labelCls}>Langue par défaut</span>
               <select
                 value={settings.default_language}
                 onChange={e => update('default_language', e.target.value === 'en' ? 'en' : 'fr')}
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                className={inputCls}
               >
                 <option value="fr">FR</option>
                 <option value="en">EN</option>
@@ -119,23 +122,23 @@ export default function MySettingsPage() {
             </label>
 
             <label className="block">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Signature email</span>
+              <span className={labelCls}>Signature email</span>
               <textarea
                 value={settings.signature ?? ''}
                 onChange={e => update('signature', e.target.value)}
                 rows={5}
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                className={inputCls}
               />
             </label>
 
-            {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
-            {message && <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{message}</p>}
+            {error && <p className="text-sm text-[#b7221b] bg-[#fee3e2] border border-[#fca5a5] rounded-lg px-3 py-2">{error}</p>}
+            {message && <p className="text-sm text-[#1c6437] bg-[#cff7dc] border border-[#86efac] rounded-lg px-3 py-2">{message}</p>}
 
             <div className="flex justify-end">
               <button
                 onClick={save}
                 disabled={saving}
-                className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-700 disabled:opacity-50"
+                className="px-4 py-2 rounded-lg bg-[#59319f] text-white text-sm font-medium hover:bg-[#3f2175] disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-[#3b72d1]"
               >
                 {saving ? 'Enregistrement…' : 'Enregistrer'}
               </button>

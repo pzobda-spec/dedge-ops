@@ -1,0 +1,262 @@
+/*
+ * Overnight Hotelier — Design Tokens
+ * Mirrors the canonical token set from source/overnight-hotelier.css,
+ * exposed with friendlier semantic aliases so designers can grab the
+ * right token without memorising the full BEM names.
+ *
+ * Two layers:
+ *   1. RAW TOKENS         — the htl-* CSS variables exactly as shipped
+ *   2. SEMANTIC ALIASES   — fg, bg, accent, h1, body, mono…
+ *
+ * Brand palette: purple primary (#59319f), warm yellow accent (#f7d878),
+ * cream-white surface (#faf9f5).
+ */
+
+/* -------------------------------------------------------------------------
+ * 1. Webfonts
+ *    Inter — body + most headings   |   Montserrat — heading-2 only
+ *    Both pulled from Google Fonts. We ship the Font Awesome 7 Pro / FA Kit
+ *    woff2 files locally (fonts/) since they are licensed via the source.
+ * ----------------------------------------------------------------------- */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@600;700&display=swap");
+
+@font-face {
+  font-family: "Font Awesome Kit";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("./fonts/fa-kit.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Font Awesome 7 Pro";
+  font-style: normal;
+  font-weight: 900;
+  font-display: block;
+  src: url("./fonts/fa-classic-solid.woff2") format("woff2");
+}
+
+/* -------------------------------------------------------------------------
+ * 2. Raw tokens (htl-*) — copied verbatim from source CSS
+ * ----------------------------------------------------------------------- */
+:root {
+  /* ── Text ─────────────────────────────────────────────────────────── */
+  --htl-color-text-neutral-stronger: #1f1f1f;
+  --htl-color-text-neutral-strong:   #4a4a4a;
+  --htl-color-text-neutral-default:  #696969;
+  --htl-color-text-inverted-default: #ffffff;
+  --htl-color-text-disabled-default: #a1a1a1;
+
+  --htl-color-text-brand-stronger:   #3f2175;
+  --htl-color-text-brand-strong:     #59319f;
+  --htl-color-text-brand-default:    #7344c1;
+
+  --htl-color-text-success-strong:     #1c6437;
+  --htl-color-text-critical-strong:    #b7221b;
+  --htl-color-text-information-strong: #84550e;
+  --htl-color-text-accent-strong:      #13655a;
+  --htl-color-text-warning-strong:     #903b07;
+  --htl-color-text-blue-strong:        #2b5bb7;
+
+  /* ── Background ───────────────────────────────────────────────────── */
+  --htl-color-background-inverted-default: #ffffff;
+  --htl-color-background-overlay:          #3434344d;
+
+  --htl-color-background-brand-strong:         #59319f;
+  --htl-color-background-brand-strong-hover:   #3f2175;
+  --htl-color-background-brand-strong-pressed: #261347;
+  --htl-color-background-brand-default:        #8c5bdb;
+  --htl-color-background-brand-default-hover:  #7344c1;
+  --htl-color-background-brand-weak:           #e8dbfa;
+  --htl-color-background-brand-weak-hover:     #d7c0f8;
+  --htl-color-background-brand-weak-pressed:   #c6a4f6;
+  --htl-color-background-brand-weaker:         #f7f5fa;
+  --htl-color-background-brand-ghost:          #ffffff00;
+  --htl-color-background-brand-ghost-hover:    #e8dbfa;
+  --htl-color-background-brand-ghost-pressed:  #d7c0f8;
+
+  --htl-color-background-information-default:         #f7d878;
+  --htl-color-background-information-default-hover:   #f0c756;
+  --htl-color-background-information-default-pressed: #dcad3b;
+  --htl-color-background-information-weak:            #fbf1ca;
+  --htl-color-background-information-weaker:          #faf9f5; /* canvas */
+
+  --htl-color-background-neutral-stronger:       #343434;
+  --htl-color-background-neutral-strong:         #595959;
+  --htl-color-background-neutral-default:        #878787;
+  --htl-color-background-neutral-default-hover:  #696969;
+  --htl-color-background-neutral-weak:           #e2e2e2;
+  --htl-color-background-neutral-weaker:         #f7f7f7;
+  --htl-color-background-neutral-weaker-hover:   #e2e2e2;
+  --htl-color-background-neutral-weaker-pressed: #cccccc;
+
+  --htl-color-background-disabled-stronger: #a1a1a1;
+  --htl-color-background-disabled-default:  #e2e2e2;
+
+  --htl-color-background-critical-strong:        #ed524e;
+  --htl-color-background-critical-strong-hover:  #db322c;
+  --htl-color-background-critical-default:       #ffa5a4;
+  --htl-color-background-critical-weak:          #fee3e2;
+  --htl-color-background-critical-weaker:        #faf5f5;
+  --htl-color-background-critical-weaker-hover:  #fee3e2;
+
+  --htl-color-background-success-default: #5ec281;
+  --htl-color-background-success-weak:    #cff7dc;
+  --htl-color-background-success-weaker:  #f5faf6;
+
+  --htl-color-background-accent-weak:    #caf7ef;
+  --htl-color-background-accent-weaker:  #f5faf9;
+  --htl-color-background-warning-weak:   #ffe7cf;
+  --htl-color-background-warning-weaker: #faf7f5;
+  --htl-color-background-blue-weak:      #d4e4f8;
+  --htl-color-background-blue-weaker:    #f5f7fa;
+
+  /* ── Border ───────────────────────────────────────────────────────── */
+  --htl-color-border-brand-strong:         #59319f;
+  --htl-color-border-brand-default:        #8c5bdb;
+  --htl-color-border-brand-default-hover:  #7344c1;
+  --htl-color-border-disabled-default:     #a1a1a1;
+  --htl-color-border-accent-default-focus: #3b72d1;
+  --htl-color-border-neutral-strong:       #4a4a4a;
+  --htl-color-border-neutral-default:      #b6b6b6;
+  --htl-color-border-neutral-weaker:       #e2e2e2;
+  --htl-color-border-critical-default:     #ed524e;
+  --htl-color-border-critical-default-hover:#db322c;
+  --htl-color-border-success-default:      #43a466;
+
+  /* ── Icon (mostly mirrors text) ───────────────────────────────────── */
+  --htl-color-icon-neutral-stronger: #1f1f1f;
+  --htl-color-icon-neutral-strong:   #4a4a4a;
+  --htl-color-icon-neutral-default:  #696969;
+  --htl-color-icon-inverted-default: #ffffff;
+  --htl-color-icon-brand-stronger:   #3f2175;
+  --htl-color-icon-brand-strong:     #59319f;
+  --htl-color-icon-brand-default:    #7344c1;
+  --htl-color-icon-disabled-default: #a1a1a1;
+  --htl-color-icon-success-strong:   #1c6437;
+  --htl-color-icon-success-default:  #5ec281;
+  --htl-color-icon-critical-strong:  #b7221b;
+  --htl-color-icon-critical-default: #ed524e;
+  --htl-color-icon-critical-default-hover:#db322c;
+  --htl-color-icon-information-strong:#84550e;
+  --htl-color-icon-accent-strong:    #13655a;
+  --htl-color-icon-warning-strong:   #903b07;
+  --htl-color-icon-blue-strong:      #2b5bb7;
+
+  /* ── Radii ────────────────────────────────────────────────────────── */
+  --htl-radius-2:    2px;
+  --htl-radius-4:    4px;   /* the dominant radius — buttons, inputs, cards */
+  --htl-radius-8:    8px;   /* dialogs, segmented buttons */
+  --htl-radius-16:   16px;  /* badges, pills */
+  --htl-radius-full: 999px; /* filters, switches */
+
+  /* ── Spacing (4-pt grid) ──────────────────────────────────────────── */
+  --htl-space-0: 0;    --htl-space-1: 1px;  --htl-space-2: 2px;
+  --htl-space-4: 4px;  --htl-space-8: 8px;  --htl-space-12: 12px;
+  --htl-space-16: 16px;--htl-space-24: 24px;--htl-space-32: 32px;
+  --htl-space-40: 40px;--htl-space-48: 48px;--htl-space-56: 56px;
+  --htl-space-64: 64px;--htl-space-72: 72px;--htl-space-80: 80px;
+  --htl-space-table-6: 6px;
+  --htl-space-table-14: 14px;
+
+  --htl-border-width-1: 1px;
+  --htl-border-width-2: 2px;
+
+  /* ── Elevation — note the warm brown tint on shadow-700 (#422505) ─── */
+  --htl-shadow-100: 0px 2px 4px 0px #00000026;
+  --htl-shadow-200: 0px 4px 8px 0px #0000001a;
+  --htl-shadow-400: 0px 16px 16px -4px #00000014;
+  --htl-shadow-700: 0px 62px 37px 0px #42250505,
+                    0px 27px 27px 0px #42250508,
+                    0px 7px 15px 0px #4225050a;
+}
+
+/* -------------------------------------------------------------------------
+ * 3. Semantic aliases — designer-friendly names
+ * ----------------------------------------------------------------------- */
+:root {
+  /* Foreground */
+  --fg1: var(--htl-color-text-neutral-stronger);   /* primary text */
+  --fg2: var(--htl-color-text-neutral-strong);     /* secondary text */
+  --fg3: var(--htl-color-text-neutral-default);    /* tertiary / meta */
+  --fg-disabled: var(--htl-color-text-disabled-default);
+  --fg-inverted: var(--htl-color-text-inverted-default);
+  --fg-brand:        var(--htl-color-text-brand-default);
+  --fg-brand-strong: var(--htl-color-text-brand-strong);
+
+  /* Backgrounds */
+  --bg-canvas:  var(--htl-color-background-information-weaker); /* the cream */
+  --bg-surface: var(--htl-color-background-inverted-default);   /* white card */
+  --bg-subtle:  var(--htl-color-background-neutral-weaker);
+  --bg-brand:        var(--htl-color-background-brand-strong);
+  --bg-brand-weak:   var(--htl-color-background-brand-weak);
+  --bg-brand-weaker: var(--htl-color-background-brand-weaker);
+
+  /* Status backgrounds */
+  --bg-success:     var(--htl-color-background-success-weak);
+  --bg-warning:     var(--htl-color-background-warning-weak);
+  --bg-critical:    var(--htl-color-background-critical-weak);
+  --bg-info:        var(--htl-color-background-information-weak);
+  --bg-info-strong: var(--htl-color-background-information-default); /* yellow */
+
+  /* Borders */
+  --border-subtle:  var(--htl-color-border-neutral-weaker);
+  --border-default: var(--htl-color-border-neutral-default);
+  --border-strong:  var(--htl-color-border-neutral-strong);
+  --border-brand:   var(--htl-color-border-brand-strong);
+  --border-focus:   var(--htl-color-border-accent-default-focus);
+
+  /* Type stacks */
+  --font-sans:    "Inter", Verdana, Arial, sans-serif;
+  --font-display: "Montserrat", Verdana, Arial, sans-serif; /* heading-2 only */
+  --font-icon:    "Font Awesome 7 Pro", sans-serif;
+}
+
+/* -------------------------------------------------------------------------
+ * 4. Semantic typography classes — drop-in styles for design surfaces.
+ *    Names match how the canonical .htl-u-typography-* utility maps:
+ *
+ *      .h1  → heading-1     (28/32, Inter 600)
+ *      .h2  → heading-2     (24/28, Montserrat 700)  ← display moment
+ *      .h3  → heading-3     (20/24, Inter 600)
+ *      .h4  → heading-4     (16/20, Inter 600)
+ *      .h5  → heading-5     (14/22, Inter 600)
+ *      .body / .body-strong (14/22)
+ *      .body-2 / .body-2-strong (12/18)
+ *      .body-3 / .body-3-strong (10/16)
+ *      .hl-1 / .hl-2        (large hero numerics, e.g. KPI cards)
+ *      .link, .link-2
+ *      .mono                (tabular numerics — use for numbers in tables)
+ * ----------------------------------------------------------------------- */
+.h1, .h3, .h4, .h5, .body, .body-strong,
+.body-2, .body-2-strong, .body-3, .body-3-strong,
+.hl-1, .hl-1-stronger, .hl-2, .hl-2-stronger,
+.link, .link-2 {
+  font-family: var(--font-sans);
+}
+.h2 { font-family: var(--font-display); }
+
+.h1            { font-size: 1.75rem;  line-height: 2rem;     font-weight: 600; }
+.h2            { font-size: 1.5rem;   line-height: 1.75rem;  font-weight: 700; letter-spacing: -0.01em; }
+.h3            { font-size: 1.25rem;  line-height: 1.5rem;   font-weight: 600; }
+.h4            { font-size: 1rem;     line-height: 1.25rem;  font-weight: 600; }
+.h5            { font-size: 0.875rem; line-height: 1.375rem; font-weight: 600; }
+
+.body          { font-size: 0.875rem; line-height: 1.375rem; font-weight: 400; }
+.body-strong   { font-size: 0.875rem; line-height: 1.375rem; font-weight: 600; }
+
+.body-2        { font-size: 0.75rem;  line-height: 1.125rem; font-weight: 400; font-variant-numeric: tabular-nums; }
+.body-2-strong { font-size: 0.75rem;  line-height: 1.125rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.body-3        { font-size: 0.625rem; line-height: 1rem;     font-weight: 400; font-variant-numeric: tabular-nums; }
+.body-3-strong { font-size: 0.625rem; line-height: 1rem;     font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Highlight — used for KPI numbers / large stats in dashboards */
+.hl-1          { font-size: 1.5rem;   line-height: 1.75rem;  font-weight: 600; font-variant-numeric: tabular-nums; }
+.hl-1-stronger { font-size: 1.5rem;   line-height: 1.75rem;  font-weight: 700; font-variant-numeric: tabular-nums; }
+.hl-2          { font-size: 1.25rem;  line-height: 1.5rem;   font-weight: 600; font-variant-numeric: tabular-nums; }
+.hl-2-stronger { font-size: 1.25rem;  line-height: 1.5rem;   font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.link          { font-size: 0.875rem; line-height: 1.375rem; font-weight: 400; text-decoration: underline; color: var(--fg-brand-strong); }
+.link-2        { font-size: 0.75rem;  line-height: 1.125rem; font-weight: 400; text-decoration: underline; color: var(--fg-brand-strong); }
+
+.mono          { font-variant-numeric: tabular-nums; }
