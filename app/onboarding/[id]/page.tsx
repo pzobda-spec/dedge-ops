@@ -41,7 +41,34 @@ export default async function OnboardingProjectDetailPage({
     getSessionUserEmail(),
   ])
 
-  if (!project) notFound()
+  if (!project) {
+    const zohoUrl = buildZohoProjectUrl(params.id)
+    return (
+      <div style={{ fontFamily: 'var(--font-sans)', backgroundColor: 'var(--bg-canvas)' }} className="min-h-screen">
+        <div className="bg-white border-b border-[#e2e2e2] px-6 py-4">
+          <h1 className="text-xl font-semibold text-[#1a1a1a]">Projet non synchronisé</h1>
+          <p className="text-sm text-[#696969] mt-0.5">ID Zoho : {params.id}</p>
+        </div>
+        <div className="p-6 max-w-xl">
+          <div className="bg-white border border-[#e2e2e2] rounded-xl shadow-[0_4px_8px_rgba(0,0,0,0.06)] p-6 space-y-4">
+            <p className="text-sm text-[#4a4a4a]">
+              Ce projet existe dans Zoho Projects mais n&apos;a pas encore été importé dans la base de données.
+              Lancez la synchronisation pour l&apos;importer, puis rechargez la page.
+            </p>
+            <div className="flex items-center gap-3">
+              <ForceSyncButton projectId={params.id} />
+              {zohoUrl && (
+                <a href={zohoUrl} target="_blank" rel="noopener noreferrer"
+                  className="text-sm font-medium text-[#59319f] hover:underline">
+                  Voir dans Zoho ↗
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   const row = project
   const zohoUrl = row.zoho_project_id ? buildZohoProjectUrl(row.zoho_project_id) : null
