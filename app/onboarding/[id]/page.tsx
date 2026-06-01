@@ -6,29 +6,29 @@ import { getSessionUserEmail } from '@/lib/auth/session'
 import { getOnboardingProjectByIdOrZohoId } from '@/lib/onboarding/projects'
 import { getUserByEmail } from '@/lib/auth/roles'
 
-const statusLabels: Record<string, string> = {
-  not_started: 'Non demarre',
-  in_progress: 'En cours',
+const STATUS_LABELS: Record<string, string> = {
+  not_started:    'Non démarré',
+  in_progress:    'En cours',
   pending_client: 'En attente client',
-  live: 'Live',
-  blocked: 'Bloque',
-  other: 'Autre',
+  live:           'Live',
+  blocked:        'Bloqué',
+  other:          'Autre',
 }
 
 function productBadgeClass(product: string | null): string {
-  if (!product) return 'bg-slate-100 text-slate-500'
-  if (product === 'LoungeUp') return 'bg-blue-100 text-blue-700'
-  if (product === 'Dmbook Pro') return 'bg-purple-100 text-purple-700'
-  if (product === 'WhatsApp') return 'bg-green-100 text-green-700'
-  return 'bg-slate-100 text-slate-600'
+  if (!product) return 'bg-[#f7f7f7] text-[#696969]'
+  if (product === 'LoungeUp')   return 'bg-[#d4e4f8] text-[#2b5bb7]'
+  if (product === 'Dmbook Pro') return 'bg-[#e8dbfa] text-[#59319f]'
+  if (product === 'WhatsApp')   return 'bg-[#cff7dc] text-[#1c6437]'
+  return 'bg-[#f7f7f7] text-[#696969]'
 }
 
 function statusBadgeClass(status: string | null): string {
-  if (status === 'live') return 'bg-emerald-100 text-emerald-700'
-  if (status === 'blocked') return 'bg-red-100 text-red-700'
-  if (status === 'pending_client') return 'bg-yellow-100 text-yellow-700'
-  if (status === 'in_progress') return 'bg-blue-100 text-blue-700'
-  return 'bg-slate-100 text-slate-600'
+  if (status === 'live')           return 'bg-[#cff7dc] text-[#1c6437]'
+  if (status === 'blocked')        return 'bg-[#fee3e2] text-[#b7221b]'
+  if (status === 'pending_client') return 'bg-[#fbf1ca] text-[#84550e]'
+  if (status === 'in_progress')    return 'bg-[#d4e4f8] text-[#2b5bb7]'
+  return 'bg-[#f7f7f7] text-[#696969]'
 }
 
 export default async function OnboardingProjectDetailPage({
@@ -50,34 +50,34 @@ export default async function OnboardingProjectDetailPage({
   const readonly = appUser?.role === 'commercial_readonly' || !isAdmin && appUser?.role !== 'onboarder'
 
   return (
-    <div>
-      <div className="bg-white border-b border-slate-200 px-6 py-5">
+    <div style={{ fontFamily: 'var(--font-sans)', backgroundColor: 'var(--bg-canvas)' }} className="min-h-screen">
+      <div className="bg-white border-b border-[#e2e2e2] px-6 py-5">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2 mb-2">
               <span className={`text-xs font-medium px-2 py-1 rounded ${productBadgeClass(row.product)}`}>
-                {row.product || 'Produit non renseigne'}
+                {row.product || 'Produit non renseigné'}
               </span>
               <span className={`text-xs font-medium px-2 py-1 rounded ${statusBadgeClass(row.zoho_status)}`}>
-                {row.zoho_status ? statusLabels[row.zoho_status] ?? row.zoho_status : 'Statut inconnu'}
+                {row.zoho_status ? STATUS_LABELS[row.zoho_status] ?? row.zoho_status : 'Statut inconnu'}
               </span>
             </div>
-            <h1 className="text-2xl font-semibold text-slate-900 truncate">
+            <h1 className="text-2xl font-semibold text-[#1f1f1f] truncate">
               {row.hotel_name || 'Projet onboarding'}
             </h1>
-            <p className="text-sm text-slate-500 mt-1">
-              Owner: {row.owner || '—'}{row.owner_email ? ` · ${row.owner_email}` : ''}
+            <p className="text-sm text-[#696969] mt-1">
+              Owner : {row.owner || '—'}{row.owner_email ? ` · ${row.owner_email}` : ''}
             </p>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-3 flex-shrink-0">
             {zohoUrl && (
               <a
                 href={zohoUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                className="text-sm font-medium text-[#59319f] hover:underline"
               >
-                Voir dans Zoho
+                Voir dans Zoho ↗
               </a>
             )}
             {isAdmin && <ForceSyncButton projectId={row.id} />}

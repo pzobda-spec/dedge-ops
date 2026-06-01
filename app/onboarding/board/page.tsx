@@ -15,33 +15,33 @@ const columns: { status: ProjectStatus; label: string }[] = [
   { status: 'other',          label: 'Autre' },
 ]
 
-const columnBg: Record<ProjectStatus, string> = {
-  not_started:    'bg-slate-50',
-  in_progress:    'bg-blue-50',
-  pending_client: 'bg-yellow-50',
-  live:           'bg-emerald-50',
-  blocked:        'bg-red-50',
-  other:          'bg-slate-50',
+const STATUS_COLORS: Record<ProjectStatus, { header: string; bg: string }> = {
+  not_started:    { header: 'bg-[#f7f7f7] text-[#696969]',   bg: 'bg-[#f7f7f7]' },
+  in_progress:    { header: 'bg-[#d4e4f8] text-[#2b5bb7]',   bg: 'bg-[#eef4fc]' },
+  pending_client: { header: 'bg-[#fbf1ca] text-[#84550e]',   bg: 'bg-[#fef8ea]' },
+  live:           { header: 'bg-[#cff7dc] text-[#1c6437]',   bg: 'bg-[#edfff4]' },
+  blocked:        { header: 'bg-[#fee3e2] text-[#b7221b]',   bg: 'bg-[#fff8f8]' },
+  other:          { header: 'bg-[#f7f7f7] text-[#696969]',   bg: 'bg-[#f7f7f7]' },
 }
 
-const columnHeaderColors: Record<ProjectStatus, string> = {
-  not_started:    'bg-slate-200 text-slate-700',
-  in_progress:    'bg-blue-100 text-blue-800',
-  pending_client: 'bg-yellow-100 text-yellow-800',
-  live:           'bg-emerald-100 text-emerald-800',
-  blocked:        'bg-red-100 text-red-800',
-  other:          'bg-slate-200 text-slate-700',
+const STATUS_BADGE: Record<ProjectStatus, string> = {
+  not_started:    'bg-[#f7f7f7] text-[#696969]',
+  in_progress:    'bg-[#d4e4f8] text-[#2b5bb7]',
+  pending_client: 'bg-[#fbf1ca] text-[#84550e]',
+  live:           'bg-[#cff7dc] text-[#1c6437]',
+  blocked:        'bg-[#fee3e2] text-[#b7221b]',
+  other:          'bg-[#f7f7f7] text-[#696969]',
 }
 
-const productColors: Record<string, string> = {
-  'LoungeUp':    'bg-blue-100 text-blue-700',
-  'Dmbook Pro':  'bg-purple-100 text-purple-700',
-  'WhatsApp':    'bg-green-100 text-green-700',
-  'Mobile Keys': 'bg-slate-200 text-slate-700',
+const PRODUCT_CONFIG: Record<string, string> = {
+  'LoungeUp':    'bg-[#d4e4f8] text-[#2b5bb7]',
+  'Dmbook Pro':  'bg-[#e8dbfa] text-[#59319f]',
+  'WhatsApp':    'bg-[#cff7dc] text-[#1c6437]',
+  'Mobile Keys': 'bg-[#f7f7f7] text-[#696969]',
 }
 
-function productBadgeClass(product: string): string {
-  return productColors[product] ?? 'bg-slate-100 text-slate-600'
+function productBadge(product: string): string {
+  return PRODUCT_CONFIG[product] ?? 'bg-[#f7f7f7] text-[#696969]'
 }
 
 function formatISODate(iso: string | null): string {
@@ -94,34 +94,34 @@ export default function OnboardingBoardPage() {
   )
 
   return (
-    <div>
-      <div className="bg-white border-b border-slate-200 px-6 py-4">
-        <h1 className="text-xl font-semibold text-slate-900">Board</h1>
+    <div style={{ fontFamily: 'var(--font-sans)', backgroundColor: 'var(--bg-canvas)' }} className="min-h-screen">
+      <div className="bg-white border-b border-[#e2e2e2] px-6 py-4">
+        <h1 className="text-xl font-semibold text-[#1f1f1f]">Board</h1>
         {!loading && !error && (
-          <p className="text-sm text-slate-500 mt-0.5">{baseProjects.length} projets · {new Set(baseProjects.map(p => p.hotelName)).size} comptes</p>
+          <p className="text-sm text-[#696969] mt-0.5">{baseProjects.length} projets · {new Set(baseProjects.map(p => p.hotelName)).size} comptes</p>
         )}
-        {loading && <p className="text-sm text-slate-400 mt-0.5">Chargement…</p>}
-        {error && <p className="text-sm text-red-500 mt-0.5">{error}</p>}
+        {loading && <p className="text-sm text-[#696969] mt-0.5">Chargement…</p>}
+        {error && <p className="text-sm text-[#b7221b] mt-0.5">{error}</p>}
       </div>
 
       {loading ? (
-        <div className="p-12 text-center text-slate-400 text-sm">Chargement des projets…</div>
+        <div className="p-12 text-center text-[#696969] text-sm">Chargement des projets…</div>
       ) : error ? (
-        <div className="p-12 text-center text-red-500 text-sm">{error}</div>
+        <div className="p-12 text-center text-[#b7221b] text-sm">{error}</div>
       ) : (
         <div className="p-6 space-y-4">
           {/* Owner filter */}
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap">
             {ownerPills.map(owner => (
               <button
                 key={owner}
                 onClick={() => setOwnerFilter(ownerFilter === owner && owner !== 'Tous' ? 'Tous' : owner)}
                 className={`px-3 py-1 text-xs rounded-full border transition-colors ${
                   ownerFilter === owner
-                    ? 'bg-slate-800 text-white border-slate-800'
+                    ? 'bg-[#59319f] text-white border-[#59319f]'
                     : owner === 'Implémentation'
-                    ? 'border-indigo-300 text-indigo-700 bg-indigo-50 hover:bg-indigo-100'
-                    : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+                    ? 'border-[#c0a4f0] text-[#59319f] bg-[#f3eeff] hover:bg-[#e8dbfa]'
+                    : 'border-[#e2e2e2] text-[#4a4a4a] hover:bg-[#f7f7f7]'
                 }`}
               >
                 {owner}
@@ -134,26 +134,29 @@ export default function OnboardingBoardPage() {
             <div className="flex gap-4 min-w-max">
               {columns.map(col => {
                 const colProjects = visibleProjects.filter(p => p.status === col.status)
+                const colors = STATUS_COLORS[col.status]
                 return (
                   <div key={col.status} className="w-60 flex-shrink-0">
-                    <div className={`rounded-t-lg px-3 py-2 flex items-center justify-between ${columnHeaderColors[col.status]}`}>
+                    <div className={`rounded-t-lg px-3 py-2 flex items-center justify-between ${colors.header}`}>
                       <span className="text-xs font-semibold">{col.label}</span>
                       <span className="text-xs font-bold">{colProjects.length}</span>
                     </div>
-                    <div className={`rounded-b-lg ${columnBg[col.status]} min-h-24 p-2 space-y-2`}>
+                    <div className={`rounded-b-lg ${colors.bg} min-h-24 p-2 space-y-2`}>
                       {colProjects.length === 0 ? (
-                        <p className="text-xs text-slate-400 text-center py-4">—</p>
+                        <p className="text-xs text-[#b0b0b0] text-center py-4">—</p>
                       ) : (
                         colProjects.map(p => {
-                          const border = p.isBlocked ? 'border-2 border-red-400' : 'border border-slate-200'
+                          const cardBorder = p.isBlocked
+                            ? 'border-2 border-[#ed524e]'
+                            : 'border border-[#e2e2e2]'
                           return (
                             <div
                               key={p.id}
-                              className={`relative bg-white rounded-lg ${border} p-3 shadow-sm hover:shadow-md hover:border-blue-300 transition-all`}
+                              className={`relative bg-white rounded-lg ${cardBorder} p-3 shadow-[0_4px_8px_rgba(0,0,0,0.10)] hover:shadow-[0_6px_12px_rgba(0,0,0,0.14)] hover:border-[#c0a4f0] transition-all`}
                             >
                               <Link
                                 href={`/onboarding/${p.id}`}
-                                className="absolute top-2 right-2 w-6 h-6 rounded-full border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 inline-flex items-center justify-center text-xs font-bold transition-colors"
+                                className="absolute top-2 right-2 w-6 h-6 rounded-full border border-[#e2e2e2] text-[#696969] hover:text-[#59319f] hover:border-[#c0a4f0] hover:bg-[#f3eeff] inline-flex items-center justify-center text-xs font-bold transition-colors"
                                 title="Voir le détail"
                                 aria-label={`Voir le détail de ${p.hotelName}`}
                               >
@@ -165,31 +168,35 @@ export default function OnboardingBoardPage() {
                                 rel="noopener noreferrer"
                                 className="block pr-7"
                               >
-                                <p className="text-xs font-semibold text-slate-800 line-clamp-2 mb-1">{p.hotelName}</p>
+                                <p className="text-xs font-semibold text-[#1a1a1a] line-clamp-2 mb-1">{p.hotelName}</p>
                                 <div className="flex flex-wrap gap-1 mb-2">
                                   {p.product && (
-                                    <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${productBadgeClass(p.product)}`}>
+                                    <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${productBadge(p.product)}`}>
                                       {p.product}
                                     </span>
                                   )}
                                 </div>
-                                {p.isBlocked && <span className="block text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded mb-1 font-medium">Bloqué</span>}
-                                {p.isOverdue && <span className="block text-xs bg-red-50 text-red-600 px-1.5 py-0.5 rounded mb-1">Go-live dépassé</span>}
+                                {p.isBlocked && (
+                                  <span className="block text-xs bg-[#fee3e2] text-[#b7221b] px-1.5 py-0.5 rounded mb-1 font-medium">Bloqué</span>
+                                )}
+                                {p.isOverdue && (
+                                  <span className="block text-xs bg-[#fbf1ca] text-[#84550e] px-1.5 py-0.5 rounded mb-1">Go-live dépassé</span>
+                                )}
                                 {(p.riskLevel === 'high' || p.riskLevel === 'critical') && (
-                                  <span className="block text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded mb-1 font-medium">Risque élevé</span>
+                                  <span className="block text-xs bg-[#fbf1ca] text-[#84550e] px-1.5 py-0.5 rounded mb-1 font-medium">Risque élevé</span>
                                 )}
                                 <div className="mb-2">
                                   <div className="flex items-center justify-between mb-0.5">
-                                    <span className="text-xs text-slate-400">Avancement</span>
-                                    <span className="text-xs text-slate-500 font-medium">{p.percentComplete}%</span>
+                                    <span className="text-xs text-[#696969]">Avancement</span>
+                                    <span className="text-xs text-[#4a4a4a] font-medium">{p.percentComplete}%</span>
                                   </div>
-                                  <div className="w-full bg-slate-100 rounded-full h-1.5">
-                                    <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${Math.min(p.percentComplete, 100)}%` }} />
+                                  <div className="w-full bg-[#e2e2e2] rounded-full h-1.5">
+                                    <div className="bg-[#59319f] h-1.5 rounded-full" style={{ width: `${Math.min(p.percentComplete, 100)}%` }} />
                                   </div>
                                 </div>
                                 <div className="flex items-center justify-between">
-                                  <span className="inline-flex items-center text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">{p.ownerShort}</span>
-                                  {p.endDate && <span className="text-xs text-slate-400">{formatISODate(p.endDate)}</span>}
+                                  <span className="inline-flex items-center text-xs bg-[#f3eeff] text-[#59319f] px-1.5 py-0.5 rounded-full">{p.ownerShort}</span>
+                                  {p.endDate && <span className="text-xs text-[#696969]">{formatISODate(p.endDate)}</span>}
                                 </div>
                               </a>
                             </div>
