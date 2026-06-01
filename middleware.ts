@@ -3,29 +3,41 @@ import { NextRequest, NextResponse } from 'next/server'
 import { isHardcodedAccessEmail } from '@/lib/auth/access'
 import type { Role } from '@/lib/auth/roles'
 
+// ─── Route restrictions ────────────────────────────────────────────────────────
+// Each entry: if the request path matches a prefix, only the listed roles may access it.
+
 const RESTRICTED_ROUTES: Array<{ prefixes: string[]; roles: Role[] }> = [
+  // Admin + support only (onboarder and commercial_readonly are blocked)
   {
     prefixes: [
-      '/onboarding',
-      '/trainings',
-      '/tickets',
-      '/api/onboarding',
-      '/api/integrations/zoho',
-      '/api/zoho/projects',
-      '/api/acuity',
-      '/api/google/meet',
+      '/dashboard',
+      '/tickets', '/escalations', '/trainings',
+      '/knowledge', '/reporting', '/assistant',
+      '/api/tickets', '/api/escalations', '/api/trainings',
+      '/api/knowledge', '/api/google',
     ],
-    roles: ['admin', 'onboarder', 'support'],
+    roles: ['admin', 'support'],
   },
+  // Admin only
   {
     prefixes: ['/admin', '/api/admin'],
     roles: ['admin'],
   },
+  // Onboarding scope: admin + onboarder + commercial_readonly
   {
-    prefixes: ['/settings/me'],
-    roles: ['admin', 'onboarder', 'support', 'commercial_readonly'],
+    prefixes: [
+      '/onboarding',
+      '/api/onboarding',
+      '/api/zoho/projects',
+      '/api/acuity',
+      '/api/ai/onboarding-summary',
+      '/api/integrations/zoho',
+    ],
+    roles: ['admin', 'onboarder', 'commercial_readonly'],
   },
 ]
+
+// ─── Helpers ───────────────────────────────────────────────────────────────────
 
 interface MiddlewareUser {
   email: string
@@ -56,6 +68,13 @@ async function getMiddlewareUser(email: string): Promise<MiddlewareUser | null> 
   return rows[0] ?? null
 }
 
+function homePathForRole(role: Role | null): string {
+  if (role === 'onboarder' || role === 'commercial_readonly') return '/onboarding'
+  return '/dashboard'
+}
+
+// ─── Middleware ────────────────────────────────────────────────────────────────
+
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
@@ -79,7 +98,6 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
 
   const path = request.nextUrl.pathname
-  const allowedRoles = getAllowedRoles(path)
   const isPublic =
     path.startsWith('/login') ||
     path.startsWith('/auth') ||
@@ -87,51 +105,56 @@ export async function middleware(request: NextRequest) {
     path.startsWith('/api/cron') ||
     path.startsWith('/forbidden')
 
+  // Not authenticated → redirect to login
   if (!user && !isPublic) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
-  if (user && path === '/login') {
+  // Authenticated on root or login → redirect to role-appropriate home
+  if (user && (path === '/' || path === '/login')) {
+    const appUser = user.email ? await getMiddlewareUser(user.email) : null
+    const role = appUser?.role ?? null
     const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
+    url.pathname = homePathForRole(role)
     return NextResponse.redirect(url)
   }
 
-  if (user && allowedRoles) {
-    const appUser = user.email ? await getMiddlewareUser(user.email) : null
-    const fallbackAllowed = !appUser && isHardcodedAccessEmail(user.email)
+  // Role-based access control on restricted routes
+  if (user) {
+    const allowedRoles = getAllowedRoles(path)
+    if (allowedRoles) {
+      const appUser = user.email ? await getMiddlewareUser(user.email) : null
+      const fallbackAllowed = !appUser && isHardcodedAccessEmail(user.email)
 
-    if (!appUser && !fallbackAllowed) {
-      if (path.startsWith('/api/')) {
-        return NextResponse.json({ error: 'Utilisateur non autorisé' }, { status: 403 })
+      if (!appUser && !fallbackAllowed) {
+        if (path.startsWith('/api/')) {
+          return NextResponse.json({ error: 'Utilisateur non autorisé' }, { status: 403 })
+        }
+        const url = request.nextUrl.clone()
+        url.pathname = '/login'
+        return NextResponse.redirect(url)
       }
 
-      const url = request.nextUrl.clone()
-      url.pathname = '/login'
-      return NextResponse.redirect(url)
-    }
-
-    if (appUser && !appUser.active) {
-      if (path.startsWith('/api/')) {
-        return NextResponse.json({ error: 'Compte inactif' }, { status: 403 })
+      if (appUser && !appUser.active) {
+        if (path.startsWith('/api/')) {
+          return NextResponse.json({ error: 'Compte inactif' }, { status: 403 })
+        }
+        const url = request.nextUrl.clone()
+        url.pathname = '/forbidden'
+        return NextResponse.redirect(url)
       }
 
-      const url = request.nextUrl.clone()
-      url.pathname = '/forbidden'
-      return NextResponse.redirect(url)
-    }
-
-    const role = appUser?.role ?? 'admin'
-    if (!allowedRoles.includes(role)) {
-      if (path.startsWith('/api/')) {
-        return NextResponse.json({ error: 'Accès restreint' }, { status: 403 })
+      const role = appUser?.role ?? 'admin'
+      if (!allowedRoles.includes(role)) {
+        if (path.startsWith('/api/')) {
+          return NextResponse.json({ error: 'Accès restreint' }, { status: 403 })
+        }
+        const url = request.nextUrl.clone()
+        url.pathname = homePathForRole(role)
+        return NextResponse.redirect(url)
       }
-
-      const url = request.nextUrl.clone()
-      url.pathname = '/forbidden'
-      return NextResponse.redirect(url)
     }
   }
 

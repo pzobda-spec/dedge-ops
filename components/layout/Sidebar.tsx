@@ -21,11 +21,11 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { href: '/dashboard', label: 'Tableau de bord', roles: ['admin', 'onboarder', 'support', 'commercial_readonly'] },
+  { href: '/dashboard', label: 'Tableau de bord', roles: ['admin', 'support'] },
   {
     href: '/tickets',
     label: 'Tickets',
-    roles: ['admin', 'onboarder', 'support'],
+    roles: ['admin', 'support'],
     children: [
       { href: '/tickets', label: 'Tickets' },
       { href: '/tickets/analytics', label: 'Analytiques' },
@@ -34,7 +34,7 @@ const navItems: NavItem[] = [
   {
     href: '/escalations',
     label: 'Board Bug',
-    roles: ['admin', 'onboarder', 'support'],
+    roles: ['admin', 'support'],
     children: [
       { href: '/escalations', label: 'Board' },
       { href: '/escalations/analytics', label: 'Analytiques' },
@@ -43,7 +43,7 @@ const navItems: NavItem[] = [
   {
     href: '/trainings',
     label: 'Formations',
-    roles: ['admin', 'onboarder'],
+    roles: ['admin'],
     children: [
       { href: '/trainings', label: 'Sessions' },
       { href: '/trainings/analytics', label: 'Analytiques' },
@@ -54,14 +54,14 @@ const navItems: NavItem[] = [
     label: 'Onboarding',
     roles: ['admin', 'onboarder', 'commercial_readonly'],
     children: [
-      { href: '/onboarding', label: 'Dashboard' },
+      { href: '/onboarding', label: 'Mes projets' },
       { href: '/onboarding/board', label: 'Board' },
-      { href: '/onboarding/charge', label: 'Charge' },
+      { href: '/onboarding/pilotage', label: 'Pilotage' },
     ],
   },
-  { href: '/knowledge', label: 'Knowledge Base', roles: ['admin', 'onboarder', 'support'] },
-  { href: '/reporting', label: 'Reporting', roles: ['admin', 'onboarder', 'support'] },
-  { href: '/assistant', label: 'Assistant IA', roles: ['admin', 'onboarder', 'support'] },
+  { href: '/knowledge', label: 'Knowledge Base', roles: ['admin', 'support'] },
+  { href: '/reporting', label: 'Reporting', roles: ['admin', 'support'] },
+  { href: '/assistant', label: 'Assistant IA', roles: ['admin', 'support'] },
   { href: '/settings', label: 'Paramètres', roles: ['admin', 'onboarder', 'support', 'commercial_readonly'] },
   {
     href: '/admin/users',
@@ -130,12 +130,15 @@ export default function Sidebar() {
                   <ul className="mt-0.5 mb-1 space-y-0.5 pl-3">
                     {item.children.map(child => {
                       const childActive = isChildActive(child.href, pathname)
+                      const isOnboarding = child.href.startsWith('/onboarding')
                       return (
                         <li key={child.href}>
                           <Link
                             href={child.href}
                             className={`flex items-center px-3 py-1.5 rounded-md text-xs transition-colors ${
-                              childActive
+                              childActive && isOnboarding
+                                ? 'bg-[#e8dbfa] text-[#59319f] font-medium'
+                                : childActive
                                 ? 'bg-slate-700 text-white font-medium'
                                 : 'text-slate-400 hover:bg-slate-800 hover:text-white'
                             }`}
