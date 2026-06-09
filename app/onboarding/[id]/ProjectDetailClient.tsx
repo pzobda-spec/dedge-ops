@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Calendar, Mail, Sparkles } from 'lucide-react'
+import { Calendar, ClipboardList, LoaderCircle, Mail, Sparkles } from 'lucide-react'
 import AcuityAppointments from '@/components/onboarding/AcuityAppointments'
 import EmailComposer from '@/components/onboarding/EmailComposer'
 import ProjectProgress from '@/components/onboarding/ProjectProgress'
@@ -10,7 +10,7 @@ import Timeline from '@/components/onboarding/Timeline'
 import TodoistTimeline from '@/components/todoist/TodoistTimeline'
 import type { EmailTemplateKey } from '@/lib/onboarding/email-templates'
 import type { ProjectEvent } from '@/lib/onboarding/events'
-import type { OnboardingProjectDetail } from '@/lib/onboarding/projects'
+import type { OnboardingProjectDetail, ProjectStatusReport } from '@/lib/onboarding/projects'
 import { formatDate } from '@/lib/utils/dates'
 
 const tabs = [
@@ -143,6 +143,159 @@ function ExecutiveSummary({
   )
 }
 
+function StatusReportSection({
+  project,
+  canGenerate,
+}: {
+  project: OnboardingProjectDetail
+  canGenerate: boolean
+}) {
+  const [report, setReport] = useState<ProjectStatusReport | null>(project.status_report)
+  const [generatedAt, setGeneratedAt] = useState(project.status_report_generated_at)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function generate(force: boolean) {
+    setLoading(true)
+    setError(null)
+    try {
+      const response = await fetch('/api/ai/project-status-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: project.id, force }),
+      })
+      const payload: unknown = await response.json()
+      if (typeof payload !== 'object' || payload === null) {
+        throw new Error(`Réponse invalide (HTTP ${response.status})`)
+      }
+
+      const data = payload as {
+        error?: unknown
+        report?: ProjectStatusReport
+        generated_at?: string
+      }
+      if (!response.ok || !data.report) {
+        throw new Error(typeof data.error === 'string' ? data.error : `HTTP ${response.status}`)
+      }
+
+      setReport(data.report)
+      setGeneratedAt(data.generated_at ?? null)
+    } catch (generateError) {
+      setError(generateError instanceof Error
+        ? generateError.message
+        : 'Impossible de générer l’état des lieux.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div>
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <ClipboardList className="h-4 w-4 text-[#59319f]" />
+            <h3 className="text-sm font-semibold text-[#1a1a1a]">État des lieux</h3>
+          </div>
+          <p className="mt-1 text-xs text-[#696969]">
+            Vue d&apos;ensemble, timeline projet et commentaires Todoist.
+            {generatedAt && ` Généré le ${formatDate(generatedAt.slice(0, 10))}.`}
+          </p>
+        </div>
+        {canGenerate && (
+          <button
+            type="button"
+            onClick={() => generate(Boolean(report))}
+            disabled={loading}
+            className="inline-flex items-center gap-2 rounded-lg bg-[#59319f] px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-[#7b4dc4] disabled:opacity-50"
+          >
+            {loading ? (
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
+            {loading
+              ? 'Analyse en cours…'
+              : report
+                ? 'Régénérer'
+                : 'Générer un état des lieux'}
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <p className="mb-4 rounded-lg border border-[#fee3e2] bg-[#fff8f8] px-3 py-2 text-sm text-[#b7221b]">
+          {error}
+        </p>
+      )}
+
+      {report ? (
+        <div className="space-y-4">
+          <div className="rounded-lg border border-[#d9caef] bg-[#f7f2ff] p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#59319f]">TL;DR</p>
+            <p className="mt-1 text-sm leading-6 text-[#3f286c]">{report.tldr}</p>
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#696969]">État actuel</p>
+            <p className="mt-1 text-sm leading-6 text-[#4a4a4a]">{report.current_status}</p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-3">
+            <ReportList title="Faits marquants" items={report.key_updates} emptyLabel="Aucun fait marquant identifié." />
+            <ReportList title="Risques / blocages" items={report.risks} emptyLabel="Aucun risque documenté." tone="risk" />
+            <ReportList title="Prochaines étapes" items={report.next_steps} emptyLabel="Aucune prochaine étape documentée." tone="next" />
+          </div>
+
+          <p className="text-xs text-[#8a8a8a]">
+            Analyse basée sur {report.source_comment_count} commentaire{report.source_comment_count > 1 ? 's' : ''} Todoist.
+          </p>
+        </div>
+      ) : (
+        <p className="text-sm text-[#696969]">
+          Aucun état des lieux généré.
+        </p>
+      )}
+    </div>
+  )
+}
+
+function ReportList({
+  title,
+  items,
+  emptyLabel,
+  tone = 'default',
+}: {
+  title: string
+  items: string[]
+  emptyLabel: string
+  tone?: 'default' | 'risk' | 'next'
+}) {
+  const dotClass = tone === 'risk'
+    ? 'bg-[#b7221b]'
+    : tone === 'next'
+      ? 'bg-[#1c6437]'
+      : 'bg-[#59319f]'
+
+  return (
+    <div className="rounded-lg border border-[#e2e2e2] bg-white p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-[#696969]">{title}</p>
+      {items.length > 0 ? (
+        <ul className="mt-3 space-y-2">
+          {items.map((item, index) => (
+            <li key={`${title}-${index}`} className="flex gap-2 text-sm leading-5 text-[#4a4a4a]">
+              <span className={`mt-2 h-1.5 w-1.5 flex-none rounded-full ${dotClass}`} />
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-3 text-sm text-[#8a8a8a]">{emptyLabel}</p>
+      )}
+    </div>
+  )
+}
+
 // ─── Email actions ────────────────────────────────────────────────────────────
 
 const emailActions: Array<{ key: EmailTemplateKey; label: string }> = [
@@ -228,6 +381,9 @@ export function ProjectDetailTabs({
                 <ProjectProgress timeline={timeline} zohoStatus={project.zoho_status} />
                 <div className="border-t border-[#e2e2e2] pt-5">
                   <ExecutiveSummary project={project} canGenerate={!readonly} />
+                </div>
+                <div className="border-t border-[#e2e2e2] pt-5">
+                  <StatusReportSection project={project} canGenerate={!readonly} />
                 </div>
                 <div className="border-t border-[#e2e2e2] pt-5 grid grid-cols-4 gap-3">
                   <MetricCard label="Début"         value={project.start_date     ? formatDate(project.start_date)                     : '—'} />

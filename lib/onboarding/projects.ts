@@ -14,10 +14,21 @@ export interface OnboardingProjectDetail {
   last_synced_at: string | null
   executive_summary: string | null
   executive_summary_generated_at: string | null
+  status_report: ProjectStatusReport | null
+  status_report_generated_at: string | null
+}
+
+export interface ProjectStatusReport {
+  tldr: string
+  current_status: string
+  key_updates: string[]
+  risks: string[]
+  next_steps: string[]
+  source_comment_count: number
 }
 
 export const ONBOARDING_PROJECT_DETAIL_SELECT =
-  'id, zoho_project_id, zoho_status, hotel_name, product, owner, owner_email, start_date, target_go_live, actual_go_live, last_synced_at, executive_summary, executive_summary_generated_at'
+  'id, zoho_project_id, zoho_status, hotel_name, product, owner, owner_email, start_date, target_go_live, actual_go_live, last_synced_at, executive_summary, executive_summary_generated_at, status_report, status_report_generated_at'
 
 export async function getOnboardingProjectByIdOrZohoId(id: string): Promise<OnboardingProjectDetail | null> {
   const filterValue = id.replace(/\\/g, '\\\\').replace(/,/g, '\\,').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
