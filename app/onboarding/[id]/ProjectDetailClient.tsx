@@ -7,6 +7,7 @@ import EmailComposer from '@/components/onboarding/EmailComposer'
 import ProjectProgress from '@/components/onboarding/ProjectProgress'
 import RecapModal from '@/components/onboarding/RecapModal'
 import Timeline from '@/components/onboarding/Timeline'
+import TodoistTimeline from '@/components/todoist/TodoistTimeline'
 import type { EmailTemplateKey } from '@/lib/onboarding/email-templates'
 import type { ProjectEvent } from '@/lib/onboarding/events'
 import type { OnboardingProjectDetail } from '@/lib/onboarding/projects'
@@ -300,6 +301,11 @@ export function ProjectDetailTabs({
           )}
         </div>
       </div>
+
+      <TodoistTimeline
+        zoho_project_id={project.zoho_project_id ?? project.id}
+        canReviewMatch={!readonly}
+      />
 
       {emailComposer && (
         <EmailComposer

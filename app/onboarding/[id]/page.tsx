@@ -5,6 +5,7 @@ import { buildZohoProjectUrl } from '@/lib/zoho/projectsClient'
 import { getSessionUserEmail } from '@/lib/auth/session'
 import { getOnboardingProjectByIdOrZohoId } from '@/lib/onboarding/projects'
 import { getUserByEmail } from '@/lib/auth/roles'
+import SyncButton from '@/components/todoist/SyncButton'
 
 const STATUS_LABELS: Record<string, string> = {
   not_started:    'Non démarré',
@@ -108,6 +109,7 @@ export default async function OnboardingProjectDetailPage({
               </a>
             )}
             {isAdmin && <ForceSyncButton projectId={row.id} />}
+            {isAdmin && <SyncButton />}
           </div>
         </div>
       </div>
