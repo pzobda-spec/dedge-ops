@@ -76,6 +76,7 @@ export default async function OnboardingProjectDetailPage({
   const appUser = userEmail ? await getUserByEmail(userEmail) : null
   const isAdmin = appUser?.role === 'admin' || (!appUser && isHardcodedAccessEmail(userEmail))
   const readonly = appUser?.role === 'commercial_readonly' || !isAdmin && appUser?.role !== 'onboarder'
+  const canSync = isAdmin || appUser?.role === 'onboarder'
 
   return (
     <div style={{ fontFamily: 'var(--font-sans)', backgroundColor: 'var(--bg-canvas)' }} className="min-h-screen">
@@ -109,7 +110,7 @@ export default async function OnboardingProjectDetailPage({
               </a>
             )}
             {isAdmin && <ForceSyncButton projectId={row.id} />}
-            {isAdmin && <SyncButton />}
+            {canSync && <SyncButton />}
           </div>
         </div>
       </div>

@@ -7,7 +7,7 @@ export const maxDuration = 300
 
 export async function POST(req: NextRequest) {
   try {
-    await requireRole(req, ['admin'])
+    await requireRole(req, ['admin', 'onboarder'])
     return NextResponse.json(await syncTodoist())
   } catch (error) {
     console.error('[todoist/sync] POST error:', error)
