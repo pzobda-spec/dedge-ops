@@ -55,17 +55,63 @@ function isJsonObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+function sanitizeString(value: string): string {
+  let sanitized = ''
+
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index)
+    if (codeUnit === 0) continue
+
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const nextCodeUnit = value.charCodeAt(index + 1)
+      if (nextCodeUnit >= 0xdc00 && nextCodeUnit <= 0xdfff) {
+        sanitized += value[index] + value[index + 1]
+        index += 1
+      } else {
+        sanitized += '\ufffd'
+      }
+      continue
+    }
+
+    if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      sanitized += '\ufffd'
+      continue
+    }
+
+    sanitized += value[index]
+  }
+
+  return sanitized
+}
+
+function sanitizeJsonValue(value: unknown): unknown {
+  if (typeof value === 'string') return sanitizeString(value)
+  if (Array.isArray(value)) return value.map(sanitizeJsonValue)
+  if (!isJsonObject(value)) return value
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, nestedValue]) => [
+      sanitizeString(key),
+      sanitizeJsonValue(nestedValue),
+    ]),
+  )
+}
+
+function sanitizeJsonObject(value: JsonObject): JsonObject {
+  return sanitizeJsonValue(value) as JsonObject
+}
+
 function requiredString(record: JsonObject, key: string): string {
   const value = record[key]
   if (typeof value !== 'string' || !value) {
     throw new Error(`Todoist response is missing ${key}`)
   }
-  return value
+  return sanitizeString(value)
 }
 
 function optionalString(record: JsonObject, key: string): string | null {
   const value = record[key]
-  return typeof value === 'string' && value ? value : null
+  return typeof value === 'string' && value ? sanitizeString(value) : null
 }
 
 function parseProject(value: unknown): TodoistProject {
@@ -73,7 +119,7 @@ function parseProject(value: unknown): TodoistProject {
   return {
     id: requiredString(value, 'id'),
     name: requiredString(value, 'name'),
-    raw: value,
+    raw: sanitizeJsonObject(value),
   }
 }
 
@@ -82,7 +128,7 @@ function parseTask(value: unknown): TodoistTask {
   return {
     id: requiredString(value, 'id'),
     projectId: requiredString(value, 'project_id'),
-    raw: value,
+    raw: sanitizeJsonObject(value),
   }
 }
 
@@ -104,7 +150,7 @@ function parseComment(value: unknown, taskId: string): TodoistComment {
     content: requiredString(value, 'content'),
     postedAt: requiredString(value, 'posted_at'),
     author: commentAuthor(value),
-    raw: value,
+    raw: sanitizeJsonObject(value),
   }
 }
 
