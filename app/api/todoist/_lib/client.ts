@@ -13,6 +13,8 @@ export interface TodoistProject {
 export interface TodoistTask {
   id: string
   projectId: string
+  parentId: string | null
+  content: string
   raw: JsonObject
 }
 
@@ -128,6 +130,8 @@ function parseTask(value: unknown): TodoistTask {
   return {
     id: requiredString(value, 'id'),
     projectId: requiredString(value, 'project_id'),
+    parentId: optionalString(value, 'parent_id'),
+    content: requiredString(value, 'content'),
     raw: sanitizeJsonObject(value),
   }
 }

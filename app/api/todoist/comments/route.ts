@@ -16,6 +16,30 @@ interface MatchCandidateRow {
   score: number
 }
 
+interface TodoistTaskRow {
+  id: string
+  parent_id: string | null
+  content: string
+  zoho_project_id: string | null
+}
+
+function descendantTaskIds(tasks: TodoistTaskRow[], rootIds: string[]): string[] {
+  const selectedIds = new Set(rootIds)
+  let addedTask = true
+
+  while (addedTask) {
+    addedTask = false
+    for (const task of tasks) {
+      if (task.parent_id && selectedIds.has(task.parent_id) && !selectedIds.has(task.id)) {
+        selectedIds.add(task.id)
+        addedTask = true
+      }
+    }
+  }
+
+  return [...selectedIds]
+}
+
 export async function GET(req: NextRequest) {
   try {
     await requireRole(req, ['admin', 'onboarder', 'support', 'commercial_readonly'])
@@ -39,10 +63,35 @@ export async function GET(req: NextRequest) {
 
     const { data: projectData, error: projectError } = await projectQuery.maybeSingle()
     if (projectError) throw new Error(projectError.message)
-    const project = (projectData as TodoistProjectRow | null) ?? null
+    let project = (projectData as TodoistProjectRow | null) ?? null
+    let taskIds: string[] = []
+
+    if (zohoProjectId) {
+      const { data: tasksData, error: tasksError } = await supabaseAdmin
+        .from('todoist_tasks')
+        .select('id, parent_id, content, zoho_project_id')
+      if (tasksError) throw new Error(tasksError.message)
+
+      const tasks = (tasksData ?? []) as TodoistTaskRow[]
+      const matchedTasks = tasks.filter(task => task.zoho_project_id === zohoProjectId)
+      if (matchedTasks.length > 0) {
+        taskIds = descendantTaskIds(tasks, matchedTasks.map(task => task.id))
+        project = {
+          id: matchedTasks[0].id,
+          name: matchedTasks[0].content,
+          zoho_project_id: zohoProjectId,
+        }
+      }
+    }
 
     const { data: commentsData, error: commentsError } = project
-      ? await supabaseAdmin
+      ? taskIds.length > 0
+        ? await supabaseAdmin
+            .from('todoist_comments')
+            .select('id, task_id, project_id, content, posted_at, author')
+            .in('task_id', taskIds)
+            .order('posted_at', { ascending: false })
+        : await supabaseAdmin
           .from('todoist_comments')
           .select('id, task_id, project_id, content, posted_at, author')
           .eq('project_id', project.id)

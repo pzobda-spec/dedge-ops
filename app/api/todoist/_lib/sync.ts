@@ -10,6 +10,7 @@ import {
   fetchTodoistTasks,
   type TodoistComment,
   type TodoistProject,
+  type TodoistTask,
 } from './client'
 
 export interface TodoistSyncResult {
@@ -31,6 +32,12 @@ interface CachedCandidate {
 interface ZohoProjectRow {
   zoho_project_id: string | null
   hotel_name: string | null
+}
+
+interface CachedTodoistTask {
+  id: string
+  content: string
+  zoho_project_id: string | null
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -60,8 +67,26 @@ async function upsertComments(projectId: string, comments: TodoistComment[]): Pr
   }
 }
 
+async function upsertTasks(tasks: TodoistTask[]): Promise<void> {
+  const rows = tasks.map(task => ({
+    id: task.id,
+    project_id: task.projectId,
+    parent_id: task.parentId,
+    content: task.content,
+    raw: task.raw,
+  }))
+
+  for (const rowsChunk of chunk(rows, 500)) {
+    const { error } = await supabaseAdmin
+      .from('todoist_tasks')
+      .upsert(rowsChunk, { onConflict: 'id' })
+    if (error) throw new Error(error.message)
+  }
+}
+
 async function syncProject(token: string, project: TodoistProject, syncedAt: string): Promise<number> {
   const tasks = await fetchTodoistTasks(token, project.id)
+  await upsertTasks(tasks)
   const commentResults = await Promise.allSettled(
     tasks.map(task => fetchTodoistComments(token, task.id)),
   )
@@ -86,6 +111,37 @@ async function syncProject(token: string, project: TodoistProject, syncedAt: str
   if (error) throw new Error(error.message)
 
   return comments.length
+}
+
+async function persistTaskMatches(zohoProjects: ZohoProjectForMatching[]): Promise<void> {
+  const { data, error } = await supabaseAdmin
+    .from('todoist_tasks')
+    .select('id, content, zoho_project_id')
+    .is('parent_id', null)
+
+  if (error) throw new Error(error.message)
+  const tasks = (data ?? []) as CachedTodoistTask[]
+  const linkedTaskIds = new Set(
+    tasks.filter(task => task.zoho_project_id).map(task => task.id),
+  )
+  const matches = matchTodoistToZoho(
+    tasks
+      .filter(task => !linkedTaskIds.has(task.id))
+      .map(task => ({ id: task.id, name: task.content })),
+    zohoProjects,
+  )
+
+  const automaticMatches = matches.filter(
+    match => match.status === 'auto_matched' && match.zohoProjectId,
+  )
+  await Promise.all(automaticMatches.map(async match => {
+    const { error: updateError } = await supabaseAdmin
+      .from('todoist_tasks')
+      .update({ zoho_project_id: match.zohoProjectId })
+      .eq('id', match.todoistProjectId)
+      .is('zoho_project_id', null)
+    if (updateError) throw new Error(updateError.message)
+  }))
 }
 
 async function persistMatches(projects: TodoistProjectForMatching[]): Promise<void> {
@@ -158,6 +214,8 @@ async function persistMatches(projects: TodoistProjectForMatching[]): Promise<vo
       .upsert(reviewRows, { onConflict: 'todoist_project_id,zoho_project_id' })
     if (error) throw new Error(error.message)
   }
+
+  await persistTaskMatches(zohoProjects)
 }
 
 export async function syncTodoist(): Promise<TodoistSyncResult> {

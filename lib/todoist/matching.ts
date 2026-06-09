@@ -20,6 +20,7 @@ export interface TodoistProjectMatch {
 }
 
 const COMMON_WORDS = new Set(['projet', 'project', 'crm', 'd', 'edge', 'dedge'])
+const SEPARATOR_WORDS = new Set(['x', 'and', 'et'])
 
 export function normalizeProjectName(value: string): string {
   return value
@@ -29,7 +30,7 @@ export function normalizeProjectName(value: string): string {
     .replace(/d[\s-]*edge/g, ' ')
     .replace(/[^a-z0-9]+/g, ' ')
     .split(' ')
-    .filter(word => word && !COMMON_WORDS.has(word))
+    .filter(word => word && !COMMON_WORDS.has(word) && !SEPARATOR_WORDS.has(word))
     .join(' ')
     .trim()
 }
@@ -42,7 +43,15 @@ export function projectNameSimilarity(left: string, right: string): number {
   if (normalizedLeft === normalizedRight) return 1
 
   const longestLength = Math.max(normalizedLeft.length, normalizedRight.length)
-  return 1 - distance(normalizedLeft, normalizedRight) / longestLength
+  const levenshteinScore = 1 - distance(normalizedLeft, normalizedRight) / longestLength
+  const leftTokens = new Set(normalizedLeft.split(' '))
+  const rightTokens = new Set(normalizedRight.split(' '))
+  const commonTokens = [...leftTokens].filter(token => rightTokens.has(token)).length
+  const containmentScore = commonTokens >= 2
+    ? commonTokens / Math.min(leftTokens.size, rightTokens.size)
+    : 0
+
+  return Math.max(levenshteinScore, containmentScore)
 }
 
 export function matchTodoistToZoho(
