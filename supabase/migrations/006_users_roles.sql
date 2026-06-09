@@ -28,8 +28,8 @@ INSERT INTO users (id, email, role, full_name, active)
 VALUES (
   gen_random_uuid(),
   'pzobda@d-edge.com',
-  'onboarder',
+  'admin',
   'Pablo Zobda',
   TRUE
 )
-ON CONFLICT (email) DO UPDATE SET role = 'onboarder', active = TRUE, updated_at = NOW();
+ON CONFLICT (email) DO UPDATE SET role = 'admin', active = TRUE, updated_at = NOW();

@@ -9,7 +9,7 @@ export interface UseCurrentUserResult {
   refresh: () => void
 }
 
-const CACHE_KEY = 'dedge-current-user'
+const CACHE_KEY = 'dedge-current-user-v2'
 const CACHE_TTL_MS = 5 * 60 * 1000
 
 interface CachedUser {
