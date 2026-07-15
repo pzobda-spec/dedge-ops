@@ -40,6 +40,7 @@ async function zohoFetch<T>(path: string, options: RequestInit = {}, retry = tru
 export interface ZohoTicket {
   id: string
   ticketNumber: string
+  email?: string | null
   subject: string
   status: string
   priority: string
@@ -49,6 +50,9 @@ export interface ZohoTicket {
   createdTime: string
   modifiedTime: string
   closedTime?: string | null
+  firstResponseTime?: string | number | null
+  responseTime?: string | number | null
+  reopenCount?: string | number | null
   customerResponseTime: string | null
   threadCount?: string | null
   departmentId?: string | null
@@ -72,16 +76,14 @@ export async function fetchTickets(params: {
   status?: string
   sortBy?: string
   departmentId?: string
-  createdTimeRange?: string  // "ISO_START,ISO_END"
 } = {}): Promise<ZohoTicketsResponse> {
   const query = new URLSearchParams({
     limit: String(params.limit ?? 50),
     from: String(params.from ?? 0),
     ...(params.status && { status: params.status }),
     ...(params.departmentId && { departmentId: params.departmentId }),
-    ...(params.createdTimeRange && { createdTimeRange: params.createdTimeRange }),
     sortBy: params.sortBy ?? 'createdTime',
-    fields: 'id,ticketNumber,subject,status,priority,channel,category,classification,createdTime,modifiedTime,closedTime,customerResponseTime,threadCount,contact,account,accountId,assignee,sentiment,cf',
+    fields: 'id,ticketNumber,email,subject,status,priority,channel,category,classification,createdTime,modifiedTime,closedTime,responseTime,customerResponseTime,threadCount,contact,account,accountId,assignee,sentiment,cf',
   })
 
   return zohoFetch<ZohoTicketsResponse>(`/tickets?${query}`)
@@ -153,4 +155,18 @@ export async function fetchAccount(accountId: string): Promise<{ id: string; acc
   } catch {
     return null
   }
+}
+
+export interface ZohoDeskAccount {
+  id: string
+  accountName: string
+}
+
+export async function fetchAccounts(params: { limit?: number; from?: number } = {}): Promise<{ data: ZohoDeskAccount[] }> {
+  const query = new URLSearchParams({
+    limit: String(params.limit ?? 100),
+    from: String(params.from ?? 0),
+    sortBy: 'accountName',
+  })
+  return zohoFetch<{ data: ZohoDeskAccount[] }>(`/accounts?${query}`)
 }

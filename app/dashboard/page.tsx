@@ -2,12 +2,12 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
+import { Line, LineChart, ResponsiveContainer, YAxis } from 'recharts'
 import type { ZohoMappedTicket } from '@/lib/zoho/mapper'
 import type { LinearIssue } from '@/lib/linear/client'
 import type { AcuitySession } from '@/lib/acuity/client'
 import type { OnboardingProject } from '@/lib/zoho/projectsClient'
 import type { AppUser } from '@/lib/auth/roles'
-import Badge from '@/components/ui/Badge'
 import { formatDate } from '@/lib/utils/dates'
 import { isExcludedOnboardingOwner } from '@/lib/onboarding/constants'
 
@@ -28,16 +28,34 @@ function daysUntil(dateStr: string): number {
   return Math.ceil((new Date(dateStr).getTime() - Date.now()) / 86_400_000)
 }
 
-function formatWait(dateStr: string): string {
-  const h = Math.floor(hoursAgo(dateStr))
-  if (h < 1) return '< 1h'
-  if (h < 24) return `${h}h`
-  return `${Math.floor(h / 24)}j`
-}
-
 function isToday(dateStr: string): boolean {
   const d = new Date(dateStr), t = new Date()
   return d.getDate() === t.getDate() && d.getMonth() === t.getMonth() && d.getFullYear() === t.getFullYear()
+}
+
+function buildRecentActivityTrend<T>(items: T[], getDate: (item: T) => string | null): number[] {
+  const days = 30
+  const now = new Date()
+  const todayUtc = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+  const startUtc = todayUtc - (days - 1) * 86_400_000
+  const dailyActivity = Array<number>(days).fill(0)
+
+  for (const item of items) {
+    const rawDate = getDate(item)
+    const date = rawDate ? new Date(rawDate) : null
+    if (!date || Number.isNaN(date.getTime())) continue
+
+    const itemUtc = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())
+    const index = Math.round((itemUtc - startUtc) / 86_400_000)
+    if (index >= 0 && index < days) dailyActivity[index]++
+  }
+
+  // Seven-day rolling activity for the objects that currently compose the KPI.
+  // This is intentionally not presented as historical point-in-time state: the
+  // APIs do not expose daily snapshots for risk, first response or blocking.
+  return dailyActivity.map((_, index) => dailyActivity
+    .slice(Math.max(0, index - 6), index + 1)
+    .reduce((sum, count) => sum + count, 0))
 }
 
 // ─── Micro components ─────────────────────────────────────────────────────────
@@ -55,11 +73,34 @@ function SectionHeader({ title, href, label }: { title: string; href: string; la
   )
 }
 
-const PRIORITY_DOT: Record<string, string> = {
-  urgent: 'bg-[#b7221b]',
-  high:   'bg-[#903b07]',
-  medium: 'bg-[#2b5bb7]',
-  low:    'bg-[#b0b0b0]',
+function Sparkline({ values, color, label }: { values: number[]; color: string; label: string }) {
+  const data = values.map((value, index) => ({ index, value }))
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const padding = Math.max(1, Math.ceil((max - min) * 0.12))
+
+  return (
+    <div
+      aria-label={label}
+      className="h-8 w-full"
+      role="img"
+    >
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{ top: 3, right: 2, bottom: 3, left: 2 }}>
+          <YAxis domain={[min - padding, max + padding]} hide />
+          <Line
+            type="monotone"
+            dataKey="value"
+            stroke={color}
+            strokeWidth={2}
+            dot={false}
+            activeDot={false}
+            isAnimationActive={false}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  )
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -149,24 +190,10 @@ export default function DashboardPage() {
     [tickets])
 
   const highRisk = useMemo(() => tickets.filter(t => (t.riskScore ?? 0) >= 60), [tickets])
-  const noFirstReplyIds = useMemo(() => new Set(noFirstReply.map(t => t.id)), [noFirstReply])
-
-  const attentionList = useMemo(() => [
-    ...noFirstReply,
-    ...highRisk.filter(t => !noFirstReplyIds.has(t.id)).sort((a, b) => (b.riskScore ?? 0) - (a.riskScore ?? 0)),
-  ].slice(0, 8), [noFirstReply, highRisk, noFirstReplyIds])
-
-  const openEscalations = useMemo(() => escalations.filter(e => e.status !== 'resolved'), [escalations])
+  const openBugs = useMemo(() => escalations.filter(e => e.status !== 'resolved'), [escalations])
   const toQualify = useMemo(() => escalations.filter(e => e.status === 'to_qualify'), [escalations])
-
-  const topEscalades = useMemo(() =>
-    [...openEscalations]
-      .sort((a, b) => {
-        const u = (e: LinearIssue) => e.status === 'to_qualify' ? 0 : 1
-        return u(a) - u(b) || new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
-      })
-      .slice(0, 4),
-    [openEscalations])
+  const urgentBugs = useMemo(() => openBugs.filter(e => e.priority === 1), [openBugs])
+  const resolvedBugs = useMemo(() => escalations.filter(e => e.status === 'resolved'), [escalations])
 
   const todaySessions = useMemo(() => sessions.filter(s => isToday(s.datetime)), [sessions])
   const upcomingSessions = useMemo(() =>
@@ -178,6 +205,23 @@ export default function DashboardPage() {
 
   const baseProjects = useMemo(() => projects.filter(p => !isExcludedOnboardingOwner(p.ownerShort)), [projects])
   const blockedProjects = useMemo(() => baseProjects.filter(p => p.status === 'blocked'), [baseProjects])
+
+  const noFirstReplyTrend = useMemo(
+    () => buildRecentActivityTrend(noFirstReply, ticket => ticket.createdAt),
+    [noFirstReply],
+  )
+  const highRiskTrend = useMemo(
+    () => buildRecentActivityTrend(highRisk, ticket => ticket.createdAt),
+    [highRisk],
+  )
+  const openBugsTrend = useMemo(
+    () => buildRecentActivityTrend(openBugs, issue => issue.createdAt),
+    [openBugs],
+  )
+  const blockedProjectsTrend = useMemo(
+    () => buildRecentActivityTrend(blockedProjects, project => project.startDate ?? project.endDate),
+    [blockedProjects],
+  )
 
   const goLiveSoon = useMemo(() =>
     baseProjects
@@ -209,29 +253,33 @@ export default function DashboardPage() {
       <div className="p-6 space-y-5 max-w-6xl">
 
         {/* KPI strip */}
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {[
             {
               label: 'Sans 1ère réponse', value: noFirstReply.length,
               sub: '> 2h · tickets ouverts', href: '/tickets',
               loading: loadingTickets, severity: 'critical' as const,
+              trend: noFirstReplyTrend, trendColor: '#b7221b',
             },
             {
               label: 'Tickets à risque', value: highRisk.length,
               sub: 'score ≥ 60', href: '/tickets',
               loading: loadingTickets, severity: 'warning' as const,
+              trend: highRiskTrend, trendColor: '#903b07',
             },
             {
-              label: 'Escalades ouvertes', value: openEscalations.length,
+              label: 'Bugs ouverts', value: openBugs.length,
               sub: toQualify.length > 0 ? `dont ${toQualify.length} à qualifier` : 'aucune à qualifier',
               href: '/escalations', loading: loadingOther, severity: 'warning' as const,
+              trend: openBugsTrend, trendColor: '#59319f',
             },
             {
               label: 'Onboarding bloqués', value: blockedProjects.length,
               sub: 'projets en attente déblocage', href: '/onboarding/board',
               loading: loadingOther, severity: 'critical' as const,
+              trend: blockedProjectsTrend, trendColor: '#2b5bb7',
             },
-          ].map(({ label, value, sub, href, loading, severity }) => {
+          ].map(({ label, value, sub, href, loading, severity, trend, trendColor }) => {
             const isAlert = value > 0
             const spinColor = severity === 'critical' ? 'border-t-[#b7221b]' : 'border-t-[#903b07]'
             const valColor = !isAlert ? 'text-[#1c6437]' : severity === 'critical' ? 'text-[#b7221b]' : 'text-[#903b07]'
@@ -245,77 +293,25 @@ export default function DashboardPage() {
                   : <p className={`text-3xl font-bold tabular-nums mt-1.5 ${valColor}`}>{value}</p>
                 }
                 <p className="text-xs text-[#696969] mt-1">{sub}</p>
+                <div className="mt-3 border-t border-black/5 pt-2">
+                  <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-[#8a8a8a]">Activité récente · 30 jours</p>
+                  {loading ? (
+                    <div className="h-8 w-full animate-pulse rounded bg-black/5" />
+                  ) : (
+                    <Sparkline
+                      color={trendColor}
+                      label={`Activité récente sur 30 jours pour ${label}, valeur actuelle ${value}`}
+                      values={trend}
+                    />
+                  )}
+                </div>
               </Link>
             )
           })}
         </div>
 
-        {/* Main grid */}
-        <div className="grid grid-cols-3 gap-5 items-start">
-
-          {/* Tickets */}
-          <div className="col-span-2 bg-white rounded-xl border border-[#e2e2e2] shadow-[0_4px_8px_rgba(0,0,0,0.06)] overflow-hidden">
-            <div className="px-5 py-3 border-b border-[#e2e2e2] flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <h2 className="text-sm font-semibold text-[#1a1a1a]">Tickets · à traiter</h2>
-                {!loadingTickets && attentionList.length > 0 && (
-                  <span className="text-xs bg-[#fee3e2] text-[#b7221b] px-2 py-0.5 rounded-full font-semibold tabular-nums">
-                    {attentionList.length}
-                  </span>
-                )}
-              </div>
-              {!loadingTickets && (
-                <Link href="/tickets" className="text-xs text-[#59319f] hover:underline">
-                  {tickets.length} ouverts →
-                </Link>
-              )}
-            </div>
-
-            {loadingTickets ? (
-              <div className="flex items-center gap-2.5 px-5 py-6 text-sm text-[#696969]">
-                <Spinner />Chargement…
-              </div>
-            ) : attentionList.length === 0 ? (
-              <div className="px-5 py-8 text-center">
-                <p className="text-xl mb-1 text-[#1c6437]">✓</p>
-                <p className="text-sm text-[#696969] font-medium">Aucun ticket en attente</p>
-                <p className="text-xs text-[#b0b0b0] mt-0.5">Pas de ticket sans 1ère réponse depuis plus de 2h</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-[#f0f0f0]">
-                {attentionList.map(ticket => (
-                  <Link
-                    key={ticket.id}
-                    href={`/tickets/${ticket.zohoInternalId}`}
-                    className="flex items-center gap-3 px-5 py-2.5 hover:bg-[#f7f4fd] transition-colors"
-                  >
-                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${PRIORITY_DOT[ticket.priority] ?? 'bg-[#b0b0b0]'}`} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-[#1a1a1a] truncate">{ticket.subject}</p>
-                      <p className="text-xs text-[#696969] truncate">{ticket.clientName} · {ticket.productArea}</p>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {ticket.segment && (
-                        <Badge label={ticket.segment} variant={ticket.segment.toLowerCase() as 'strategic' | 'gold' | 'silver' | 'bronze'} />
-                      )}
-                      {noFirstReplyIds.has(ticket.id) ? (
-                        <span className="text-xs font-semibold text-[#b7221b] tabular-nums text-right w-14">
-                          {formatWait(ticket.createdAt)}
-                        </span>
-                      ) : (
-                        <span className="text-xs font-semibold text-[#903b07] tabular-nums text-right w-14">
-                          r.{ticket.riskScore}
-                        </span>
-                      )}
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Sidebar cards */}
-          <div className="col-span-1 space-y-4">
+        {/* Numeric summaries only for support and bugs; no individual ticket/issue list. */}
+        <div className="grid grid-cols-1 gap-5 items-start md:grid-cols-2 xl:grid-cols-3">
 
             {canAccessRestricted && (
               <div className="bg-white rounded-xl border border-[#e2e2e2] shadow-[0_4px_8px_rgba(0,0,0,0.06)] overflow-hidden">
@@ -346,26 +342,30 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* Escalades */}
+            {/* Bugs */}
             <div className="bg-white rounded-xl border border-[#e2e2e2] shadow-[0_4px_8px_rgba(0,0,0,0.06)] overflow-hidden">
-              <SectionHeader title="Escalades" href="/escalations" />
+              <SectionHeader title="Bugs" href="/escalations" />
               {loadingOther ? (
                 <div className="flex items-center gap-2 px-4 py-4 text-sm text-[#696969]"><Spinner />Chargement…</div>
-              ) : openEscalations.length === 0 ? (
-                <p className="px-4 py-4 text-xs text-[#696969]">Aucune escalade ouverte</p>
               ) : (
-                <div className="divide-y divide-[#f0f0f0]">
-                  {topEscalades.map(e => (
-                    <a key={e.id} href={e.url} target="_blank" rel="noopener noreferrer"
-                      className="flex items-start gap-2.5 px-4 py-2.5 hover:bg-[#f7f7f7] transition-colors"
-                    >
-                      <span className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${e.status === 'to_qualify' ? 'bg-[#903b07]' : 'bg-[#2b5bb7]'}`} />
-                      <div className="min-w-0">
-                        <p className="text-xs font-mono text-[#b0b0b0]">{e.identifier}</p>
-                        <p className="text-sm text-[#4a4a4a] line-clamp-2">{e.title}</p>
-                      </div>
-                    </a>
-                  ))}
+                <div className="px-2 py-4 text-center">
+                  <div className="grid grid-cols-3 divide-x divide-[#f0f0f0]">
+                    <div className="px-2">
+                      <p className="text-2xl font-bold tabular-nums text-[#59319f]">{openBugs.length}</p>
+                      <p className="mt-1 text-[11px] text-[#696969]">ouverts</p>
+                    </div>
+                    <div className="px-2">
+                      <p className="text-2xl font-bold tabular-nums text-[#903b07]">{toQualify.length}</p>
+                      <p className="mt-1 text-[11px] text-[#696969]">à qualifier</p>
+                    </div>
+                    <div className="px-2">
+                      <p className="text-2xl font-bold tabular-nums text-[#b7221b]">{urgentBugs.length}</p>
+                      <p className="mt-1 text-[11px] text-[#696969]">urgents</p>
+                    </div>
+                  </div>
+                  <p className="mt-3 border-t border-[#f0f0f0] pt-3 text-[11px] text-[#878787]">
+                    {resolvedBugs.length} résolus dans la source synchronisée
+                  </p>
                 </div>
               )}
             </div>
@@ -405,7 +405,6 @@ export default function DashboardPage() {
                 </div>
               </div>
             )}
-          </div>
         </div>
 
         {/* Outils admin */}

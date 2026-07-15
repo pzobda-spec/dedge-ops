@@ -10,7 +10,7 @@ export async function GET() {
       ),
       zohoCrmConfigured: !!process.env.ZOHO_CRM_REFRESH_TOKEN,
       zohoProjectsConfigured: !!process.env.ZOHO_PROJECTS_REFRESH_TOKEN,
-      linearConfigured: !!process.env.LINEAR_API_TOKEN,
+      linearConfigured: !!process.env.LINEAR_API_KEY,
       acuityConfigured: !!(process.env.ACUITY_USER_ID && process.env.ACUITY_API_KEY),
       supabaseConfigured: !!(
         process.env.NEXT_PUBLIC_SUPABASE_URL &&

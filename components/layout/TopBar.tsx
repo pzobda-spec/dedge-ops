@@ -10,6 +10,7 @@ import type { Role } from '@/lib/auth/roles'
 interface TopBarProps {
   title?: string
   subtitle?: string
+  onMenuClick?: () => void
 }
 
 const roleLabels: Record<Role, string> = {
@@ -36,7 +37,7 @@ function initials(email: string, fullName: string | null): string {
     .join('') || 'U'
 }
 
-export default function TopBar({ title, subtitle }: TopBarProps) {
+export default function TopBar({ title, subtitle, onMenuClick }: TopBarProps) {
   const router = useRouter()
   const { user } = useCurrentUser()
   const [open, setOpen] = useState(false)
@@ -52,10 +53,22 @@ export default function TopBar({ title, subtitle }: TopBarProps) {
   }
 
   return (
-    <div className="bg-white border-b border-[#e2e2e2] px-6 py-4 flex items-center justify-between gap-4">
-      <div>
+    <div className="flex min-h-[65px] items-center justify-between gap-3 border-b border-[#e2e2e2] bg-white px-4 py-3 sm:px-6 sm:py-4">
+      <div className="flex min-w-0 items-center gap-3">
+        <button
+          type="button"
+          aria-label="Ouvrir la navigation"
+          className="rounded-lg border border-[#e2e2e2] p-2 text-[#4a4a4a] hover:bg-[#f7f7f7] lg:hidden"
+          onClick={onMenuClick}
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M4 7h16M4 12h16M4 17h16" />
+          </svg>
+        </button>
+        <div className="min-w-0">
         {title && <h1 className="text-xl font-semibold text-[#1a1a1a]">{title}</h1>}
         {subtitle && <p className="text-sm text-[#696969] mt-0.5">{subtitle}</p>}
+        </div>
       </div>
       {user && (
         <div className="relative">
@@ -66,8 +79,8 @@ export default function TopBar({ title, subtitle }: TopBarProps) {
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#59319f] text-xs font-semibold text-white">
               {initials(user.email, user.full_name)}
             </span>
-            <span className="max-w-[180px] truncate text-sm text-[#4a4a4a]">{user.email}</span>
-            <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${roleClasses[user.role]}`}>
+            <span className="hidden max-w-[180px] truncate text-sm text-[#4a4a4a] sm:inline">{user.email}</span>
+            <span className={`hidden rounded-full border px-2 py-0.5 text-xs font-medium sm:inline ${roleClasses[user.role]}`}>
               {roleLabels[user.role]}
             </span>
           </button>

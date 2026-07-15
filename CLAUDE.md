@@ -29,7 +29,7 @@ MRR: Strategic>4k Gold≥750 Silver≥200 Bronze<200
 Cache 1h: lib/zoho/accountCache.ts
 
 ## LINEAR
-workspace loungeup · team BUGS
+Dashboard Bugs · workspace loungeup · team BUGS
 https://linear.app/loungeup/issue/{id}/{slug}
 
 ## ACUITY

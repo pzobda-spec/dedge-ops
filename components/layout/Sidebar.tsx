@@ -22,24 +22,8 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Tableau de bord', roles: ['admin', 'support'] },
-  {
-    href: '/tickets',
-    label: 'Tickets',
-    roles: ['admin', 'support'],
-    children: [
-      { href: '/tickets', label: 'Tickets' },
-      { href: '/tickets/analytics', label: 'Analytiques' },
-    ],
-  },
-  {
-    href: '/escalations',
-    label: 'Board Bug',
-    roles: ['admin', 'support'],
-    children: [
-      { href: '/escalations', label: 'Board' },
-      { href: '/escalations/analytics', label: 'Analytiques' },
-    ],
-  },
+  { href: '/tickets', label: 'Tickets', roles: ['admin', 'support'] },
+  { href: '/escalations', label: 'Bugs', roles: ['admin', 'support'] },
   {
     href: '/trainings',
     label: 'Formations',
@@ -82,7 +66,7 @@ function isChildActive(href: string, pathname: string): boolean {
   return pathname === href
 }
 
-export default function Sidebar() {
+export default function Sidebar({ mobileOpen = false, onNavigate }: { mobileOpen?: boolean; onNavigate?: () => void }) {
   const pathname = usePathname()
   const router = useRouter()
   const { user } = useCurrentUser()
@@ -103,10 +87,24 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="fixed top-0 left-0 h-full w-56 bg-slate-900 text-white flex flex-col z-40">
+    <aside className={`fixed left-0 top-0 z-40 flex h-full w-56 flex-col bg-slate-900 text-white shadow-xl transition-transform duration-200 lg:translate-x-0 lg:shadow-none ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
       <div className="px-4 py-5 border-b border-slate-700">
-        <span className="font-bold text-lg tracking-tight">D-EDGE Ops</span>
-        <p className="text-xs text-slate-400 mt-0.5">Cockpit opérationnel</p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <span className="font-bold text-lg tracking-tight">D-EDGE Ops</span>
+            <p className="text-xs text-slate-400 mt-0.5">Cockpit analytique</p>
+          </div>
+          <button
+            type="button"
+            aria-label="Fermer le menu"
+            className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white lg:hidden"
+            onClick={onNavigate}
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
       </div>
       <nav className="flex-1 py-4 overflow-y-auto">
         <ul className="space-y-0.5 px-2">
@@ -116,6 +114,7 @@ export default function Sidebar() {
               <li key={item.href}>
                 <Link
                   href={item.href}
+                  onClick={onNavigate}
                   className={`flex items-center px-3 py-2 rounded-md text-sm transition-colors ${
                     parentActive && !item.children
                       ? 'bg-[#3f2175] text-white font-medium'
@@ -134,6 +133,7 @@ export default function Sidebar() {
                         <li key={child.href}>
                           <Link
                             href={child.href}
+                            onClick={onNavigate}
                             className={`flex items-center px-3 py-1.5 rounded-md text-xs transition-colors ${
                               childActive
                                 ? 'bg-[#e8dbfa] text-[#59319f] font-medium'

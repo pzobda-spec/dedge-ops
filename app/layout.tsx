@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-css-tags */
 import type { Metadata } from 'next'
 import { DM_Sans } from 'next/font/google'
 import './globals.css'
@@ -7,7 +8,7 @@ const dmSans = DM_Sans({ subsets: ['latin'], variable: '--font-dm-sans' })
 
 export const metadata: Metadata = {
   title: 'D-EDGE Ops Cockpit',
-  description: 'Cockpit opérationnel D-EDGE CRM',
+  description: 'Cockpit analytique D-EDGE CRM',
   icons: {
     icon: '/favicon.ico',
   },

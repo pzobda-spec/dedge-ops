@@ -1,18 +1,28 @@
 const ENDPOINT = 'https://api.linear.app/graphql'
 
 async function linearQuery<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+  const apiKey = process.env.LINEAR_API_KEY
+  if (!apiKey) {
+    throw new Error('LINEAR_API_KEY is not configured')
+  }
+
   const res = await fetch(ENDPOINT, {
     method: 'POST',
     signal: AbortSignal.timeout(10000),
     cache: 'no-store',
     headers: {
-      Authorization: process.env.LINEAR_API_KEY!,
+      Authorization: apiKey,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ query, variables }),
   })
-  const json = await res.json()
+  if (!res.ok) {
+    throw new Error(`Linear API request failed (${res.status})`)
+  }
+
+  const json = await res.json() as { data?: T; errors?: unknown }
   if (json.errors) throw new Error(`Linear API error: ${JSON.stringify(json.errors)}`)
+  if (!json.data) throw new Error('Linear API returned no data')
   return json.data
 }
 
@@ -31,17 +41,30 @@ export interface LinearIssue {
   title: string
   description: string | null
   linearState: string
+  /** Canonical Linear workflow type (backlog, unstarted, started, completed, canceled). */
+  stateType?: string
   status: EscalationStatus
   priority: number
   priorityLabel: string
   labels: string[]
   assigneeName: string | null
+  creatorName?: string | null
   createdAt: string
   updatedAt: string
+  completedAt?: string | null
   url: string
 }
 
-function mapStateToStatus(stateName: string): EscalationStatus {
+function mapStateToStatus(stateName: string, stateType?: string): EscalationStatus {
+  const canonicalType = stateType?.toLowerCase()
+  if (canonicalType === 'completed' || canonicalType === 'canceled' || canonicalType === 'cancelled') {
+    return 'resolved'
+  }
+  if (canonicalType === 'started') return 'in_progress'
+  if (canonicalType === 'backlog' || canonicalType === 'triage' || canonicalType === 'unstarted') {
+    return 'to_qualify'
+  }
+
   switch (stateName) {
     case 'Triage':
     case 'Todo':
@@ -58,6 +81,9 @@ function mapStateToStatus(stateName: string): EscalationStatus {
       return 'waiting'
     case 'Solved':
     case 'Duplicate':
+    case 'Done':
+    case 'Cancelled':
+    case 'Canceled':
       return 'resolved'
     default:
       return 'to_qualify'
@@ -97,8 +123,10 @@ interface RawIssue {
   priority: number
   labels: { nodes: Array<{ name: string; color: string }> }
   assignee: { name: string } | null
+  creator: { name: string } | null
   createdAt: string
   updatedAt: string
+  completedAt: string | null
 }
 
 function mapRawIssue(raw: RawIssue): LinearIssue {
@@ -108,13 +136,16 @@ function mapRawIssue(raw: RawIssue): LinearIssue {
     title: raw.title,
     description: raw.description,
     linearState: raw.state.name,
-    status: mapStateToStatus(raw.state.name),
+    stateType: raw.state.type,
+    status: mapStateToStatus(raw.state.name, raw.state.type),
     priority: raw.priority,
     priorityLabel: mapPriorityLabel(raw.priority),
     labels: raw.labels.nodes.map(l => l.name),
     assigneeName: raw.assignee?.name ?? null,
+    creatorName: raw.creator?.name ?? null,
     createdAt: raw.createdAt,
     updatedAt: raw.updatedAt,
+    completedAt: raw.completedAt,
     url: `https://linear.app/loungeup/issue/${raw.identifier}/${slugify(raw.title)}`,
   }
 }
@@ -128,7 +159,8 @@ const ISSUES_QUERY = `
         priority
         labels { nodes { name color } }
         assignee { name }
-        createdAt updatedAt
+        creator { name }
+        createdAt updatedAt completedAt
       }
     }
   }
@@ -139,6 +171,125 @@ export async function fetchIssues(first = 250): Promise<LinearIssue[]> {
   return data.issues.nodes.map(mapRawIssue)
 }
 
+const MEMBERS_QUERY = `
+  query FetchLinearMembers($first: Int!) {
+    users(first: $first) {
+      nodes { name }
+    }
+  }
+`
+
+/** Returns the workspace member names used by the analytical creator filter. */
+export async function fetchLinearMemberNames(): Promise<string[]> {
+  const data = await linearQuery<{ users: { nodes: Array<{ name: string }> } }>(
+    MEMBERS_QUERY,
+    { first: 250 },
+  )
+  return [...new Set(data.users.nodes.map(user => user.name.trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'fr'))
+}
+
+const ANALYTICS_ISSUES_QUERY = `
+  query FetchBugsAnalyticsPage($first: Int!, $after: String) {
+    issues(
+      first: $first
+      after: $after
+      filter: { team: { key: { eq: "BUGS" } } }
+      orderBy: updatedAt
+    ) {
+      nodes {
+        title description
+        state { name type }
+        priority
+        labels { nodes { name } }
+        creator { name }
+        createdAt completedAt
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+`
+
+interface RawAnalyticsIssue {
+  title: string
+  description: string | null
+  state: { name: string; type: string }
+  priority: number
+  labels: { nodes: Array<{ name: string }> }
+  creator: { name: string } | null
+  createdAt: string
+  completedAt: string | null
+}
+
+export interface LinearAnalyticsIssuePage {
+  issues: LinearIssue[]
+  pageInfo: { hasNextPage: boolean; endCursor: string | null }
+}
+
+// Next 14's incremental cache rejects entries above 2 MiB. Leave generous
+// headroom for the cache envelope and UTF-8 expansion.
+const MAX_ANALYTICS_PAGE_BYTES = 1_500_000
+const DEFAULT_ANALYTICS_PAGE_SIZE = 250
+
+/**
+ * Fetches one compact, cache-safe analytics page. If descriptions make a page
+ * unusually large, the query is retried with a smaller page size. Cursors still
+ * compose normally, so no issue is skipped between pages.
+ */
+export async function fetchIssuesAnalyticsPage(
+  after: string | null,
+  preferredPageSize = DEFAULT_ANALYTICS_PAGE_SIZE,
+): Promise<LinearAnalyticsIssuePage> {
+  let pageSize = Math.max(1, Math.min(250, Math.floor(preferredPageSize)))
+
+  while (true) {
+    const data = await linearQuery<{
+      issues: {
+        nodes: RawAnalyticsIssue[]
+        pageInfo: { hasNextPage: boolean; endCursor: string | null }
+      }
+    }>(ANALYTICS_ISSUES_QUERY, { first: pageSize, after })
+
+    const page: LinearAnalyticsIssuePage = {
+      issues: data.issues.nodes.map(mapRawAnalyticsIssue),
+      pageInfo: data.issues.pageInfo,
+    }
+    if (jsonByteLength(page) <= MAX_ANALYTICS_PAGE_BYTES) return page
+
+    if (pageSize === 1) {
+      throw new Error('A Linear issue is too large for the analytics cache')
+    }
+    pageSize = Math.max(1, Math.floor(pageSize / 2))
+  }
+}
+
+function mapRawAnalyticsIssue(raw: RawAnalyticsIssue): LinearIssue {
+  return {
+    // Fields unused by analytics stay empty so cached pages do not pay for
+    // identifiers, URLs, assignees or update timestamps.
+    id: '',
+    identifier: '',
+    title: raw.title,
+    description: raw.description,
+    linearState: raw.state.name,
+    stateType: raw.state.type,
+    status: mapStateToStatus(raw.state.name, raw.state.type),
+    priority: raw.priority,
+    priorityLabel: '',
+    labels: raw.labels.nodes.map(label => label.name),
+    assigneeName: null,
+    creatorName: raw.creator?.name ?? null,
+    createdAt: raw.createdAt,
+    updatedAt: '',
+    completedAt: raw.completedAt,
+    url: '',
+  }
+}
+
+function jsonByteLength(value: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(value)).byteLength
+}
+
 const ISSUE_QUERY = `
   query FetchIssue($id: String!) {
     issue(id: $id) {
@@ -147,7 +298,8 @@ const ISSUE_QUERY = `
       priority
       labels { nodes { name color } }
       assignee { name }
-      createdAt updatedAt
+      creator { name }
+      createdAt updatedAt completedAt
       comments {
         nodes {
           body
@@ -189,7 +341,8 @@ const CREATE_ISSUE_MUTATION = `
         priority
         labels { nodes { name color } }
         assignee { name }
-        createdAt updatedAt
+        creator { name }
+        createdAt updatedAt completedAt
       }
     }
   }
