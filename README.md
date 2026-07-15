@@ -1,15 +1,18 @@
 # D-EDGE Ops Cockpit
 
-Cockpit opérationnel interne pour l'équipe Customer Success & Support D-EDGE CRM.
+Cockpit interne de pilotage pour l'équipe Customer Success & Support D-EDGE CRM.
+Les tickets et bugs sont analysés ici, mais restent traités respectivement dans
+Zoho Desk et Linear.
 
 ## Stack technique
 
 - **Framework :** Next.js 14 (App Router)
 - **Language :** TypeScript
 - **Styles :** Tailwind CSS
+- **Graphiques :** Recharts
 - **IA :** OpenAI GPT-4o mini
-- **Base de données :** Supabase (Sprint 4)
-- **Sprint 1 :** Mock data uniquement
+- **Base de données et authentification :** Supabase
+- **Sources métier :** Zoho Desk, Linear, Zoho CRM, Zoho Projects et Acuity
 
 ## Installation locale
 
@@ -40,9 +43,9 @@ L'application est accessible sur [http://localhost:3000](http://localhost:3000).
 
 | Module | URL | Description |
 |--------|-----|-------------|
-| Tableau de bord | `/dashboard` | Vue d'ensemble opérationnelle |
-| Tickets | `/tickets` | Liste et détail des tickets |
-| Escalades | `/escalations` | Kanban des escalades techniques |
+| Tableau de bord | `/dashboard` | KPI numériques et tendances récentes |
+| Tickets | `/tickets` | Dashboard analytique du support Zoho Desk |
+| Bugs | `/escalations` | Dashboard analytique des issues Linear |
 | Formations | `/trainings` | Sessions et statistiques |
 | Onboarding | `/onboarding` | Pipeline de mise en production |
 | Base de connaissances | `/knowledge` | Articles de résolution |
@@ -50,7 +53,7 @@ L'application est accessible sur [http://localhost:3000](http://localhost:3000).
 | Assistant IA | `/assistant` | Interface IA libre |
 | Paramètres | `/settings` | Configuration |
 
-## Actions IA disponibles
+## Actions IA disponibles hors dashboards Tickets/Bugs
 
 1. **Résumer un ticket** — Analyse structurée (statut, bloqueur, action recommandée)
 2. **Réponse client** — Email professionnel éditable
@@ -60,7 +63,10 @@ L'application est accessible sur [http://localhost:3000](http://localhost:3000).
 
 ## Roadmap Sprint
 
-### Sprint 1 (actuel) — Fondations
+> Cette roadmap retrace le plan initial. L'état fonctionnel courant est décrit
+> dans les modules ci-dessus et dans [CHANGELOG.md](./CHANGELOG.md).
+
+### Sprint 1 — Fondations
 - Scaffold Next.js 14 + TypeScript + Tailwind
 - Mock data (10 clients, 20 tickets, 6 escalades, 8 formations, 8 projets, 6 articles KB)
 - Toutes les pages navigables

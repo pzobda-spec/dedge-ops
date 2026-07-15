@@ -89,7 +89,7 @@ y compris les routes et pages Onboarding.
 
 Un appel d'intégration réel à Zoho Desk a également retourné HTTP 200 sur la
 fenêtre de 7 jours : 50 tickets agrégés, 7 points temporels et 19 catégories
-produit sources, ensuite consolidées dans les sept familles du cockpit. La
+produit sources, ensuite consolidées dans la taxonomie provisoire du cockpit. La
 pagination complète création + période précédente a traité 1 107 tickets sans
 troncature ; l'enrichissement des comptes a validé les 100 entrées de la page
 échantillonnée.

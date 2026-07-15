@@ -2,36 +2,36 @@
 
 ## What It Is
 
-D-EDGE Ops Cockpit is an internal operational dashboard for the D-EDGE CRM Customer Success and Support team. It centralizes data from multiple tools (Zoho Desk, Linear, LearnWorlds, Acuity, Zoho Projects, SalesIQ, Ringover) into one unified interface, enriched with AI-powered actions.
+D-EDGE Ops Cockpit is an internal steering cockpit for the D-EDGE CRM Customer
+Success and Support team. It centralizes analytics from Zoho Desk and Linear,
+alongside onboarding, training and knowledge workflows. Ticket and bug handling
+continues in the source tools rather than in the cockpit.
 
 ## Who It's For
 
-- **Support agents** — handling tickets, escalations, and client communication
+- **Support agents** — analyzing ticket and bug trends before acting in source tools
 - **CSMs (Customer Success Managers)** — tracking onboarding projects, client health, and trainings
 - **Team leads** — monitoring workload, risk, and monthly performance
 
 ## Modules
 
 ### 1. Tableau de bord (Dashboard)
-- Critical ticket alerts (Strategic clients, >24h without agent reply)
-- Live counters: open tickets, pending escalations, upcoming trainings, blocked onboarding
-- Quick action shortcuts
-- Priority ticket list (sorted by risk score)
-- Right-panel: escalations, upcoming trainings, blocked projects
+- Four numerical KPI cards with recent-activity sparklines
+- Links to the analytical Tickets and Bugs dashboards
+- Training and onboarding summaries without an individual ticket/issue list
 
 ### 2. Tickets
-- Full ticket list with filtering (status, segment, product area, priority)
-- Risk score calculation (0-100) based on segment, response delay, sentiment, type
-- Per-ticket detail page with AI action panel:
-  - Summarize ticket → structured JSON summary
-  - Generate client reply → email body, editable
-  - Create escalation → structured tech ticket
-  - Create KB article → knowledge base entry
+- Analytical Zoho Desk dashboard with five KPI and six Recharts visualizations
+- Combinable, shareable URL filters for period, product, category,
+  classification, client, status and priority
+- Aggregated client × product table; no individual ticket detail or action
+- Server-side aggregation and 15-minute source cache
 
-### 3. Escalades (Escalations)
-- Kanban board: À qualifier → Envoyé → En attente → En cours → Fix prêt → Résolu → Client à informer
-- Linked to Linear issues
-- Per-card: issue ID, subject, client, next action, last update
+### 3. Bugs
+- Analytical Linear dashboard with five KPI and seven Recharts visualizations
+- Period, label, priority, status, creator and keyword filters
+- Resolution-time SLA distribution, frequent keywords and top creators
+- Server-side aggregation and 15-minute source cache; no operational kanban
 
 ### 4. Formations (Trainings)
 - Session table with expand/collapse for registration details
@@ -65,6 +65,9 @@ D-EDGE Ops Cockpit is an internal operational dashboard for the D-EDGE CRM Custo
 - UI preferences
 
 ## AI Actions (5 prompts via OpenAI GPT-4o mini)
+
+These underlying capabilities remain available to other modules and APIs, but
+are intentionally absent from the analytical Tickets and Bugs dashboards.
 
 1. **Summarize ticket** — Structured analysis of a support ticket
 2. **Generate client reply** — Professional email body
