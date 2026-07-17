@@ -9,6 +9,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   Legend,
   Line,
   LineChart,
@@ -44,6 +45,7 @@ const DEFAULT_PRIORITIES = ['Urgent', 'High', 'Medium', 'Low']
 
 type QueryUpdate = string | string[] | null
 type SortKey = keyof Pick<TicketAggregateRow, 'client' | 'product' | 'category' | 'volume' | 'avg_first_response_hours' | 'open' | 'resolved'>
+type BreakdownView = 'donut' | 'columns'
 
 export default function TicketsAnalyticsDashboard() {
   const router = useRouter()
@@ -86,7 +88,7 @@ export default function TicketsAnalyticsDashboard() {
     const controller = new AbortController()
     setLoading(true)
     setError('')
-    fetch(`/api/zoho/tickets/analytics?${apiQuery}`, { signal: controller.signal })
+    fetch(`/api/analytics/tickets?${apiQuery}`, { signal: controller.signal })
       .then(async response => {
         const payload = await response.json().catch(() => ({}))
         if (!response.ok) throw new Error(payload.error || `Erreur HTTP ${response.status}`)
@@ -326,8 +328,8 @@ export default function TicketsAnalyticsDashboard() {
                 </ResponsiveContainer>
               </ChartCard>
 
-              <DonutChart title="Répartition par produit" data={data.by_product} colors={PRODUCT_COLORS} />
-              <DonutChart title="Répartition par catégorie" data={data.by_category} colors={CATEGORY_COLORS} />
+              <BreakdownChart title="Répartition par produit" data={data.by_product} colors={PRODUCT_COLORS} />
+              <BreakdownChart title="Répartition par catégorie" data={data.by_category} colors={CATEGORY_COLORS} />
 
               <ChartCard title="Répartition par statut" subtitle="État actuel des tickets de la période">
                 {data.by_status.length === 0 ? <EmptyChart /> : (
@@ -406,27 +408,63 @@ function KpiCard({ label, value, subtitle, delta }: { label: string; value: stri
   )
 }
 
-function ChartCard({ title, subtitle, wide = false, children }: { title: string; subtitle?: string; wide?: boolean; children: React.ReactNode }) {
+function ChartCard({
+  title,
+  subtitle,
+  wide = false,
+  action,
+  children,
+}: {
+  title: string
+  subtitle?: string
+  wide?: boolean
+  action?: React.ReactNode
+  children: React.ReactNode
+}) {
   return (
     <article className={`rounded-xl border border-[#e2e2e2] bg-white p-4 shadow-[0_4px_10px_rgba(36,25,55,0.05)] sm:p-5 ${wide ? 'lg:col-span-2' : ''}`}>
-      <div className="mb-3">
-        <h2 className="text-sm font-bold text-[#1a1a1a]">{title}</h2>
-        {subtitle && <p className="mt-0.5 text-xs text-[#8a8a8a]">{subtitle}</p>}
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-sm font-bold text-[#1a1a1a]">{title}</h2>
+          {subtitle && <p className="mt-0.5 text-xs text-[#8a8a8a]">{subtitle}</p>}
+        </div>
+        {action && <div className="shrink-0">{action}</div>}
       </div>
       <div className="h-[300px] w-full">{children}</div>
     </article>
   )
 }
 
-function DonutChart({ title, data, colors }: { title: string; data: AnalyticsBreakdown[]; colors: string[] }) {
-  const total = data.reduce((sum, item) => sum + item.count, 0)
+function BreakdownChart({ title, data, colors }: { title: string; data: AnalyticsBreakdown[]; colors: string[] }) {
+  const [view, setView] = useState<BreakdownView>('donut')
+  const orderedData = moveOtherLast(data)
+  const total = orderedData.reduce((sum, item) => sum + item.count, 0)
+  const viewToggle = (
+    <div role="group" aria-label={`Mode d'affichage pour ${title}`} className="inline-flex rounded-lg border border-[#ded8e8] bg-[#f7f7f7] p-0.5">
+      {([
+        { value: 'donut', label: 'Anneau' },
+        { value: 'columns', label: 'Colonnes' },
+      ] as const).map(option => (
+        <button
+          key={option.value}
+          type="button"
+          aria-pressed={view === option.value}
+          onClick={() => setView(option.value)}
+          className={`rounded-md px-2 py-1 text-[11px] font-semibold transition-colors ${view === option.value ? 'bg-white text-[#59319f] shadow-sm' : 'text-[#696969] hover:text-[#3f2175]'}`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  )
+
   return (
-    <ChartCard title={title}>
-      {data.length === 0 ? <EmptyChart /> : (
+    <ChartCard title={title} action={viewToggle}>
+      {orderedData.length === 0 ? <EmptyChart /> : view === 'donut' ? (
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
-            <Pie data={data} dataKey="count" nameKey="name" innerRadius="48%" outerRadius="72%" paddingAngle={2} stroke="#ffffff" strokeWidth={2}>
-              {data.map((item, index) => <Cell key={item.name} fill={colors[index % colors.length]} />)}
+            <Pie data={orderedData} dataKey="count" nameKey="name" innerRadius="48%" outerRadius="72%" paddingAngle={2} stroke="#ffffff" strokeWidth={2}>
+              {orderedData.map((item, index) => <Cell key={item.name} fill={colors[index % colors.length]} />)}
             </Pie>
             <Tooltip
               contentStyle={tooltipStyle}
@@ -439,9 +477,50 @@ function DonutChart({ title, data, colors }: { title: string; data: AnalyticsBre
             <Legend layout="vertical" align="right" verticalAlign="middle" iconType="circle" wrapperStyle={{ maxWidth: '45%', fontSize: 11, lineHeight: '20px' }} />
           </PieChart>
         </ResponsiveContainer>
+      ) : (
+        <div className="h-full overflow-x-auto pb-1">
+          <div className="h-full" style={{ minWidth: Math.max(360, orderedData.length * 64) }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={orderedData} margin={{ top: 24, right: 8, left: -18, bottom: 62 }}>
+                <CartesianGrid stroke="#ece8f0" strokeDasharray="3 3" vertical={false} />
+                <XAxis
+                  dataKey="name"
+                  interval={0}
+                  angle={-32}
+                  textAnchor="end"
+                  height={70}
+                  tickMargin={8}
+                  tick={{ fontSize: 10, fill: '#4a4a4a' }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#696969' }} tickLine={false} axisLine={false} />
+                <Tooltip
+                  cursor={{ fill: '#f7f3fc' }}
+                  contentStyle={tooltipStyle}
+                  formatter={value => {
+                    const count = Number(value)
+                    const percent = total > 0 ? Math.round((count / total) * 100) : 0
+                    return [`${formatNumber(count)} · ${percent} %`, 'Tickets']
+                  }}
+                />
+                <Bar dataKey="count" name="Tickets" radius={[5, 5, 0, 0]} maxBarSize={46}>
+                  {orderedData.map((item, index) => <Cell key={item.name} fill={colors[index % colors.length]} />)}
+                  <LabelList dataKey="count" position="top" fill="#4a4a4a" fontSize={10} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
       )}
     </ChartCard>
   )
+}
+
+function moveOtherLast(data: AnalyticsBreakdown[]): AnalyticsBreakdown[] {
+  const regular = data.filter(item => item.name !== 'Autre' && item.name !== 'Other')
+  const other = data.filter(item => item.name === 'Autre' || item.name === 'Other')
+  return [...regular, ...other]
 }
 
 function FilterMenu({ label, options, selected, onToggle }: { label: string; options: string[]; selected: string[]; onToggle: (value: string) => void }) {

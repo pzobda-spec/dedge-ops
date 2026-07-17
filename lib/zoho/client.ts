@@ -83,7 +83,7 @@ export async function fetchTickets(params: {
     ...(params.status && { status: params.status }),
     ...(params.departmentId && { departmentId: params.departmentId }),
     sortBy: params.sortBy ?? 'createdTime',
-    fields: 'id,ticketNumber,email,subject,status,priority,channel,category,classification,createdTime,modifiedTime,closedTime,responseTime,customerResponseTime,threadCount,contact,account,accountId,assignee,sentiment,cf',
+    fields: 'id,ticketNumber,email,subject,status,priority,channel,category,classification,createdTime,modifiedTime,closedTime,responseTime,reopenCount,customerResponseTime,threadCount,contact,account,accountId,assignee,sentiment,cf',
   })
 
   return zohoFetch<ZohoTicketsResponse>(`/tickets?${query}`)

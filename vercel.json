@@ -5,6 +5,14 @@
       "schedule": "0 8 * * *"
     },
     {
+      "path": "/api/cron/sync-ticket-analytics",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/sync-linear-analytics",
+      "schedule": "0 8 * * *"
+    },
+    {
       "path": "/api/cron/detect-acuity-events",
       "schedule": "0 9 * * *"
     }

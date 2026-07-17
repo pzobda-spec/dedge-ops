@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
 
 interface HealthStatus {
   zohoDeskConfigured: boolean
@@ -39,6 +40,12 @@ interface AppSetting {
   description: string | null
   updated_by: string | null
   updated_at: string
+}
+
+interface AnalyticsSyncResult {
+  synced: number
+  created: number
+  updated: number
 }
 
 function StatusBadge({ ok }: { ok: boolean }) {
@@ -140,6 +147,81 @@ function AppSettingsEditor() {
   )
 }
 
+function AnalyticsSyncCard() {
+  const { user, loading: userLoading } = useCurrentUser()
+  const [syncing, setSyncing] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  async function syncAnalytics() {
+    setSyncing(true)
+    setMessage(null)
+    setError(null)
+
+    const targets = [
+      { name: 'Tickets', path: '/api/cron/sync-ticket-analytics' },
+      { name: 'Linear', path: '/api/cron/sync-linear-analytics' },
+    ]
+
+    try {
+      const responses = await Promise.allSettled(targets.map(async target => {
+        const response = await fetch(target.path, { method: 'POST' })
+        const body = await response.json().catch(() => ({})) as Partial<AnalyticsSyncResult> & { error?: string }
+        if (!response.ok) {
+          throw new Error(`${target.name} : ${body.error ?? `HTTP ${response.status}`}`)
+        }
+        return { name: target.name, result: body as AnalyticsSyncResult }
+      }))
+
+      const successes = responses.flatMap(response => response.status === 'fulfilled' ? [response.value] : [])
+      const failures = responses.flatMap(response => response.status === 'rejected' ? [response.reason] : [])
+
+      if (successes.length > 0) {
+        setMessage(successes
+          .map(({ name, result }) => `${name} : ${result.synced} synchronisé${result.synced > 1 ? 's' : ''} (${result.created} créé${result.created > 1 ? 's' : ''}, ${result.updated} mis à jour)`)
+          .join(' · '))
+      }
+      if (failures.length > 0) {
+        setError(failures
+          .map(failure => failure instanceof Error ? failure.message : String(failure))
+          .join(' · '))
+      }
+    } catch (syncError) {
+      setError(syncError instanceof Error ? syncError.message : 'La synchronisation a échoué.')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  if (userLoading || user?.role !== 'admin') return null
+
+  return (
+    <div>
+      <p className="text-xs font-bold text-[#696969] uppercase tracking-wide mb-4">Maintenance</p>
+      <div className="bg-white rounded-xl border border-[#e2e2e2] shadow-[0_4px_8px_rgba(0,0,0,0.06)] p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-[#1a1a1a]">Données analytiques</h3>
+            <p className="text-sm text-[#696969] mt-1">
+              Actualise les 12 derniers mois de tickets Zoho Desk et d&apos;issues Linear sans attendre le cron quotidien.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={syncAnalytics}
+            disabled={syncing}
+            className="shrink-0 px-4 py-2 rounded-lg bg-[#59319f] text-white text-sm font-medium hover:bg-[#3f2175] disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+          >
+            {syncing ? 'Synchronisation…' : 'Synchroniser les données analytiques'}
+          </button>
+        </div>
+        {error && <p role="alert" className="mt-4 text-sm text-[#b7221b] bg-[#fee3e2] border border-[#fca5a5] rounded-lg px-3 py-2">{error}</p>}
+        {message && <p className="mt-4 text-sm text-[#1c6437] bg-[#cff7dc] border border-[#86efac] rounded-lg px-3 py-2">{message}</p>}
+      </div>
+    </div>
+  )
+}
+
 export default function SettingsPage() {
   const [health, setHealth] = useState<HealthStatus | null>(null)
   const [loading, setLoading] = useState(true)
@@ -172,6 +254,8 @@ export default function SettingsPage() {
           <p className="text-xs font-bold text-[#696969] uppercase tracking-wide mb-4">Paramètres de l&apos;application</p>
           <AppSettingsEditor />
         </div>
+
+        <AnalyticsSyncCard />
 
         <div>
           <p className="text-xs font-bold text-[#696969] uppercase tracking-wide mb-4">Intégrations</p>

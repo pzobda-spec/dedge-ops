@@ -20,7 +20,6 @@ import {
 } from 'recharts'
 import {
   LINEAR_PRIORITIES,
-  LINEAR_STATUSES,
   type CountDatum,
   type LinearAnalyticsResponse,
 } from '@/lib/linear/analytics'
@@ -134,7 +133,7 @@ export default function LinearAnalyticsDashboard() {
     else setLoading(true)
     setError(null)
 
-    fetch(`/api/linear/issues/analytics?${params.toString()}`, { signal: controller.signal })
+    fetch(`/api/analytics/linear?${params.toString()}`, { signal: controller.signal })
       .then(async response => {
         const body = await response.json() as LinearAnalyticsResponse | { error?: string }
         if (!response.ok) {
@@ -204,6 +203,7 @@ export default function LinearAnalyticsDashboard() {
   const hasActiveFilters = period !== '30d' || labels.length > 0 || priorities.length > 0 ||
     statuses.length > 0 || creators.length > 0 || Boolean(urlKeyword)
   const labelOptions = mergeOptions(data?.filter_options.labels ?? [], labels)
+  const statusOptions = mergeOptions(data?.filter_options.statuses ?? [], statuses)
   const creatorOptions = mergeOptions(data?.filter_options.creators ?? [], creators)
 
   return (
@@ -298,7 +298,7 @@ export default function LinearAnalyticsDashboard() {
           <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)_minmax(0,1.3fr)]">
             <MultiPillFilter label="Type de bug" options={labelOptions} selected={labels} onToggle={value => toggleMulti('label', value)} emptyLabel={loading ? 'Chargement des labels…' : 'Aucun label sur la période'} collapsible />
             <MultiPillFilter label="Priorité" options={[...LINEAR_PRIORITIES]} selected={priorities} onToggle={value => toggleMulti('priority', value)} colors={PRIORITY_COLORS} />
-            <MultiPillFilter label="Statut" options={[...LINEAR_STATUSES]} selected={statuses} onToggle={value => toggleMulti('status', value)} colors={STATUS_COLORS} />
+            <MultiPillFilter label="Statut" options={statusOptions} selected={statuses} onToggle={value => toggleMulti('status', value)} colors={STATUS_COLORS} emptyLabel={loading ? 'Chargement des statuts…' : 'Aucun statut sur la période'} collapsible />
           </div>
 
           <div className="flex min-h-6 flex-wrap items-center justify-between gap-2 border-t border-[#e2e2e2] pt-3">
@@ -354,7 +354,7 @@ export default function LinearAnalyticsDashboard() {
           </ChartCard>
 
           <ChartCard title="Répartition par statut" description="État actuel du workflow Linear">
-            <HorizontalBarChart data={data?.by_status ?? []} colorMap={STATUS_COLORS} />
+            <HorizontalBarChart data={data?.by_status ?? []} colorMap={STATUS_COLORS} colors={PIE_COLORS} yAxisWidth={135} />
           </ChartCard>
 
           <ChartCard title="Issues par créateur" description="Top 10 des personnes qui remontent des bugs">
