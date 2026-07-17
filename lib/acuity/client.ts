@@ -1,4 +1,18 @@
 const BASE = 'https://acuityscheduling.com/api/v1'
+const APPOINTMENTS_LIMIT = 500
+const SEGMENT_CONCURRENCY = 4
+const REQUEST_INTERVAL_MS = 125
+const FUTURE_BOUND_MONTHS = 18
+
+let acuityRequestQueue = Promise.resolve()
+
+function waitForAcuityRateLimit(): Promise<void> {
+  const slot = acuityRequestQueue.then(
+    () => new Promise<void>(resolve => setTimeout(resolve, REQUEST_INTERVAL_MS))
+  )
+  acuityRequestQueue = slot.catch(() => undefined)
+  return slot
+}
 
 function getAuthHeader(): string {
   const userId = process.env.ACUITY_USER_ID!
@@ -7,9 +21,10 @@ function getAuthHeader(): string {
 }
 
 async function acuityFetch<T>(path: string): Promise<T> {
+  await waitForAcuityRateLimit()
   const res = await fetch(`${BASE}${path}`, {
     headers: { Authorization: getAuthHeader() },
-    signal: AbortSignal.timeout(10000),
+    signal: AbortSignal.timeout(15000),
     cache: 'no-store',
   })
   if (!res.ok) throw new Error(`Acuity API error ${res.status}: ${await res.text()}`)
@@ -31,13 +46,14 @@ interface AcuityRawAppointment {
   endTime: string
   type: string
   appointmentTypeID: number
-  classID: number
+  classID?: number | null
   category: string
   duration: string
   calendar: string
   calendarID: number
   canceled: boolean
-  forms: Array<{
+  noShow?: boolean
+  forms?: Array<{
     id: number
     values: Array<{
       fieldID: number
@@ -57,10 +73,11 @@ export interface AcuityParticipant {
   lastName: string
   email: string
   hotelName: string
-  status: 'registered' | 'cancelled'
+  status: 'registered' | 'cancelled' | 'no_show'
 }
 
 export interface AcuitySession {
+  id: string
   classID: number
   title: string
   theme: string
@@ -75,9 +92,26 @@ export interface AcuitySession {
   participants: AcuityParticipant[]
   totalRegistered: number
   totalCancelled: number
+  totalNoShow: number
   uniqueHotels: string[]
   duplicateHotels: string[]
   status: 'scheduled' | 'completed' | 'cancelled'
+}
+
+export interface AcuitySessionsMeta {
+  source: 'acuity'
+  minDate: string | null
+  maxDate: string
+  requests: number
+  segments: number
+  appointments: number
+  truncated: boolean
+  truncatedRanges: Array<{ minDate: string; maxDate: string }>
+}
+
+export interface AcuitySessionsResult {
+  sessions: AcuitySession[]
+  meta: AcuitySessionsMeta
 }
 
 export interface OnboardingAppointment {
@@ -125,12 +159,38 @@ function cleanTitle(type: string): string {
   return cleaned.trim()
 }
 
+const HOTEL_FIELD_NAMES = new Set([
+  'company name',
+  'hotel name',
+  'nom de l hotel',
+  'nom de l etablissement',
+  'nom de votre hotel',
+  'nom de votre etablissement',
+])
+
+function normalizeForComparison(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+}
+
+function cleanHotelName(value: string): string {
+  return value.trim().replace(/\s+/g, ' ')
+}
+
 function getHotelName(appt: AcuityRawAppointment): string {
-  for (const form of appt.forms) {
-    const companyField = form.values.find(v => v.name === 'Company Name')
-    if (companyField?.value) return companyField.value
+  for (const form of appt.forms ?? []) {
+    const companyField = form.values.find(v =>
+      HOTEL_FIELD_NAMES.has(normalizeForComparison(v.name))
+    )
+    const hotelName = cleanHotelName(companyField?.value ?? '')
+    if (hotelName) return hotelName
   }
-  return `${appt.firstName} ${appt.lastName}`
+  return ''
 }
 
 function getCustomField(appt: AcuityRawAppointment, fieldName: string): string | null {
@@ -148,8 +208,8 @@ function isOnboardingAppointment(appt: AcuityRawAppointment): boolean {
 }
 
 function includesNormalized(value: string, needle: string): boolean {
-  const cleanValue = value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-  const cleanNeedle = needle.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  const cleanValue = normalizeForComparison(value)
+  const cleanNeedle = normalizeForComparison(needle)
   return cleanValue.includes(cleanNeedle) || cleanNeedle.includes(cleanValue)
 }
 
@@ -161,7 +221,52 @@ function formatDateDDMMYYYY(isoDatetime: string): string {
   return `${day}/${month}/${year}`
 }
 
-function buildSession(classID: number, appointments: AcuityRawAppointment[]): AcuitySession {
+function getParticipantStatus(appt: AcuityRawAppointment): AcuityParticipant['status'] {
+  if (appt.noShow) return 'no_show'
+  if (appt.canceled) return 'cancelled'
+  return 'registered'
+}
+
+function getSessionIdentity(appt: AcuityRawAppointment): { id: string; classID: number } {
+  if (typeof appt.classID === 'number' && Number.isFinite(appt.classID) && appt.classID > 0) {
+    return { id: `class:${appt.classID}`, classID: appt.classID }
+  }
+
+  const datetime = Number.isNaN(new Date(appt.datetime).getTime())
+    ? `${appt.date ?? ''}T${appt.time ?? ''}`
+    : new Date(appt.datetime).toISOString()
+  const calendarID = Number.isFinite(appt.calendarID) ? appt.calendarID : 'unknown-calendar'
+  const appointmentTypeID = Number.isFinite(appt.appointmentTypeID)
+    ? appt.appointmentTypeID
+    : 'unknown-type'
+
+  return {
+    id: `fallback:${calendarID}:${appointmentTypeID}:${datetime}`,
+    classID: 0,
+  }
+}
+
+function buildCanonicalHotelNames(
+  appointments: AcuityRawAppointment[]
+): Map<string, string> {
+  const hotelNames = new Map<string, string>()
+
+  for (const appt of appointments) {
+    if (getParticipantStatus(appt) !== 'registered') continue
+    const hotelName = getHotelName(appt)
+    const key = normalizeForComparison(hotelName)
+    if (key && !hotelNames.has(key)) hotelNames.set(key, hotelName)
+  }
+
+  return hotelNames
+}
+
+function buildSession(
+  id: string,
+  classID: number,
+  appointments: AcuityRawAppointment[],
+  canonicalHotelNames: Map<string, string>
+): AcuitySession {
   // Sort by datetime
   const sorted = [...appointments].sort(
     (a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime()
@@ -174,32 +279,46 @@ function buildSession(classID: number, appointments: AcuityRawAppointment[]): Ac
   const title = cleanTitle(first.type)
   const language = detectLanguage(first.category)
 
-  const participants: AcuityParticipant[] = sorted.map(appt => ({
-    id: appt.id,
-    firstName: appt.firstName,
-    lastName: appt.lastName,
-    email: appt.email,
-    hotelName: getHotelName(appt),
-    status: appt.canceled ? 'cancelled' : 'registered',
-  }))
+  const participants: AcuityParticipant[] = sorted.map(appt => {
+    const rawHotelName = getHotelName(appt)
+    const hotelName = canonicalHotelNames.get(normalizeForComparison(rawHotelName)) ?? rawHotelName
+    return {
+      id: appt.id,
+      firstName: appt.firstName,
+      lastName: appt.lastName,
+      email: appt.email,
+      hotelName,
+      status: getParticipantStatus(appt),
+    }
+  })
 
   const totalRegistered = participants.filter(p => p.status === 'registered').length
   const totalCancelled = participants.filter(p => p.status === 'cancelled').length
+  const totalNoShow = participants.filter(p => p.status === 'no_show').length
 
-  // Unique hotels
-  const hotelCounts: Record<string, number> = {}
+  // Only active registrations with an explicitly completed hotel field count here.
+  const hotelCounts = new Map<string, { name: string; count: number }>()
   for (const p of participants) {
-    hotelCounts[p.hotelName] = (hotelCounts[p.hotelName] || 0) + 1
+    if (p.status !== 'registered' || !p.hotelName) continue
+    const key = normalizeForComparison(p.hotelName)
+    if (!key) continue
+    const current = hotelCounts.get(key)
+    hotelCounts.set(key, { name: current?.name ?? p.hotelName, count: (current?.count ?? 0) + 1 })
   }
-  const uniqueHotels = Object.keys(hotelCounts)
-  const duplicateHotels = Object.entries(hotelCounts)
-    .filter(([, count]) => count >= 2)
-    .map(([name]) => name)
+  const uniqueHotels = Array.from(hotelCounts.values(), hotel => hotel.name)
+  const duplicateHotels = Array.from(hotelCounts.values())
+    .filter(hotel => hotel.count >= 2)
+    .map(hotel => hotel.name)
 
   const sessionStatus: AcuitySession['status'] =
-    sessionDatetime < now ? 'completed' : 'scheduled'
+    totalRegistered === 0 && totalCancelled > 0 && totalNoShow === 0
+      ? 'cancelled'
+      : sessionDatetime < now
+        ? 'completed'
+        : 'scheduled'
 
   return {
+    id,
     classID,
     title,
     theme: title,
@@ -214,6 +333,7 @@ function buildSession(classID: number, appointments: AcuityRawAppointment[]): Ac
     participants,
     totalRegistered,
     totalCancelled,
+    totalNoShow,
     uniqueHotels,
     duplicateHotels,
     status: sessionStatus,
@@ -224,36 +344,249 @@ function buildSession(classID: number, appointments: AcuityRawAppointment[]): Ac
 // Public API
 // ---------------------------------------------------------------------------
 
-export async function fetchSessions(options?: {
+interface AcuitySessionOptions {
   minDate?: string
   maxDate?: string
-}): Promise<AcuitySession[]> {
-  let path = '/appointments?max=500'
-  if (options?.minDate) path += `&minDate=${options.minDate}`
-  if (options?.maxDate) path += `&maxDate=${options.maxDate}`
+}
 
-  const appointments = await acuityFetch<AcuityRawAppointment[]>(path)
+interface DateRange {
+  minDate: string
+  maxDate: string
+}
 
-  // Filter to training categories only
-  const trainingAppts = appointments.filter(a => isTrainingCategory(a.category))
+interface FetchContext {
+  requests: number
+  segments: number
+  truncatedRanges: DateRange[]
+}
 
-  // Group by classID
-  const byClass = new Map<number, AcuityRawAppointment[]>()
-  for (const appt of trainingAppts) {
-    const existing = byClass.get(appt.classID) || []
-    existing.push(appt)
-    byClass.set(appt.classID, existing)
+function parseDateOnly(value: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) throw new Error(`Invalid Acuity date: ${value}`)
+
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const parsed = new Date(Date.UTC(year, month - 1, day))
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    throw new Error(`Invalid Acuity date: ${value}`)
+  }
+  return parsed
+}
+
+function formatDateOnly(date: Date): string {
+  return date.toISOString().slice(0, 10)
+}
+
+function addDays(value: string, days: number): string {
+  const date = parseDateOnly(value)
+  date.setUTCDate(date.getUTCDate() + days)
+  return formatDateOnly(date)
+}
+
+function getFutureBound(): string {
+  const now = new Date()
+  return formatDateOnly(
+    new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + FUTURE_BOUND_MONTHS + 1, 0))
+  )
+}
+
+function buildAppointmentsPath(params: Record<string, string | number | boolean>): string {
+  const searchParams = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    searchParams.set(key, String(value))
+  }
+  return `/appointments?${searchParams.toString()}`
+}
+
+function splitIntoMonthlyRanges(minDate: string, maxDate: string): DateRange[] {
+  const ranges: DateRange[] = []
+  let cursor = minDate
+
+  while (cursor <= maxDate) {
+    const cursorDate = parseDateOnly(cursor)
+    const endOfMonth = formatDateOnly(
+      new Date(Date.UTC(cursorDate.getUTCFullYear(), cursorDate.getUTCMonth() + 1, 0))
+    )
+    const rangeMaxDate = endOfMonth < maxDate ? endOfMonth : maxDate
+    ranges.push({ minDate: cursor, maxDate: rangeMaxDate })
+    cursor = addDays(rangeMaxDate, 1)
   }
 
-  // Build sessions
-  const sessions = Array.from(byClass.entries()).map(([classID, appts]) =>
-    buildSession(classID, appts)
+  return ranges
+}
+
+function splitDateRange(range: DateRange): [DateRange, DateRange] | null {
+  const minTime = parseDateOnly(range.minDate).getTime()
+  const maxTime = parseDateOnly(range.maxDate).getTime()
+  if (minTime >= maxTime) return null
+
+  const dayMs = 24 * 60 * 60 * 1000
+  const daySpan = Math.floor((maxTime - minTime) / dayMs)
+  const leftMaxDate = formatDateOnly(new Date(minTime + Math.floor(daySpan / 2) * dayMs))
+  return [
+    { minDate: range.minDate, maxDate: leftMaxDate },
+    { minDate: addDays(leftMaxDate, 1), maxDate: range.maxDate },
+  ]
+}
+
+async function mapWithConcurrency<T, R>(
+  values: T[],
+  concurrency: number,
+  mapper: (value: T) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(values.length)
+  let nextIndex = 0
+
+  async function worker(): Promise<void> {
+    while (nextIndex < values.length) {
+      const index = nextIndex
+      nextIndex += 1
+      results[index] = await mapper(values[index])
+    }
+  }
+
+  const workerCount = Math.min(concurrency, values.length)
+  await Promise.all(Array.from({ length: workerCount }, () => worker()))
+  return results
+}
+
+async function fetchAppointmentRange(
+  range: DateRange,
+  context: FetchContext
+): Promise<AcuityRawAppointment[]> {
+  context.requests += 1
+  const appointments = await acuityFetch<AcuityRawAppointment[]>(
+    buildAppointmentsPath({
+      max: APPOINTMENTS_LIMIT,
+      showall: true,
+      direction: 'ASC',
+      minDate: range.minDate,
+      maxDate: range.maxDate,
+    })
   )
 
-  // Sort by datetime desc
-  sessions.sort((a, b) => new Date(b.datetime).getTime() - new Date(a.datetime).getTime())
+  if (appointments.length < APPOINTMENTS_LIMIT) {
+    context.segments += 1
+    return appointments
+  }
 
+  const splitRanges = splitDateRange(range)
+  if (!splitRanges) {
+    context.segments += 1
+    context.truncatedRanges.push(range)
+    return appointments
+  }
+
+  // Recursive calls remain sequential inside each monthly worker, keeping the
+  // global request concurrency bounded while progressively shrinking hot ranges.
+  const left = await fetchAppointmentRange(splitRanges[0], context)
+  const right = await fetchAppointmentRange(splitRanges[1], context)
+  return [...left, ...right]
+}
+
+async function getEarliestAppointmentDate(context: FetchContext): Promise<string | null> {
+  context.requests += 1
+  const appointments = await acuityFetch<AcuityRawAppointment[]>(
+    buildAppointmentsPath({
+      max: 1,
+      showall: true,
+      direction: 'ASC',
+      excludeForms: true,
+    })
+  )
+  const earliest = appointments[0]
+  if (!earliest) return null
+
+  const date = earliest.date || earliest.datetime.slice(0, 10)
+  parseDateOnly(date)
+  return date
+}
+
+function buildSessions(appointments: AcuityRawAppointment[]): AcuitySession[] {
+  const trainingAppts = appointments.filter(a => isTrainingCategory(a.category))
+  const canonicalHotelNames = buildCanonicalHotelNames(trainingAppts)
+  const byClass = new Map<string, { classID: number; appointments: AcuityRawAppointment[] }>()
+
+  for (const appt of trainingAppts) {
+    const identity = getSessionIdentity(appt)
+    const group = byClass.get(identity.id) ?? { classID: identity.classID, appointments: [] }
+    group.appointments.push(appt)
+    byClass.set(identity.id, group)
+  }
+
+  const sessions = Array.from(byClass.entries()).map(([id, group]) =>
+    buildSession(id, group.classID, group.appointments, canonicalHotelNames)
+  )
+  sessions.sort((a, b) => new Date(b.datetime).getTime() - new Date(a.datetime).getTime())
   return sessions
+}
+
+export async function fetchSessionsWithMeta(
+  options: AcuitySessionOptions = {}
+): Promise<AcuitySessionsResult> {
+  if (options.minDate) parseDateOnly(options.minDate)
+  if (options.maxDate) parseDateOnly(options.maxDate)
+  if (options.minDate && options.maxDate && options.minDate > options.maxDate) {
+    throw new Error('Acuity minDate must be before or equal to maxDate')
+  }
+
+  const context: FetchContext = { requests: 0, segments: 0, truncatedRanges: [] }
+  const maxDate = options.maxDate ?? getFutureBound()
+  const minDate = options.minDate ?? await getEarliestAppointmentDate(context)
+
+  if (!minDate || minDate > maxDate) {
+    return {
+      sessions: [],
+      meta: {
+        source: 'acuity',
+        minDate,
+        maxDate,
+        requests: context.requests,
+        segments: 0,
+        appointments: 0,
+        truncated: false,
+        truncatedRanges: [],
+      },
+    }
+  }
+
+  const ranges = splitIntoMonthlyRanges(minDate, maxDate)
+  const chunks = await mapWithConcurrency(ranges, SEGMENT_CONCURRENCY, range =>
+    fetchAppointmentRange(range, context)
+  )
+
+  const appointmentsById = new Map<number, AcuityRawAppointment>()
+  for (const appointment of chunks.flat()) {
+    appointmentsById.set(appointment.id, appointment)
+  }
+  const appointments = Array.from(appointmentsById.values())
+  const truncatedRanges = [...context.truncatedRanges].sort((a, b) =>
+    a.minDate.localeCompare(b.minDate)
+  )
+
+  return {
+    sessions: buildSessions(appointments),
+    meta: {
+      source: 'acuity',
+      minDate,
+      maxDate,
+      requests: context.requests,
+      segments: context.segments,
+      appointments: appointments.length,
+      truncated: truncatedRanges.length > 0,
+      truncatedRanges,
+    },
+  }
+}
+
+export async function fetchSessions(options?: AcuitySessionOptions): Promise<AcuitySession[]> {
+  const result = await fetchSessionsWithMeta(options)
+  return result.sessions
 }
 
 export async function fetchUpcomingSessions(): Promise<AcuitySession[]> {
@@ -283,7 +616,9 @@ export async function fetchOnboardingAppointments(filter?: {
     .filter(appt => !appt.canceled)
     .filter(isOnboardingAppointment)
     .map(appt => {
-      const hotelName = getHotelName(appt)
+      // Preserve the onboarding contract; training hotel KPIs use only the
+      // explicit form value through buildSession above.
+      const hotelName = getHotelName(appt) || `${appt.firstName} ${appt.lastName}`.trim()
       return {
         acuity_id: appt.id,
         type_name: cleanTitle(appt.type),
