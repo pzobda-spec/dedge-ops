@@ -19,9 +19,12 @@ export default function ProjectProgress({
   timeline: ProjectEvent[]
   zohoStatus?: string | null
 }) {
-  const progress = timeline.reduce((max, event) => {
+  const timelineProgress = timeline.reduce((max, event) => {
     return Math.max(max, PROGRESS_BY_EVENT[event.event_type] ?? 0)
   }, 0)
+  // Zoho is the source of truth: a Live project is complete even when its
+  // historical go-live event has not been backfilled yet.
+  const progress = zohoStatus === 'live' ? 100 : timelineProgress
   const isBlocked = timeline.some(event => event.event_type === 'project_blocked') || zohoStatus === 'blocked'
 
   return (

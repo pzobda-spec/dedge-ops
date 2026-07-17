@@ -19,7 +19,12 @@ function hasValidCronSecret(req: NextRequest): boolean {
 }
 
 function normalize(value: string): string {
-  return value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .replace(/\s+/g, ' ')
 }
 
 function getCompletionType(appt: OnboardingAppointment): ProjectEventType | null {
@@ -33,14 +38,29 @@ function getCompletionType(appt: OnboardingAppointment): ProjectEventType | null
 }
 
 async function findProjectId(appt: OnboardingAppointment): Promise<string | null> {
-  if (appt.project_id) {
-    const { data } = await supabaseAdmin
+  const referencedProjectId = appt.project_id?.trim()
+  if (referencedProjectId) {
+    const { data: projectById, error: projectByIdError } = await supabaseAdmin
       .from('onboarding_projects')
       .select('id')
-      .eq('id', appt.project_id)
+      .eq('id', referencedProjectId)
       .maybeSingle()
-    if (data?.id) return data.id as string
+    if (projectByIdError) throw new Error(projectByIdError.message)
+    if (projectById?.id) return projectById.id as string
+
+    const { data: projectByZohoId, error: projectByZohoIdError } = await supabaseAdmin
+      .from('onboarding_projects')
+      .select('id')
+      .eq('zoho_project_id', referencedProjectId)
+      .maybeSingle()
+    if (projectByZohoIdError) throw new Error(projectByZohoIdError.message)
+    if (projectByZohoId?.id) return projectByZohoId.id as string
   }
+
+  const target = normalize(appt.hotel_name)
+  // Never fall back to fuzzy matching without an actual hotel name: every
+  // string contains an empty string, which could otherwise select any project.
+  if (!target) return null
 
   const { data, error } = await supabaseAdmin
     .from('onboarding_projects')
@@ -48,13 +68,19 @@ async function findProjectId(appt: OnboardingAppointment): Promise<string | null
     .not('hotel_name', 'is', null)
 
   if (error) throw new Error(error.message)
-  const target = normalize(appt.hotel_name)
-  const match = (data ?? []).find(row => {
-    const hotel = normalize(String(row.hotel_name ?? ''))
-    return hotel && (hotel.includes(target) || target.includes(hotel))
-  })
+  const candidates = (data ?? []).map(row => ({
+    id: row.id as string,
+    hotel: normalize(String(row.hotel_name ?? '')),
+  })).filter(row => Boolean(row.hotel))
 
-  return match?.id as string | null
+  const exactMatches = candidates.filter(row => row.hotel === target)
+  if (exactMatches.length === 1) return exactMatches[0].id
+
+  // A fuzzy hotel match is accepted only when unambiguous. Multiple products
+  // can legitimately share the same hotel name, in which case project_id is
+  // required to avoid logging the completion on an arbitrary project.
+  const fuzzyMatches = candidates.filter(row => row.hotel.includes(target) || target.includes(row.hotel))
+  return fuzzyMatches.length === 1 ? fuzzyMatches[0].id : null
 }
 
 async function eventExists(projectId: string, eventType: ProjectEventType, appt: OnboardingAppointment): Promise<boolean> {

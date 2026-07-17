@@ -25,6 +25,24 @@ interface OnboardingEventInsert {
   occurred_at: string
 }
 
+const EVENT_LOOKUP_BATCH_SIZE = 100
+
+/**
+ * Zoho exposes the go-live as a calendar date, without a time or timezone.
+ * Store it at noon UTC so formatting it in the app does not accidentally move
+ * it to the previous day for the timezones used by the onboarding team.
+ */
+function goLiveOccurredAt(actualGoLiveDate: string | null, fallback: string): string {
+  if (!actualGoLiveDate || !/^\d{4}-\d{2}-\d{2}$/.test(actualGoLiveDate)) return fallback
+
+  const parsed = new Date(`${actualGoLiveDate}T12:00:00.000Z`)
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== actualGoLiveDate) {
+    return fallback
+  }
+
+  return parsed.toISOString()
+}
+
 function legacyStatusFromZoho(status: OnboardingProject['status']): string {
   switch (status) {
     case 'not_started':
@@ -37,6 +55,8 @@ function legacyStatusFromZoho(status: OnboardingProject['status']): string {
       return 'live'
     case 'blocked':
       return 'blocked'
+    case 'standby':
+      return 'ready'
     case 'other':
     default:
       return 'ready'
@@ -67,6 +87,27 @@ async function hasRecentStatusTransition(params: {
     const metadata = (row.metadata ?? {}) as Record<string, unknown>
     return metadata.from === params.from && metadata.to === params.to
   })
+}
+
+async function getProjectIdsWithEvent(
+  projectIds: string[],
+  eventType: ProjectEventType,
+): Promise<Set<string>> {
+  const result = new Set<string>()
+
+  for (let index = 0; index < projectIds.length; index += EVENT_LOOKUP_BATCH_SIZE) {
+    const batch = projectIds.slice(index, index + EVENT_LOOKUP_BATCH_SIZE)
+    const { data, error } = await supabaseAdmin
+      .from('onboarding_events')
+      .select('project_id')
+      .eq('event_type', eventType)
+      .in('project_id', batch)
+
+    if (error) throw new Error(error.message)
+    for (const row of data ?? []) result.add(row.project_id as string)
+  }
+
+  return result
 }
 
 export async function syncOnboardingProjects(options?: {
@@ -131,14 +172,14 @@ export async function syncOnboardingProjects(options?: {
     client_id: clientIdForProject(project),
     zoho_project_id: project.id,
     zoho_status: project.status,
-    hotel_name: project.name,
+    hotel_name: project.hotelName,
     product: project.product || null,
     owner: project.ownerShort || project.ownerName || '',
     owner_email: project.ownerEmail,
     status: legacyStatusFromZoho(project.status),
     start_date: project.startDate,
     target_go_live: project.endDate,
-    actual_go_live: project.status === 'live' ? project.endDate : null,
+    actual_go_live: project.actualGoLiveDate,
     blockers: project.isBlocked ? 'Projet marque bloque dans Zoho Projects' : null,
     last_synced_at: now,
     updated_at: now,
@@ -167,7 +208,6 @@ export async function syncOnboardingProjects(options?: {
     const existing = existingByZohoId.get(project.id)
     return existing && existing.zoho_status !== project.status
   })
-  const goLiveProjects = statusChangedProjects.filter(project => project.status === 'live')
   const blockedProjects = statusChangedProjects.filter(project => project.status === 'blocked')
   const regularStatusChangedProjects = statusChangedProjects.filter(
     project => project.status !== 'live' && project.status !== 'blocked',
@@ -188,20 +228,28 @@ export async function syncOnboardingProjects(options?: {
     })),
   ]
 
-  for (const project of goLiveProjects) {
+  // Backfill the canonical go-live event for every synced Live project. This
+  // covers both first imports and older rows created before go-live events were
+  // generated, while keeping subsequent syncs idempotent.
+  const liveProjects = projects.filter(project => project.status === 'live')
+  const liveProjectIds = liveProjects.map(
+    project => existingByZohoId.get(project.id)?.id ?? insertedByZohoId.get(project.id)?.id ?? project.id,
+  )
+  const projectsWithGoLiveEvent = await getProjectIdsWithEvent(liveProjectIds, 'go_live')
+
+  for (const project of liveProjects) {
     const projectId = existingByZohoId.get(project.id)?.id ?? project.id
+    if (projectsWithGoLiveEvent.has(projectId)) continue
+
     const from = existingByZohoId.get(project.id)?.zoho_status ?? null
-    const duplicate = await hasRecentStatusTransition({ projectId, eventType: 'go_live', from, to: project.status })
-    if (!duplicate) {
-      eventRows.push({
-        project_id: projectId,
-        event_type: 'go_live',
-        event_label: 'Go-live',
-        actor_email: 'system',
-        metadata: { zoho_project_id: project.id, from, to: project.status },
-        occurred_at: now,
-      })
-    }
+    eventRows.push({
+      project_id: projectId,
+      event_type: 'go_live',
+      event_label: 'Go-live',
+      actor_email: 'system',
+      metadata: { zoho_project_id: project.id, from, to: project.status },
+      occurred_at: goLiveOccurredAt(project.actualGoLiveDate, now),
+    })
   }
 
   for (const project of blockedProjects) {

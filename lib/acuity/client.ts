@@ -121,10 +121,15 @@ export interface OnboardingAppointment {
   duration: number
   calendar: string
   category: string
-  status: 'scheduled' | 'completed' | 'cancelled'
+  status: 'scheduled' | 'completed' | 'cancelled' | 'no_show'
   client_name: string
   hotel_name: string
   project_id: string | null
+}
+
+export interface OnboardingAppointmentsResult {
+  appointments: OnboardingAppointment[]
+  meta: AcuitySessionsMeta
 }
 
 // ---------------------------------------------------------------------------
@@ -194,10 +199,13 @@ function getHotelName(appt: AcuityRawAppointment): string {
 }
 
 function getCustomField(appt: AcuityRawAppointment, fieldName: string): string | null {
-  const target = fieldName.toLowerCase()
+  const target = normalizeForComparison(fieldName.replace(/_/g, ' '))
   for (const form of appt.forms ?? []) {
-    const field = form.values.find(v => v.name.toLowerCase() === target)
-    if (field?.value) return field.value
+    const field = form.values.find(v =>
+      normalizeForComparison(v.name.replace(/_/g, ' ')) === target
+    )
+    const value = field?.value?.trim()
+    if (value) return value
   }
   return null
 }
@@ -207,9 +215,14 @@ function isOnboardingAppointment(appt: AcuityRawAppointment): boolean {
   return ONBOARDING_KEYWORDS.some(keyword => haystack.includes(keyword))
 }
 
+function isOwnerMeetingAppointment(appt: AcuityRawAppointment): boolean {
+  return normalizeForComparison(appt.category ?? '').includes('meeting with')
+}
+
 function includesNormalized(value: string, needle: string): boolean {
   const cleanValue = normalizeForComparison(value)
   const cleanNeedle = normalizeForComparison(needle)
+  if (!cleanValue || !cleanNeedle) return false
   return cleanValue.includes(cleanNeedle) || cleanNeedle.includes(cleanValue)
 }
 
@@ -502,33 +515,21 @@ async function getEarliestAppointmentDate(context: FetchContext): Promise<string
   const earliest = appointments[0]
   if (!earliest) return null
 
-  const date = earliest.date || earliest.datetime.slice(0, 10)
+  // `date` is localized by Acuity (for example "26 janvier 2022"), while the
+  // leading datetime component is stable and accepted by minDate/maxDate.
+  const date = earliest.datetime?.slice(0, 10) || earliest.date
   parseDateOnly(date)
   return date
 }
 
-function buildSessions(appointments: AcuityRawAppointment[]): AcuitySession[] {
-  const trainingAppts = appointments.filter(a => isTrainingCategory(a.category))
-  const canonicalHotelNames = buildCanonicalHotelNames(trainingAppts)
-  const byClass = new Map<string, { classID: number; appointments: AcuityRawAppointment[] }>()
-
-  for (const appt of trainingAppts) {
-    const identity = getSessionIdentity(appt)
-    const group = byClass.get(identity.id) ?? { classID: identity.classID, appointments: [] }
-    group.appointments.push(appt)
-    byClass.set(identity.id, group)
-  }
-
-  const sessions = Array.from(byClass.entries()).map(([id, group]) =>
-    buildSession(id, group.classID, group.appointments, canonicalHotelNames)
-  )
-  sessions.sort((a, b) => new Date(b.datetime).getTime() - new Date(a.datetime).getTime())
-  return sessions
+interface RawAppointmentsResult {
+  appointments: AcuityRawAppointment[]
+  meta: AcuitySessionsMeta
 }
 
-export async function fetchSessionsWithMeta(
+async function fetchRawAppointmentsWithMeta(
   options: AcuitySessionOptions = {}
-): Promise<AcuitySessionsResult> {
+): Promise<RawAppointmentsResult> {
   if (options.minDate) parseDateOnly(options.minDate)
   if (options.maxDate) parseDateOnly(options.maxDate)
   if (options.minDate && options.maxDate && options.minDate > options.maxDate) {
@@ -541,7 +542,7 @@ export async function fetchSessionsWithMeta(
 
   if (!minDate || minDate > maxDate) {
     return {
-      sessions: [],
+      appointments: [],
       meta: {
         source: 'acuity',
         minDate,
@@ -570,7 +571,7 @@ export async function fetchSessionsWithMeta(
   )
 
   return {
-    sessions: buildSessions(appointments),
+    appointments,
     meta: {
       source: 'acuity',
       minDate,
@@ -581,6 +582,36 @@ export async function fetchSessionsWithMeta(
       truncated: truncatedRanges.length > 0,
       truncatedRanges,
     },
+  }
+}
+
+function buildSessions(appointments: AcuityRawAppointment[]): AcuitySession[] {
+  const trainingAppts = appointments.filter(a => isTrainingCategory(a.category))
+  const canonicalHotelNames = buildCanonicalHotelNames(trainingAppts)
+  const byClass = new Map<string, { classID: number; appointments: AcuityRawAppointment[] }>()
+
+  for (const appt of trainingAppts) {
+    const identity = getSessionIdentity(appt)
+    const group = byClass.get(identity.id) ?? { classID: identity.classID, appointments: [] }
+    group.appointments.push(appt)
+    byClass.set(identity.id, group)
+  }
+
+  const sessions = Array.from(byClass.entries()).map(([id, group]) =>
+    buildSession(id, group.classID, group.appointments, canonicalHotelNames)
+  )
+  sessions.sort((a, b) => new Date(b.datetime).getTime() - new Date(a.datetime).getTime())
+  return sessions
+}
+
+export async function fetchSessionsWithMeta(
+  options: AcuitySessionOptions = {}
+): Promise<AcuitySessionsResult> {
+  const { appointments, meta } = await fetchRawAppointmentsWithMeta(options)
+
+  return {
+    sessions: buildSessions(appointments),
+    meta,
   }
 }
 
@@ -600,25 +631,50 @@ export async function fetchRecentSessions(months = 3): Promise<AcuitySession[]> 
   return fetchSessions({ minDate: minDate.toISOString().slice(0, 10) })
 }
 
-export async function fetchOnboardingAppointments(filter?: {
+interface OnboardingAppointmentsFilter {
   from?: Date
   to?: Date
   hotelName?: string
-}): Promise<OnboardingAppointment[]> {
-  let path = '/appointments?max=500'
-  if (filter?.from) path += `&minDate=${filter.from.toISOString().slice(0, 10)}`
-  if (filter?.to) path += `&maxDate=${filter.to.toISOString().slice(0, 10)}`
+  projectId?: string
+  includeOwnerMeetings?: boolean
+}
 
-  const appointments = await acuityFetch<AcuityRawAppointment[]>(path)
+function dateFilterValue(date: Date | undefined, label: string): string | undefined {
+  if (!date) return undefined
+  if (Number.isNaN(date.getTime())) throw new Error(`Invalid Acuity ${label} date`)
+  return date.toISOString().slice(0, 10)
+}
+
+function getOnboardingAppointmentStatus(
+  appointment: AcuityRawAppointment,
+  now: Date
+): OnboardingAppointment['status'] {
+  if (appointment.noShow) return 'no_show'
+  if (appointment.canceled) return 'cancelled'
+
+  const appointmentTime = new Date(appointment.datetime)
+  if (Number.isNaN(appointmentTime.getTime())) {
+    throw new Error(`Acuity appointment ${appointment.id} has an invalid datetime`)
+  }
+  return appointmentTime < now ? 'completed' : 'scheduled'
+}
+
+export async function fetchOnboardingAppointmentsWithMeta(
+  filter?: OnboardingAppointmentsFilter
+): Promise<OnboardingAppointmentsResult> {
+  const { appointments: rawAppointments, meta } = await fetchRawAppointmentsWithMeta({
+    minDate: dateFilterValue(filter?.from, 'from'),
+    maxDate: dateFilterValue(filter?.to, 'to'),
+  })
   const now = new Date()
+  const expectedProjectId = filter?.projectId?.trim() ?? ''
 
-  return appointments
-    .filter(appt => !appt.canceled)
-    .filter(isOnboardingAppointment)
+  const appointments = rawAppointments
+    .filter(appt =>
+      isOnboardingAppointment(appt) ||
+      (filter?.includeOwnerMeetings === true && isOwnerMeetingAppointment(appt))
+    )
     .map(appt => {
-      // Preserve the onboarding contract; training hotel KPIs use only the
-      // explicit form value through buildSession above.
-      const hotelName = getHotelName(appt) || `${appt.firstName} ${appt.lastName}`.trim()
       return {
         acuity_id: appt.id,
         type_name: cleanTitle(appt.type),
@@ -626,12 +682,32 @@ export async function fetchOnboardingAppointments(filter?: {
         duration: parseInt(appt.duration, 10) || 0,
         calendar: appt.calendar,
         category: appt.category,
-        status: new Date(appt.datetime) < now ? 'completed' as const : 'scheduled' as const,
+        status: getOnboardingAppointmentStatus(appt, now),
         client_name: `${appt.firstName} ${appt.lastName}`.trim(),
-        hotel_name: hotelName,
+        hotel_name: getHotelName(appt),
         project_id: getCustomField(appt, 'project_id'),
       }
     })
-    .filter(appt => !filter?.hotelName || includesNormalized(appt.hotel_name, filter.hotelName))
+    .filter(appt => {
+      if (expectedProjectId && appt.project_id) {
+        return appt.project_id.trim() === expectedProjectId
+      }
+      if (filter?.hotelName) {
+        return includesNormalized(appt.hotel_name, filter.hotelName)
+      }
+      return !expectedProjectId
+    })
     .sort((a, b) => new Date(b.datetime).getTime() - new Date(a.datetime).getTime())
+
+  return { appointments, meta }
+}
+
+export async function fetchOnboardingAppointments(
+  filter?: OnboardingAppointmentsFilter
+): Promise<OnboardingAppointment[]> {
+  const result = await fetchOnboardingAppointmentsWithMeta(filter)
+  if (result.meta.truncated) {
+    throw new Error('Acuity onboarding appointments are incomplete because a daily result limit was reached')
+  }
+  return result.appointments
 }

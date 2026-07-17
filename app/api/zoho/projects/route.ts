@@ -4,6 +4,7 @@ import { fetchProjects } from '@/lib/zoho/projectsClient'
 import { ZOHO_PROJECTS_CACHE_SECONDS } from '@/lib/zoho/constants'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
 const getProjectsData = unstable_cache(
   async (status: string) => fetchProjects({ status: status || undefined }),

@@ -10,18 +10,29 @@ const getAccessToken = createZohoTokenProvider({
 })
 
 async function projectsFetch<T>(path: string): Promise<T> {
-  const token = await getAccessToken()
+  async function request(forceRefresh = false): Promise<Response> {
+    const token = await getAccessToken(forceRefresh)
+    return fetch(`${BASE}${path}`, {
+      headers: {
+        Authorization: `Zoho-oauthtoken ${token}`,
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(20_000),
+    })
+  }
 
-  const res = await fetch(`${BASE}${path}`, {
-    headers: {
-      Authorization: `Zoho-oauthtoken ${token}`,
-      'Content-Type': 'application/json',
-    },
-  })
+  let res = await request()
+  // A token can expire between the local expiry check and the request. Refresh
+  // once explicitly instead of turning a transient 401 into a failed dashboard.
+  if (res.status === 401) res = await request(true)
 
   if (!res.ok) {
     throw new Error(`Zoho Projects API error ${res.status}: ${await res.text()}`)
   }
+
+  // Zoho returns an empty 204 response for a page past the last project.
+  if (res.status === 204) return { projects: [] } as T
 
   return res.json()
 }
@@ -44,6 +55,7 @@ export type ProjectStatus =
   | 'pending_client'
   | 'live'
   | 'blocked'
+  | 'standby'
   | 'other'
 
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical' | null
@@ -60,6 +72,7 @@ export interface OnboardingProject {
   ownerShort: string
   startDate: string | null
   endDate: string | null
+  actualGoLiveDate: string | null
   percentComplete: number
   riskLevel: RiskLevel
   implementationLanguage: string | null
@@ -115,18 +128,46 @@ function mapStatus(label: string | undefined): ProjectStatus {
       return 'live'
     case 'Blocked':
       return 'blocked'
+    case 'Standby':
+      return 'standby'
     default:
       return 'other'
   }
 }
 
-/** Convert "MM-DD-YYYY" to "YYYY-MM-DD" ISO string, or null */
+/** Convert Zoho's "MM-DD-YYYY" (or an ISO date) to "YYYY-MM-DD", or null. */
 function convertDate(zohoDate: string | undefined): string | null {
-  if (!zohoDate) return null
-  const parts = zohoDate.split('-')
-  if (parts.length !== 3) return null
-  const [mm, dd, yyyy] = parts
-  return `${yyyy}-${mm}-${dd}`
+  const value = zohoDate?.trim()
+  if (!value) return null
+
+  let year: number
+  let month: number
+  let day: number
+  const usMatch = /^(\d{2})-(\d{2})-(\d{4})$/.exec(value)
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+
+  if (usMatch) {
+    month = Number(usMatch[1])
+    day = Number(usMatch[2])
+    year = Number(usMatch[3])
+  } else if (isoMatch) {
+    year = Number(isoMatch[1])
+    month = Number(isoMatch[2])
+    day = Number(isoMatch[3])
+  } else {
+    return null
+  }
+
+  const parsed = new Date(Date.UTC(year, month - 1, day))
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    return null
+  }
+
+  return parsed.toISOString().slice(0, 10)
 }
 
 function parseRiskLevel(value: string | undefined): RiskLevel {
@@ -167,6 +208,7 @@ function mapProject(raw: RawProject): OnboardingProject {
   const isBlocked = status === 'blocked'
 
   const cf = raw.custom_fields
+  const actualGoLiveDate = convertDate(getCustomField(cf, 'Live date'))
 
   const riskRaw = getCustomField(cf, 'Risk level')
   const riskLevel = parseRiskLevel(riskRaw)
@@ -204,6 +246,7 @@ function mapProject(raw: RawProject): OnboardingProject {
     ownerShort,
     startDate,
     endDate,
+    actualGoLiveDate,
     percentComplete: raw.project_percent ?? 0,
     riskLevel,
     implementationLanguage,
@@ -225,10 +268,12 @@ export async function fetchProjects(options?: {
   status?: string
   range?: number
 }): Promise<OnboardingProject[]> {
-  const range = options?.range ?? 100
-  const all: OnboardingProject[] = []
+  const requestedRange = options?.range ?? 100
+  const range = Math.min(Math.max(Math.trunc(requestedRange), 1), 100)
+  const byId = new Map<string, OnboardingProject>()
 
   let index = 1
+  let pages = 0
   while (true) {
     const query = new URLSearchParams({
       range: String(range),
@@ -237,15 +282,25 @@ export async function fetchProjects(options?: {
     })
 
     const data = await projectsFetch<ProjectsListResponse>(`/projects/?${query}`)
-    const batch = data.projects ?? []
+    const batch = data.projects
+    if (!Array.isArray(batch)) {
+      throw new Error('Zoho Projects API returned an invalid projects payload')
+    }
 
-    all.push(...batch.map(raw => mapProject(raw)))
+    for (const raw of batch) {
+      const project = mapProject(raw)
+      byId.set(project.id, project)
+    }
 
     if (batch.length < range) break
     index += range
+    pages += 1
+    if (pages >= 1_000) {
+      throw new Error('Zoho Projects pagination exceeded the safety limit')
+    }
   }
 
-  return all
+  return Array.from(byId.values())
 }
 
 export async function fetchAllZohoProjects(): Promise<OnboardingProject[]> {

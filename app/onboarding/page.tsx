@@ -15,6 +15,7 @@ const STATUS_COLORS: Record<ProjectStatus, { bg: string; text: string }> = {
   pending_client: { bg: 'bg-[#fbf1ca]', text: 'text-[#84550e]' },
   live:           { bg: 'bg-[#cff7dc]', text: 'text-[#1c6437]' },
   blocked:        { bg: 'bg-[#fee3e2]', text: 'text-[#b7221b]' },
+  standby:        { bg: 'bg-[#f1e8fb]', text: 'text-[#6b3ba1]' },
   other:          { bg: 'bg-[#f7f7f7]', text: 'text-[#696969]' },
 }
 
@@ -24,7 +25,26 @@ const STATUS_LABELS: Record<ProjectStatus, string> = {
   pending_client: 'En attente client',
   live:           'Live',
   blocked:        'Bloqué',
+  standby:        'Standby',
   other:          'Autre',
+}
+
+type DefinedRiskLevel = Exclude<RiskLevel, null>
+type RiskFilter = 'all' | DefinedRiskLevel | 'high_or_critical'
+type Scope = 'mine' | 'impl' | 'all'
+
+const RISK_LABELS: Record<DefinedRiskLevel, string> = {
+  low: 'Faible',
+  medium: 'Modéré',
+  high: 'Élevé',
+  critical: 'Critique',
+}
+
+const RISK_COLORS: Record<DefinedRiskLevel, string> = {
+  low: 'bg-[#cff7dc] text-[#1c6437]',
+  medium: 'bg-[#fbf1ca] text-[#84550e]',
+  high: 'bg-[#ffe8cc] text-[#9a4b00]',
+  critical: 'bg-[#fee3e2] text-[#b7221b]',
 }
 
 const PRODUCT_CONFIG: Record<string, { bg: string; text: string }> = {
@@ -34,25 +54,183 @@ const PRODUCT_CONFIG: Record<string, { bg: string; text: string }> = {
   'Mobile Keys': { bg: 'bg-[#f7f7f7]', text: 'text-[#696969]' },
 }
 
-function productBadge(p: string): string {
-  const c = PRODUCT_CONFIG[p]
-  return c ? `${c.bg} ${c.text}` : 'bg-[#f7f7f7] text-[#696969]'
+const SCOPE_OPTIONS: { value: Scope; label: string }[] = [
+  { value: 'mine', label: 'Mes projets' },
+  { value: 'impl', label: 'Implémentation' },
+  { value: 'all', label: 'Tous les projets' },
+]
+
+function productBadge(product: string): string {
+  const config = PRODUCT_CONFIG[product]
+  return config ? `${config.bg} ${config.text}` : 'bg-[#f7f7f7] text-[#696969]'
 }
 
-function sortScore(p: OnboardingProject): number {
-  if (p.isBlocked)                return 0
-  if (p.riskLevel === 'critical') return 1
-  if (p.riskLevel === 'high')     return 2
-  if (p.isOverdue)                return 3
-  if (p.riskLevel === 'medium')   return 4
-  if (p.status === 'pending_client') return 5
-  if (p.status === 'in_progress') return 6
-  if (p.status === 'not_started') return 7
-  if (p.status === 'live')        return 8
-  return 9
+function sortScore(project: OnboardingProject): number {
+  if (project.isBlocked) return 0
+  if (project.riskLevel === 'critical') return 1
+  if (project.riskLevel === 'high') return 2
+  if (project.isOverdue) return 3
+  if (project.riskLevel === 'medium') return 4
+  if (project.status === 'pending_client') return 5
+  if (project.status === 'in_progress') return 6
+  if (project.status === 'not_started') return 7
+  if (project.status === 'standby') return 8
+  if (project.status === 'live') return 9
+  return 10
 }
 
-// ─── Page ──────────────────────────────────────────────────────────────────────
+function sortProjects(a: OnboardingProject, b: OnboardingProject): number {
+  const priorityDifference = sortScore(a) - sortScore(b)
+  if (priorityDifference !== 0) return priorityDifference
+
+  if (a.endDate && b.endDate && a.endDate !== b.endDate) {
+    return a.endDate.localeCompare(b.endDate)
+  }
+  if (a.endDate && !b.endDate) return -1
+  if (!a.endDate && b.endDate) return 1
+  return a.hotelName.localeCompare(b.hotelName, 'fr')
+}
+
+function plural(value: number, singular: string, pluralForm = `${singular}s`): string {
+  return value === 1 ? singular : pluralForm
+}
+
+function normalizePerson(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('fr-FR')
+    .replace(/[^a-z0-9]+/g, '')
+}
+
+// ─── Small components ────────────────────────────────────────────────────────
+
+function StatusBadge({ status }: { status: ProjectStatus }) {
+  const colors = STATUS_COLORS[status]
+  return (
+    <span className={`inline-flex rounded-md px-2 py-1 text-xs font-medium ${colors.bg} ${colors.text}`}>
+      {STATUS_LABELS[status]}
+    </span>
+  )
+}
+
+function RiskBadge({ risk }: { risk: RiskLevel }) {
+  if (!risk) return <span className="text-xs text-[#9a9a9a]">Non renseigné</span>
+  return (
+    <span className={`inline-flex rounded-md px-2 py-1 text-xs font-medium ${RISK_COLORS[risk]}`}>
+      {RISK_LABELS[risk]}
+    </span>
+  )
+}
+
+function ProgressBar({ value }: { value: number }) {
+  const safeValue = Math.max(0, Math.min(value, 100))
+  return (
+    <div className="flex min-w-[120px] items-center gap-2.5">
+      <div
+        className="h-2 flex-1 overflow-hidden rounded-full bg-[#e8e8e8]"
+        role="progressbar"
+        aria-label="Progression du projet"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={safeValue}
+      >
+        <div className="h-full rounded-full bg-[#59319f]" style={{ width: `${safeValue}%` }} />
+      </div>
+      <span className="w-9 text-right text-xs font-medium tabular-nums text-[#4a4a4a]">{safeValue}%</span>
+    </div>
+  )
+}
+
+type KpiTone = 'neutral' | 'danger' | 'warning' | 'amber' | 'client'
+
+const KPI_TONES: Record<KpiTone, { value: string; icon: string; selected: string }> = {
+  neutral: {
+    value: 'text-[#1f1f1f]',
+    icon: 'bg-[#f0eafb] text-[#59319f]',
+    selected: 'border-[#8c5bdb] ring-2 ring-[#e8dbfa]',
+  },
+  danger: {
+    value: 'text-[#b7221b]',
+    icon: 'bg-[#fee3e2] text-[#b7221b]',
+    selected: 'border-[#ed524e] ring-2 ring-[#fee3e2]',
+  },
+  warning: {
+    value: 'text-[#9a4b00]',
+    icon: 'bg-[#ffe8cc] text-[#9a4b00]',
+    selected: 'border-[#e58a2b] ring-2 ring-[#ffe8cc]',
+  },
+  amber: {
+    value: 'text-[#84550e]',
+    icon: 'bg-[#fbf1ca] text-[#84550e]',
+    selected: 'border-[#d4a72c] ring-2 ring-[#fbf1ca]',
+  },
+  client: {
+    value: 'text-[#2b5bb7]',
+    icon: 'bg-[#d4e4f8] text-[#2b5bb7]',
+    selected: 'border-[#6b94df] ring-2 ring-[#d4e4f8]',
+  },
+}
+
+function KpiCard({
+  label,
+  value,
+  detail,
+  tone,
+  selected,
+  onClick,
+}: {
+  label: string
+  value: number
+  detail: string
+  tone: KpiTone
+  selected: boolean
+  onClick: () => void
+}) {
+  const colors = KPI_TONES[tone]
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      className={`group min-h-[132px] rounded-xl border bg-white p-4 text-left shadow-[0_2px_8px_rgba(0,0,0,0.05)] transition hover:-translate-y-0.5 hover:shadow-[0_6px_16px_rgba(0,0,0,0.08)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#59319f] focus-visible:ring-offset-2 ${
+        selected ? colors.selected : 'border-[#e2e2e2]'
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#696969]">{label}</p>
+          <p className={`mt-2 text-3xl font-bold tabular-nums ${colors.value}`}>{value}</p>
+        </div>
+        <span className={`flex h-8 w-8 items-center justify-center rounded-lg text-base font-semibold ${colors.icon}`} aria-hidden="true">
+          {tone === 'neutral' ? '↗' : '!'}
+        </span>
+      </div>
+      <p className="mt-2 text-xs leading-5 text-[#696969]">{detail}</p>
+    </button>
+  )
+}
+
+function LoadingState() {
+  return (
+    <div className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-6 lg:px-8" aria-live="polite" aria-busy="true">
+      <p className="sr-only">Chargement des projets d’onboarding…</p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <div key={index} className="h-[132px] animate-pulse rounded-xl border border-[#e2e2e2] bg-white p-4">
+            <div className="h-3 w-24 rounded bg-[#ededed]" />
+            <div className="mt-4 h-8 w-14 rounded bg-[#ededed]" />
+            <div className="mt-3 h-3 w-32 rounded bg-[#f2f2f2]" />
+          </div>
+        ))}
+      </div>
+      <div className="h-24 animate-pulse rounded-xl border border-[#e2e2e2] bg-white" />
+      <div className="h-72 animate-pulse rounded-xl border border-[#e2e2e2] bg-white" />
+    </div>
+  )
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function MesProjetsPage() {
   const router = useRouter()
@@ -60,172 +238,512 @@ export default function MesProjetsPage() {
   const [projects, setProjects] = useState<OnboardingProject[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [pill, setPill] = useState<string>('mine')
+  const [requestKey, setRequestKey] = useState(0)
+
+  const [scope, setScope] = useState<Scope>('mine')
+  const [ownerFilter, setOwnerFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState<ProjectStatus | 'all'>('all')
+  const [riskFilter, setRiskFilter] = useState<RiskFilter>('all')
+  const [overdueOnly, setOverdueOnly] = useState(false)
   const [search, setSearch] = useState('')
 
   useEffect(() => {
-    fetch('/api/zoho/projects')
-      .then(res => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.json() })
-      .then((data: { projects: OnboardingProject[] }) => { setProjects(data.projects); setLoading(false) })
-      .catch(err => { console.error(err); setError('Impossible de charger les projets.'); setLoading(false) })
-  }, [])
+    const controller = new AbortController()
 
-  const base = useMemo(
-    () => projects.filter(p => !isExcludedOnboardingOwner(p.ownerShort)),
+    async function loadProjects() {
+      setLoading(true)
+      setError(null)
+      try {
+        const response = await fetch('/api/zoho/projects', { signal: controller.signal })
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        const data = await response.json() as { projects?: OnboardingProject[] }
+        if (!Array.isArray(data.projects)) throw new Error('Réponse invalide')
+        setProjects(data.projects)
+      } catch (loadError) {
+        if (controller.signal.aborted) return
+        console.error(loadError)
+        setError('Impossible de charger les projets d’onboarding.')
+      } finally {
+        if (!controller.signal.aborted) setLoading(false)
+      }
+    }
+
+    void loadProjects()
+    return () => controller.abort()
+  }, [requestKey])
+
+  const baseProjects = useMemo(
+    () => projects.filter(project => !isExcludedOnboardingOwner(project.ownerShort)),
     [projects],
   )
 
+  const scopedProjects = useMemo(() => {
+    if (scope === 'mine') {
+      if (!user?.email) return []
+      const email = user.email.toLowerCase()
+      const fullName = user.full_name?.trim() ?? ''
+      const firstName = fullName.split(/\s+/)[0] ?? ''
+      const emailName = user.email.split('@')[0]?.split('.')[0] ?? ''
+      const identities = new Set([fullName, firstName, emailName].map(normalizePerson).filter(Boolean))
+
+      return baseProjects.filter(project =>
+        project.ownerEmail?.toLowerCase() === email
+        || identities.has(normalizePerson(project.ownerName))
+        || identities.has(normalizePerson(project.ownerShort))
+      )
+    }
+    if (scope === 'impl') {
+      return baseProjects.filter(project => (IMPLEMENTATION_GROUP as readonly string[]).includes(project.ownerShort ?? ''))
+    }
+    return baseProjects
+  }, [baseProjects, scope, user])
+
   const owners = useMemo(
-    () => [...new Set([...IMPLEMENTATION_GROUP, ...base.map(p => p.ownerShort).filter((o): o is string => Boolean(o))])].sort(),
-    [base],
+    () => [...new Set(scopedProjects.map(project => project.ownerShort).filter((owner): owner is string => Boolean(owner)))]
+      .sort((a, b) => a.localeCompare(b, 'fr')),
+    [scopedProjects],
   )
 
-  const filtered = useMemo(() => {
-    let result = base
-    if (pill === 'mine') {
-      if (user?.email) result = base.filter(p => p.ownerEmail?.toLowerCase() === user.email.toLowerCase())
-      else if (!userLoading) result = []
-    } else if (pill === 'impl') {
-      result = base.filter(p => (IMPLEMENTATION_GROUP as readonly string[]).includes(p.ownerShort ?? ''))
-    } else if (pill !== 'all') {
-      result = base.filter(p => p.ownerShort === pill)
-    }
-    if (search.trim()) {
-      const q = search.trim().toLowerCase()
-      result = result.filter(p => p.hotelName.toLowerCase().includes(q))
-    }
-    return [...result].sort((a, b) => sortScore(a) - sortScore(b))
-  }, [base, pill, user, userLoading, search])
+  const portfolioProjects = useMemo(() => {
+    if (scope === 'mine' || ownerFilter === 'all') return scopedProjects
+    return scopedProjects.filter(project => project.ownerShort === ownerFilter)
+  }, [ownerFilter, scope, scopedProjects])
 
-  const pills = useMemo(() => [
-    { key: 'mine', label: 'Mes projets' },
-    { key: 'all',  label: 'Tous' },
-    { key: 'impl', label: 'Implémentation' },
-    ...owners.map(o => ({ key: o, label: o })),
-  ], [owners])
+  const metrics = useMemo(() => ({
+    total: portfolioProjects.length,
+    accounts: new Set(portfolioProjects.map(project => project.hotelName)).size,
+    blocked: portfolioProjects.filter(project => project.isBlocked).length,
+    highRisk: portfolioProjects.filter(project => project.riskLevel === 'high' || project.riskLevel === 'critical').length,
+    overdue: portfolioProjects.filter(project => project.isOverdue).length,
+    pendingClient: portfolioProjects.filter(project => project.status === 'pending_client').length,
+  }), [portfolioProjects])
+
+  const filteredProjects = useMemo(() => {
+    const normalizedSearch = search.trim().toLocaleLowerCase('fr')
+    return portfolioProjects
+      .filter(project => statusFilter === 'all' || project.status === statusFilter)
+      .filter(project => {
+        if (riskFilter === 'all') return true
+        if (riskFilter === 'high_or_critical') {
+          return project.riskLevel === 'high' || project.riskLevel === 'critical'
+        }
+        return project.riskLevel === riskFilter
+      })
+      .filter(project => !overdueOnly || project.isOverdue)
+      .filter(project => {
+        if (!normalizedSearch) return true
+        return [
+          project.hotelName,
+          project.name,
+          project.product,
+          project.ownerName,
+          project.accountCRMName,
+          project.pms,
+        ].some(value => value?.toLocaleLowerCase('fr').includes(normalizedSearch))
+      })
+      .sort(sortProjects)
+  }, [overdueOnly, portfolioProjects, riskFilter, search, statusFilter])
+
+  const isLoading = loading || (scope === 'mine' && userLoading)
+  const hasListFilters = ownerFilter !== 'all' || statusFilter !== 'all' || riskFilter !== 'all' || overdueOnly || Boolean(search.trim())
+
+  function selectScope(nextScope: Scope) {
+    setScope(nextScope)
+    setOwnerFilter('all')
+  }
+
+  function resetListFilters() {
+    setOwnerFilter('all')
+    setStatusFilter('all')
+    setRiskFilter('all')
+    setOverdueOnly(false)
+    setSearch('')
+  }
+
+  function showAllPortfolio() {
+    setSearch('')
+    setStatusFilter('all')
+    setRiskFilter('all')
+    setOverdueOnly(false)
+  }
+
+  function showBlockedProjects() {
+    setSearch('')
+    setStatusFilter('blocked')
+    setRiskFilter('all')
+    setOverdueOnly(false)
+  }
+
+  function showHighRiskProjects() {
+    setSearch('')
+    setStatusFilter('all')
+    setRiskFilter('high_or_critical')
+    setOverdueOnly(false)
+  }
+
+  function showOverdueProjects() {
+    setSearch('')
+    setStatusFilter('all')
+    setRiskFilter('all')
+    setOverdueOnly(true)
+  }
+
+  function showPendingClientProjects() {
+    setSearch('')
+    setStatusFilter('pending_client')
+    setRiskFilter('all')
+    setOverdueOnly(false)
+  }
+
+  function openProject(project: OnboardingProject) {
+    router.push(`/onboarding/${project.id}`)
+  }
 
   return (
     <div style={{ fontFamily: 'var(--font-sans)', backgroundColor: 'var(--bg-canvas)' }} className="min-h-screen">
-      <div className="bg-white border-b border-[#e2e2e2] px-6 py-4">
-        <h1 className="text-xl font-semibold text-[#1f1f1f]">Mes projets</h1>
-        {loading ? (
-          <p className="text-sm text-[#696969] mt-0.5">Chargement…</p>
-        ) : error ? (
-          <p className="text-sm text-[#b7221b] mt-0.5">{error}</p>
-        ) : (
-          <p className="text-sm text-[#696969] mt-0.5">{base.length} projets · {new Set(base.map(p => p.hotelName)).size} comptes</p>
-        )}
-      </div>
+      <header className="border-b border-[#e2e2e2] bg-white">
+        <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
+          <h1 className="text-xl font-semibold text-[#1f1f1f]">Onboarding</h1>
+          <p className="mt-1 text-sm text-[#696969]">
+            {isLoading
+              ? 'Chargement du portefeuille…'
+              : error
+                ? 'Le portefeuille est momentanément indisponible.'
+                : `${baseProjects.length} ${plural(baseProjects.length, 'projet')} · ${new Set(baseProjects.map(project => project.hotelName)).size} ${plural(new Set(baseProjects.map(project => project.hotelName)).size, 'compte')}`}
+          </p>
+        </div>
+      </header>
 
-      {loading ? (
-        <div className="p-12 text-center text-[#696969] text-sm">Chargement des projets…</div>
+      {isLoading ? (
+        <LoadingState />
       ) : error ? (
-        <div className="p-12 text-center text-[#b7221b] text-sm">{error}</div>
+        <main className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+          <div className="rounded-xl border border-[#f3b9b7] bg-white px-6 py-12 text-center shadow-sm" role="alert">
+            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[#fee3e2] font-semibold text-[#b7221b]" aria-hidden="true">!</div>
+            <h2 className="mt-4 text-base font-semibold text-[#1f1f1f]">Chargement impossible</h2>
+            <p className="mt-1 text-sm text-[#696969]">{error}</p>
+            <button
+              type="button"
+              onClick={() => setRequestKey(key => key + 1)}
+              className="mt-5 rounded-lg bg-[#59319f] px-4 py-2 text-sm font-medium text-white hover:bg-[#48277f] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#59319f] focus-visible:ring-offset-2"
+            >
+              Réessayer
+            </button>
+          </div>
+        </main>
       ) : (
-        <div className="p-6 space-y-4 max-w-6xl">
-
-          {/* Pills + search */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {pills.map(({ key, label }) => (
+        <main className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-6 lg:px-8">
+          <section aria-labelledby="scope-heading">
+            <h2 id="scope-heading" className="sr-only">Périmètre du portefeuille</h2>
+            <div className="inline-flex w-full rounded-xl border border-[#e2e2e2] bg-white p-1 sm:w-auto" role="group" aria-label="Périmètre du portefeuille">
+              {SCOPE_OPTIONS.map(option => (
                 <button
-                  key={key}
-                  onClick={() => setPill(key)}
-                  className={`px-3 py-1 text-xs rounded-full border transition-colors ${
-                    pill === key
-                      ? 'bg-[#59319f] text-white border-[#59319f]'
-                      : key === 'impl'
-                      ? 'border-[#c0a4f0] text-[#59319f] bg-[#f3eeff] hover:bg-[#e8dbfa]'
-                      : 'border-[#e2e2e2] text-[#4a4a4a] hover:bg-[#f7f7f7]'
+                  key={option.value}
+                  type="button"
+                  onClick={() => selectScope(option.value)}
+                  aria-pressed={scope === option.value}
+                  className={`min-w-0 flex-1 rounded-lg px-3 py-2 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#59319f] sm:flex-none sm:px-4 ${
+                    scope === option.value
+                      ? 'bg-[#59319f] text-white shadow-sm'
+                      : 'text-[#696969] hover:bg-[#f7f5fa] hover:text-[#59319f]'
                   }`}
                 >
-                  {label}
+                  {option.label}
                 </button>
               ))}
             </div>
-            <input
-              type="search"
-              placeholder="Rechercher un hôtel…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="ml-auto text-xs border border-[#e2e2e2] rounded-lg px-3 py-1.5 text-[#1a1a1a] placeholder:text-[#b0b0b0] focus:outline-none focus:ring-1 focus:ring-[#59319f] bg-white w-52"
-            />
-          </div>
+          </section>
 
-          {/* Table */}
-          {filtered.length === 0 ? (
-            <div className="bg-white rounded-xl border border-[#e2e2e2] px-6 py-16 text-center text-sm text-[#696969]">
-              {pill === 'mine' && !userLoading
-                ? "Vous n'avez aucun projet en cours."
-                : 'Aucun projet trouvé.'}
+          <section aria-labelledby="kpi-heading">
+            <div className="mb-3 flex items-end justify-between gap-3">
+              <div>
+                <h2 id="kpi-heading" className="text-base font-semibold text-[#1f1f1f]">Priorités du portefeuille</h2>
+                <p className="mt-0.5 text-xs text-[#696969]">Cliquez sur un indicateur pour afficher les projets concernés.</p>
+              </div>
             </div>
-          ) : (
-            <div className="bg-white rounded-xl border border-[#e2e2e2] shadow-[0_4px_8px_rgba(0,0,0,0.06)] overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-[#f7f7f7] border-b border-[#e2e2e2]">
-                  <tr>
-                    {['Hôtel', 'Produit', 'Statut', 'Progression', 'Go-live cible'].map((h, i) => (
-                      <th
-                        key={h}
-                        className={`py-2.5 text-xs font-semibold text-[#696969] uppercase tracking-wide ${i === 0 ? 'text-left px-5' : 'text-left px-4'}`}
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#f0f0f0]">
-                  {filtered.map(p => (
-                    <tr
-                      key={p.id}
-                      onClick={() => router.push(`/onboarding/${p.id}`)}
-                      className="hover:bg-[#f7f4fd] cursor-pointer transition-colors"
-                    >
-                      <td className="px-5 py-3">
-                        <div className="flex items-center gap-2">
-                          {p.isBlocked && <span className="w-1.5 h-1.5 rounded-full bg-[#ed524e] flex-shrink-0" />}
-                          <span className="font-medium text-[#1a1a1a] truncate max-w-[220px]">{p.hotelName}</span>
-                        </div>
-                        <p className="text-xs text-[#696969] mt-0.5 pl-3.5">{p.ownerShort}</p>
-                      </td>
-                      <td className="px-4 py-3">
-                        {p.product ? (
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded ${productBadge(p.product)}`}>{p.product}</span>
-                        ) : (
-                          <span className="text-[#b0b0b0] text-xs">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded ${STATUS_COLORS[p.status].bg} ${STATUS_COLORS[p.status].text}`}>
-                            {STATUS_LABELS[p.status]}
-                          </span>
-                          {p.isOverdue && (
-                            <span className="text-xs bg-[#fee3e2] text-[#b7221b] px-1.5 py-0.5 rounded">Dépassé</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 w-44">
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 h-1.5 bg-[#e2e2e2] rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full bg-[#59319f]"
-                              style={{ width: `${Math.min(p.percentComplete, 100)}%` }}
-                            />
-                          </div>
-                          <span className="text-xs text-[#696969] tabular-nums w-8 text-right">{p.percentComplete}%</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-[#696969] whitespace-nowrap">
-                        {p.endDate ? formatDate(p.endDate) : '—'}
-                      </td>
-                    </tr>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              <KpiCard
+                label="Projets du périmètre"
+                value={metrics.total}
+                detail={`${metrics.accounts} ${plural(metrics.accounts, 'compte')}`}
+                tone="neutral"
+                selected={statusFilter === 'all' && riskFilter === 'all' && !overdueOnly}
+                onClick={showAllPortfolio}
+              />
+              <KpiCard
+                label="Bloqués"
+                value={metrics.blocked}
+                detail="À débloquer en priorité"
+                tone="danger"
+                selected={statusFilter === 'blocked' && riskFilter === 'all' && !overdueOnly}
+                onClick={showBlockedProjects}
+              />
+              <KpiCard
+                label="Risque élevé"
+                value={metrics.highRisk}
+                detail="Niveau élevé ou critique"
+                tone="warning"
+                selected={statusFilter === 'all' && riskFilter === 'high_or_critical' && !overdueOnly}
+                onClick={showHighRiskProjects}
+              />
+              <KpiCard
+                label="Date cible dépassée"
+                value={metrics.overdue}
+                detail="Hors projets déjà live"
+                tone="amber"
+                selected={statusFilter === 'all' && riskFilter === 'all' && overdueOnly}
+                onClick={showOverdueProjects}
+              />
+              <KpiCard
+                label="En attente client"
+                value={metrics.pendingClient}
+                detail="Dépendance côté client"
+                tone="client"
+                selected={statusFilter === 'pending_client' && riskFilter === 'all' && !overdueOnly}
+                onClick={showPendingClientProjects}
+              />
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-[#e2e2e2] bg-white p-4 shadow-[0_2px_8px_rgba(0,0,0,0.04)]" aria-labelledby="filters-heading">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 id="filters-heading" className="text-sm font-semibold text-[#1f1f1f]">Affiner la liste</h2>
+                <p className="mt-0.5 text-xs text-[#696969]">
+                  {filteredProjects.length} {plural(filteredProjects.length, 'projet')} affiché{filteredProjects.length === 1 ? '' : 's'}
+                </p>
+              </div>
+              {hasListFilters && (
+                <button
+                  type="button"
+                  onClick={resetListFilters}
+                  className="self-start text-xs font-medium text-[#59319f] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#59319f] sm:self-auto"
+                >
+                  Effacer les filtres
+                </button>
+              )}
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[minmax(260px,1.5fr)_repeat(3,minmax(150px,1fr))]">
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-[#4a4a4a]">Recherche</span>
+                <div className="relative">
+                  <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8a8a8a]" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" strokeWidth="1.5" />
+                    <path d="m13 13 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
+                  <input
+                    type="search"
+                    placeholder="Hôtel, produit, responsable, PMS…"
+                    value={search}
+                    onChange={event => setSearch(event.target.value)}
+                    className="h-10 w-full rounded-lg border border-[#d8d8d8] bg-white pl-9 pr-3 text-sm text-[#1a1a1a] placeholder:text-[#9a9a9a] focus:border-[#8c5bdb] focus:outline-none focus:ring-2 focus:ring-[#e8dbfa]"
+                  />
+                </div>
+              </label>
+
+              <label className={scope === 'mine' ? 'hidden' : 'block'}>
+                <span className="mb-1.5 block text-xs font-medium text-[#4a4a4a]">Responsable</span>
+                <select
+                  value={ownerFilter}
+                  onChange={event => setOwnerFilter(event.target.value)}
+                  className="h-10 w-full rounded-lg border border-[#d8d8d8] bg-white px-3 text-sm text-[#1a1a1a] focus:border-[#8c5bdb] focus:outline-none focus:ring-2 focus:ring-[#e8dbfa]"
+                >
+                  <option value="all">Tous les responsables</option>
+                  {owners.map(owner => <option key={owner} value={owner}>{owner}</option>)}
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-[#4a4a4a]">Statut Zoho</span>
+                <select
+                  value={statusFilter}
+                  onChange={event => setStatusFilter(event.target.value as ProjectStatus | 'all')}
+                  className="h-10 w-full rounded-lg border border-[#d8d8d8] bg-white px-3 text-sm text-[#1a1a1a] focus:border-[#8c5bdb] focus:outline-none focus:ring-2 focus:ring-[#e8dbfa]"
+                >
+                  <option value="all">Tous les statuts</option>
+                  {(Object.entries(STATUS_LABELS) as [ProjectStatus, string][]).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
                   ))}
-                </tbody>
-              </table>
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-[#4a4a4a]">Niveau de risque</span>
+                <select
+                  value={riskFilter}
+                  onChange={event => setRiskFilter(event.target.value as RiskFilter)}
+                  className="h-10 w-full rounded-lg border border-[#d8d8d8] bg-white px-3 text-sm text-[#1a1a1a] focus:border-[#8c5bdb] focus:outline-none focus:ring-2 focus:ring-[#e8dbfa]"
+                >
+                  <option value="all">Tous les niveaux</option>
+                  <option value="high_or_critical">Élevé ou critique</option>
+                  <option value="critical">Critique</option>
+                  <option value="high">Élevé</option>
+                  <option value="medium">Modéré</option>
+                  <option value="low">Faible</option>
+                </select>
+              </label>
             </div>
-          )}
-        </div>
+
+            <label className="mt-3 inline-flex cursor-pointer items-center gap-2 text-xs font-medium text-[#4a4a4a]">
+              <input
+                type="checkbox"
+                checked={overdueOnly}
+                onChange={event => setOverdueOnly(event.target.checked)}
+                className="h-4 w-4 rounded border-[#c6c6c6] text-[#59319f] focus:ring-[#8c5bdb]"
+              />
+              Uniquement les dates cibles dépassées
+            </label>
+          </section>
+
+          <section aria-labelledby="projects-heading">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <h2 id="projects-heading" className="text-base font-semibold text-[#1f1f1f]">Projets</h2>
+                <p className="mt-0.5 text-xs text-[#696969]">Les alertes les plus prioritaires apparaissent en premier.</p>
+              </div>
+              <span className="rounded-full bg-[#eee8f8] px-2.5 py-1 text-xs font-semibold tabular-nums text-[#59319f]">
+                {filteredProjects.length}
+              </span>
+            </div>
+
+            {filteredProjects.length === 0 ? (
+              <div className="rounded-xl border border-[#e2e2e2] bg-white px-6 py-14 text-center shadow-sm">
+                <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[#f0eafb] text-lg text-[#59319f]" aria-hidden="true">⌕</div>
+                <h3 className="mt-4 text-sm font-semibold text-[#1f1f1f]">
+                  {scope === 'mine' && portfolioProjects.length === 0
+                    ? 'Aucun projet ne vous est attribué'
+                    : 'Aucun projet trouvé'}
+                </h3>
+                <p className="mt-1 text-sm text-[#696969]">
+                  {hasListFilters ? 'Modifiez ou effacez les filtres pour élargir la liste.' : 'Ce périmètre ne contient actuellement aucun projet.'}
+                </p>
+                {hasListFilters && (
+                  <button
+                    type="button"
+                    onClick={resetListFilters}
+                    className="mt-4 rounded-lg border border-[#c8b1eb] bg-white px-3 py-2 text-xs font-medium text-[#59319f] hover:bg-[#f7f5fa] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#59319f]"
+                  >
+                    Effacer les filtres
+                  </button>
+                )}
+              </div>
+            ) : (
+              <>
+                <div className="hidden overflow-hidden rounded-xl border border-[#e2e2e2] bg-white shadow-[0_4px_12px_rgba(0,0,0,0.06)] lg:block">
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[1080px] text-sm">
+                      <thead className="border-b border-[#e2e2e2] bg-[#f7f7f7]">
+                        <tr>
+                          <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#696969]">Hôtel / compte</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#696969]">Produit</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#696969]">Responsable</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#696969]">Statut Zoho</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#696969]">Risque</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#696969]">Progression</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#696969]">Go-live cible</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#ededed]">
+                        {filteredProjects.map(project => (
+                          <tr
+                            key={project.id}
+                            role="link"
+                            tabIndex={0}
+                            aria-label={`Ouvrir le projet ${project.hotelName}`}
+                            onClick={() => openProject(project)}
+                            onKeyDown={event => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault()
+                                openProject(project)
+                              }
+                            }}
+                            className="cursor-pointer transition-colors hover:bg-[#f7f4fd] focus:bg-[#f7f4fd] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#8c5bdb]"
+                          >
+                            <td className="px-5 py-3.5">
+                              <div className="flex items-center gap-2">
+                                {project.isBlocked && <span className="h-2 w-2 flex-none rounded-full bg-[#ed524e]" aria-label="Projet bloqué" />}
+                                <span className="max-w-[230px] truncate font-medium text-[#1a1a1a]">{project.hotelName}</span>
+                              </div>
+                              {project.accountCRMName && (
+                                <p className="mt-1 max-w-[230px] truncate pl-4 text-xs text-[#696969]">{project.accountCRMName}</p>
+                              )}
+                            </td>
+                            <td className="px-4 py-3.5">
+                              {project.product ? (
+                                <span className={`inline-flex rounded-md px-2 py-1 text-xs font-medium ${productBadge(project.product)}`}>{project.product}</span>
+                              ) : (
+                                <span className="text-xs text-[#9a9a9a]">Non renseigné</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3.5 text-sm text-[#4a4a4a]">{project.ownerShort || 'Non assigné'}</td>
+                            <td className="px-4 py-3.5"><StatusBadge status={project.status} /></td>
+                            <td className="px-4 py-3.5"><RiskBadge risk={project.riskLevel} /></td>
+                            <td className="w-44 px-4 py-3.5"><ProgressBar value={project.percentComplete} /></td>
+                            <td className="px-4 py-3.5 whitespace-nowrap">
+                              <span className={`text-xs font-medium ${project.isOverdue ? 'text-[#b7221b]' : 'text-[#4a4a4a]'}`}>
+                                {project.endDate ? formatDate(project.endDate) : 'Non renseignée'}
+                              </span>
+                              {project.isOverdue && <p className="mt-1 text-[11px] font-medium text-[#b7221b]">Date dépassée</p>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:hidden">
+                  {filteredProjects.map(project => (
+                    <button
+                      key={project.id}
+                      type="button"
+                      onClick={() => openProject(project)}
+                      aria-label={`Ouvrir le projet ${project.hotelName}`}
+                      className="rounded-xl border border-[#e2e2e2] bg-white p-4 text-left shadow-[0_2px_8px_rgba(0,0,0,0.05)] transition hover:border-[#c8b1eb] hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[#59319f] focus-visible:ring-offset-2"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            {project.isBlocked && <span className="h-2 w-2 flex-none rounded-full bg-[#ed524e]" aria-hidden="true" />}
+                            <h3 className="truncate text-sm font-semibold text-[#1a1a1a]">{project.hotelName}</h3>
+                          </div>
+                          <p className="mt-1 truncate text-xs text-[#696969]">{project.ownerShort || 'Non assigné'}</p>
+                        </div>
+                        <svg className="mt-0.5 h-4 w-4 flex-none text-[#8a8a8a]" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                          <path d="m7.5 4.5 5 5-5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                        <StatusBadge status={project.status} />
+                        <RiskBadge risk={project.riskLevel} />
+                        {project.product && (
+                          <span className={`inline-flex rounded-md px-2 py-1 text-xs font-medium ${productBadge(project.product)}`}>{project.product}</span>
+                        )}
+                        {project.isOverdue && (
+                          <span className="inline-flex rounded-md bg-[#fee3e2] px-2 py-1 text-xs font-medium text-[#b7221b]">Date dépassée</span>
+                        )}
+                      </div>
+
+                      <div className="mt-4">
+                        <p className="mb-1.5 text-xs text-[#696969]">Progression</p>
+                        <ProgressBar value={project.percentComplete} />
+                      </div>
+
+                      <div className="mt-4 flex items-center justify-between border-t border-[#ededed] pt-3 text-xs">
+                        <span className="text-[#696969]">Go-live cible</span>
+                        <span className={`font-medium ${project.isOverdue ? 'text-[#b7221b]' : 'text-[#4a4a4a]'}`}>
+                          {project.endDate ? formatDate(project.endDate) : 'Non renseignée'}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </section>
+        </main>
       )}
     </div>
   )

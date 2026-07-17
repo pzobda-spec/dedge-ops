@@ -17,7 +17,11 @@ export async function GET() {
         process.env.SUPABASE_SERVICE_ROLE_KEY
       ),
       openaiConfigured: !!process.env.OPENAI_API_KEY,
-      zohoFormsConfigured: !!process.env.ZOHO_FORMS_SATISFACTION_FORM,
+      zohoFormsConfigured: !!(
+        process.env.ZOHO_REFRESH_TOKEN &&
+        process.env.ZOHO_FORMS_SATISFACTION_FORM &&
+        process.env.ZOHO_FORMS_SATISFACTION_REPORT
+      ),
     },
     { headers: { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=300' } }
   )

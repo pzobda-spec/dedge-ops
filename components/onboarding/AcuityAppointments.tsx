@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Calendar, ExternalLink } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { AlertTriangle, Calendar, ExternalLink, LoaderCircle, RefreshCw } from 'lucide-react'
 import type { OnboardingProjectDetail } from '@/lib/onboarding/projects'
 import { formatDate } from '@/lib/utils/dates'
 
@@ -11,7 +11,7 @@ interface Appointment {
   datetime: string
   duration: number
   calendar: string
-  status: 'scheduled' | 'completed' | 'cancelled'
+  status: 'scheduled' | 'completed' | 'cancelled' | 'no_show'
   client_name: string
 }
 
@@ -24,30 +24,106 @@ interface UserSettings {
 export default function AcuityAppointments({
   project,
   onLogged,
+  readonly = false,
 }: {
   project: OnboardingProjectDetail
   onLogged?: () => void
+  readonly?: boolean
 }) {
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [settings, setSettings] = useState<UserSettings>({})
   const [loading, setLoading] = useState(true)
+  const [incomplete, setIncomplete] = useState(false)
+  const [appointmentsError, setAppointmentsError] = useState<string | null>(null)
+  const [settingsLoading, setSettingsLoading] = useState(!readonly)
+  const [settingsError, setSettingsError] = useState<string | null>(null)
+  const [proposing, setProposing] = useState<'15min' | '30min' | '60min' | null>(null)
   const [message, setMessage] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
-  useEffect(() => {
-    Promise.allSettled([
-      fetch(`/api/acuity/onboarding-appointments?project_id=${encodeURIComponent(project.id)}`, { cache: 'no-store' })
-        .then(res => res.ok ? res.json() : Promise.reject(res.status)),
-      fetch('/api/settings/me', { cache: 'no-store' })
-        .then(res => res.ok ? res.json() : Promise.reject(res.status)),
-    ]).then(([appointmentsRes, settingsRes]) => {
-      if (appointmentsRes.status === 'fulfilled') setAppointments(appointmentsRes.value.appointments ?? [])
-      if (settingsRes.status === 'fulfilled') setSettings(settingsRes.value.settings ?? {})
-    }).finally(() => setLoading(false))
+  const loadAppointments = useCallback(async () => {
+    setLoading(true)
+    setAppointmentsError(null)
+    setIncomplete(false)
+
+    try {
+      const response = await fetch(
+        `/api/acuity/onboarding-appointments?project_id=${encodeURIComponent(project.id)}`,
+        { cache: 'no-store' }
+      )
+      const payload = await response.json().catch(() => null) as {
+        appointments?: unknown
+        meta?: { truncated?: unknown }
+        error?: string
+      } | null
+
+      if (!response.ok) {
+        throw new Error(payload?.error || `Impossible de charger les rendez-vous (HTTP ${response.status}).`)
+      }
+      if (!Array.isArray(payload?.appointments)) {
+        throw new Error('La réponse Acuity est invalide.')
+      }
+
+      setAppointments(payload.appointments as Appointment[])
+      setIncomplete(payload.meta?.truncated === true)
+    } catch (loadError) {
+      setAppointments([])
+      setAppointmentsError(
+        loadError instanceof Error
+          ? loadError.message
+          : 'Impossible de charger les rendez-vous Acuity.'
+      )
+    } finally {
+      setLoading(false)
+    }
   }, [project.id])
 
+  useEffect(() => {
+    void loadAppointments()
+  }, [loadAppointments])
+
+  useEffect(() => {
+    if (readonly) {
+      setSettingsLoading(false)
+      setSettingsError(null)
+      return
+    }
+
+    let active = true
+    setSettingsLoading(true)
+    setSettingsError(null)
+    fetch('/api/settings/me', { cache: 'no-store' })
+      .then(async response => {
+        const payload = await response.json().catch(() => null) as {
+          settings?: UserSettings
+          error?: string
+        } | null
+        if (!response.ok) {
+          throw new Error(payload?.error || `Impossible de charger vos liens Acuity (HTTP ${response.status}).`)
+        }
+        if (active) setSettings(payload?.settings ?? {})
+      })
+      .catch(settingsLoadError => {
+        if (!active) return
+        setSettingsError(
+          settingsLoadError instanceof Error
+            ? settingsLoadError.message
+            : 'Impossible de charger vos liens Acuity.'
+        )
+      })
+      .finally(() => {
+        if (active) setSettingsLoading(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [readonly])
+
   async function propose(type: '15min' | '30min' | '60min') {
-    setError(null)
+    if (readonly || proposing) return
+
+    setActionError(null)
     setMessage(null)
     const link = type === '15min'
       ? settings.acuity_link_15min
@@ -56,7 +132,7 @@ export default function AcuityAppointments({
         : settings.acuity_link_60min
 
     if (!link) {
-      setError('Configurez vos liens Acuity dans Paramètres > Mes paramètres')
+      setActionError('Configurez vos liens Acuity dans Paramètres > Mes paramètres.')
       return
     }
 
@@ -66,23 +142,30 @@ export default function AcuityAppointments({
         ? 'implementation_scheduled'
         : 'note_added'
 
-    window.open(link, '_blank')
-    const res = await fetch(`/api/onboarding/projects/${encodeURIComponent(project.id)}/events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        event_type: eventType,
-        event_label: type === '15min' ? 'Lien Acuity 15 min ouvert' : undefined,
-        metadata: { acuity_type: type, action: 'booking_link_opened' },
-      }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) {
-      setError(data.error ?? `HTTP ${res.status}`)
-      return
+    setProposing(type)
+    window.open(link, '_blank', 'noopener,noreferrer')
+    try {
+      const res = await fetch(`/api/onboarding/projects/${encodeURIComponent(project.id)}/events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event_type: eventType,
+          event_label: type === '15min' ? 'Lien Acuity 15 min ouvert' : undefined,
+          metadata: { acuity_type: type, action: 'booking_link_opened' },
+        }),
+      })
+      const data = await res.json().catch(() => ({})) as { error?: string }
+      if (!res.ok) {
+        setActionError(data.error ?? `Impossible de consigner l’action (HTTP ${res.status}).`)
+        return
+      }
+      onLogged?.()
+      setMessage('Le lien a été ouvert. Le client recevra une confirmation après réservation.')
+    } catch {
+      setActionError('Le lien a été ouvert, mais l’action n’a pas pu être consignée dans la timeline.')
+    } finally {
+      setProposing(null)
     }
-    onLogged?.()
-    setMessage('Le lien a été ouvert. Le client recevra une confirmation après réservation.')
   }
 
   return (
@@ -96,48 +179,115 @@ export default function AcuityAppointments({
       </div>
 
       {loading ? (
-        <div className="h-16 bg-slate-100 rounded-lg animate-pulse" />
-      ) : appointments.length === 0 ? (
-        <p className="text-sm text-slate-400 border border-dashed border-slate-200 rounded-lg p-4">Aucun RDV onboarding Acuity trouvé.</p>
+        <div role="status" className="flex min-h-16 items-center gap-2 rounded-lg bg-slate-100 px-4 text-sm text-slate-600">
+          <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+          Chargement des rendez-vous Acuity…
+        </div>
+      ) : appointmentsError ? (
+        <div role="alert" className="flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 sm:flex-row sm:items-center sm:justify-between">
+          <span className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" aria-hidden="true" />
+            <span>Les rendez-vous n’ont pas pu être chargés. {appointmentsError}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => void loadAppointments()}
+            className="inline-flex min-h-9 items-center justify-center gap-2 self-start rounded-lg border border-red-300 bg-white px-3 py-1.5 font-medium hover:bg-red-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-600 sm:self-auto"
+          >
+            <RefreshCw className="h-4 w-4" aria-hidden="true" />
+            Réessayer
+          </button>
+        </div>
       ) : (
-        <div className="space-y-2">
-          {appointments.map(appt => (
-            <div key={appt.acuity_id} className="flex items-center justify-between gap-3 border border-slate-100 rounded-lg p-3">
-              <div>
-                <p className="text-sm font-medium text-slate-900">{appt.type_name}</p>
-                <p className="text-xs text-slate-500">{formatDate(appt.datetime.slice(0, 10))} · {appt.duration} min · {appt.client_name}</p>
-              </div>
-              <span className={`text-xs font-medium px-2 py-1 rounded-full ${
-                appt.status === 'completed'
-                  ? 'bg-slate-100 text-slate-600'
-                  : appt.status === 'cancelled'
-                    ? 'bg-red-50 text-red-700'
-                    : 'bg-blue-50 text-blue-700'
-              }`}>
-                {appt.status === 'completed' ? 'passé' : appt.status === 'cancelled' ? 'annulé' : 'à venir'}
+        <>
+          {incomplete && (
+            <div role="status" className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" aria-hidden="true" />
+              <span>
+                Résultats Acuity incomplets : la limite de résultats a été atteinte. Certains rendez-vous peuvent manquer.
               </span>
             </div>
-          ))}
-        </div>
+          )}
+
+          {appointments.length === 0 ? (
+            !incomplete && (
+              <p className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-400">
+                Aucun RDV onboarding Acuity trouvé.
+              </p>
+            )
+          ) : (
+            <div className="space-y-2">
+              {appointments.map(appt => (
+                <div key={appt.acuity_id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 p-3">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">{appt.type_name}</p>
+                    <p className="text-xs text-slate-500">{formatDate(appt.datetime.slice(0, 10))} · {appt.duration} min · {appt.client_name}</p>
+                  </div>
+                  <span className={`rounded-full px-2 py-1 text-xs font-medium ${
+                    appt.status === 'completed'
+                      ? 'bg-slate-100 text-slate-600'
+                      : appt.status === 'cancelled'
+                        ? 'bg-red-50 text-red-700'
+                        : appt.status === 'no_show'
+                          ? 'bg-amber-50 text-amber-800'
+                          : 'bg-blue-50 text-blue-700'
+                  }`}>
+                    {appt.status === 'completed'
+                      ? 'passé'
+                      : appt.status === 'cancelled'
+                        ? 'annulé'
+                        : appt.status === 'no_show'
+                          ? 'absent'
+                          : 'à venir'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
-      {error && <p className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
-      {message && <p className="mt-3 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{message}</p>}
+      {actionError && <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{actionError}</p>}
+      {message && <p role="status" className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p>}
 
-      <div className="mt-4 grid grid-cols-3 gap-2">
-        <button onClick={() => propose('15min')} className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50">
-          <ExternalLink className="h-4 w-4" />
-          Appel rapide
-        </button>
-        <button onClick={() => propose('30min')} className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50">
-          <ExternalLink className="h-4 w-4" />
-          Kick-off
-        </button>
-        <button onClick={() => propose('60min')} className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50">
-          <ExternalLink className="h-4 w-4" />
-          Implémentation
-        </button>
-      </div>
+      {!readonly && (
+        <div className="mt-4">
+          {settingsError && (
+            <p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              Les liens de réservation ne sont pas disponibles. {settingsError}
+            </p>
+          )}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <button
+              type="button"
+              onClick={() => propose('15min')}
+              disabled={settingsLoading || proposing !== null}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#59319f] disabled:cursor-wait disabled:opacity-50"
+            >
+              {proposing === '15min' ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <ExternalLink className="h-4 w-4" aria-hidden="true" />}
+              Appel rapide
+            </button>
+            <button
+              type="button"
+              onClick={() => propose('30min')}
+              disabled={settingsLoading || proposing !== null}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#59319f] disabled:cursor-wait disabled:opacity-50"
+            >
+              {proposing === '30min' ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <ExternalLink className="h-4 w-4" aria-hidden="true" />}
+              Kick-off
+            </button>
+            <button
+              type="button"
+              onClick={() => propose('60min')}
+              disabled={settingsLoading || proposing !== null}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#59319f] disabled:cursor-wait disabled:opacity-50"
+            >
+              {proposing === '60min' ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <ExternalLink className="h-4 w-4" aria-hidden="true" />}
+              Implémentation
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

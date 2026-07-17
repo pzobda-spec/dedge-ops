@@ -13,11 +13,11 @@ const getSatisfaction = unstable_cache(
     if (error) {
       if (isMissingSatisfactionTable(error)) {
         console.warn('[onboarding/satisfaction] onboarding_satisfaction table is missing; returning empty data set')
-        return []
+        return { data: [], tableAvailable: false }
       }
       throw new Error(error.message)
     }
-    return data ?? []
+    return { data: data ?? [], tableAvailable: true }
   },
   ['onboarding-satisfaction'],
   { tags: ['onboarding-satisfaction'], revalidate: 3600 },
@@ -25,8 +25,13 @@ const getSatisfaction = unstable_cache(
 
 export async function GET() {
   try {
-    const data = await getSatisfaction()
-    return NextResponse.json({ data })
+    const result = await getSatisfaction()
+    const configured = Boolean(
+      process.env.ZOHO_REFRESH_TOKEN
+      && process.env.ZOHO_FORMS_SATISFACTION_FORM
+      && process.env.ZOHO_FORMS_SATISFACTION_REPORT
+    )
+    return NextResponse.json({ ...result, configured })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[onboarding/satisfaction] GET error:', msg)
