@@ -18,7 +18,7 @@ const getSessionsData = unstable_cache(
       minDate: minDate || undefined,
       maxDate: maxDate || undefined,
     }),
-  ['acuity-sessions-v2'],
+  ['acuity-sessions-v3'],
   { revalidate: ACUITY_SESSIONS_CACHE_SECONDS, tags: ['acuity-sessions'] }
 )
 

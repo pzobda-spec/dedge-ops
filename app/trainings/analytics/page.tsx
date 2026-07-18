@@ -705,6 +705,7 @@ function computeAnalytics(sessions: AnalyticsSession[], range: DateRange): Perio
   const pastCohort = sessions.filter(session => (
     isWithinRange(session, range)
     && isPastSession(session, now)
+    && !session.isDraft
   ))
   const eligible = pastCohort.filter(session => session.status !== 'cancelled')
   const hotelKeys = new Set<string>()

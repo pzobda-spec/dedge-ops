@@ -1,8 +1,10 @@
 'use client'
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
 import Badge from '@/components/ui/Badge'
 import type { AcuitySession } from '@/lib/acuity/client'
+import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
 
 type TrainingSession = AcuitySession & {
   id?: string
@@ -178,13 +180,14 @@ function sessionMatchesSearch(session: TrainingSession, query: string): boolean 
 }
 
 function computeStats(sessions: TrainingSession[]): SessionStats {
+  const countedSessions = sessions.filter(session => !session.isDraft)
   const hotels = new Set<string>()
-  const nonCancelledSessions = sessions.filter(session => session.status !== 'cancelled')
+  const nonCancelledSessions = countedSessions.filter(session => session.status !== 'cancelled')
   let activeRegistrations = 0
   let cancelledRegistrations = 0
   let noShows = 0
 
-  for (const session of sessions) {
+  for (const session of countedSessions) {
     activeRegistrations += session.totalRegistered
     cancelledRegistrations += session.totalCancelled
     noShows += noShowCount(session)
@@ -193,10 +196,10 @@ function computeStats(sessions: TrainingSession[]): SessionStats {
 
   const cancellationBase = activeRegistrations + cancelledRegistrations + noShows
   return {
-    totalSessions: sessions.length,
-    completedSessions: sessions.filter(session => session.status === 'completed').length,
-    scheduledSessions: sessions.filter(session => session.status === 'scheduled').length,
-    cancelledSessions: sessions.filter(session => session.status === 'cancelled').length,
+    totalSessions: countedSessions.length,
+    completedSessions: countedSessions.filter(session => session.status === 'completed').length,
+    scheduledSessions: countedSessions.filter(session => session.status === 'scheduled').length,
+    cancelledSessions: countedSessions.filter(session => session.status === 'cancelled').length,
     activeRegistrations,
     representedHotels: hotels.size,
     averageRegistrations: nonCancelledSessions.length > 0 ? activeRegistrations / nonCancelledSessions.length : 0,
@@ -296,6 +299,12 @@ function SessionDetail({
           <span>{session.totalCancelled} {plural(session.totalCancelled, 'annulation')}</span>
           <span aria-hidden="true">·</span>
           <span>{noShows} no-show</span>
+          {session.capacity != null && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span>{session.capacity} places · {session.availableSlots ?? Math.max(0, session.capacity - session.totalRegistered)} restantes</span>
+            </>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           {hotels.length > 0 && (
@@ -317,7 +326,9 @@ function SessionDetail({
 
       {session.participants.length === 0 ? (
         <p className="rounded-lg border border-dashed border-[#d8d8d8] px-4 py-6 text-center text-sm text-[#878787]">
-          Aucun participant pour cette session.
+          {session.isDraft
+            ? 'Brouillon privé : cette session n’est pas encore réservable.'
+            : 'Aucun participant pour cette session.'}
         </p>
       ) : (
         <div className="overflow-hidden rounded-lg border border-[#ded8e8] bg-white">
@@ -388,7 +399,7 @@ function DesktopSessionTable({
             <tr>
               <th scope="col" className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#696969]">Session</th>
               <th scope="col" className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#696969]">Animateur</th>
-              <th scope="col" className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[#696969]">Inscriptions actives</th>
+              <th scope="col" className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[#696969]">Inscriptions / capacité</th>
               <th scope="col" className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[#696969]">Hôtels représentés</th>
               <th scope="col" className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#696969]">Statut</th>
               <th scope="col" className="w-16 px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[#696969]">Détails</th>
@@ -412,12 +423,15 @@ function DesktopSessionTable({
                           <p className="font-semibold text-[#1a1a1a]">{session.title}</p>
                           <div className="mt-1">
                             <Badge label={session.language} variant={session.language.toLowerCase() as 'fr' | 'en' | 'es'} />
+                            {session.visibility === 'private' && <span className="ml-2 inline-flex rounded-full border border-[#ead5a7] bg-[#fff8e8] px-2 py-0.5 text-[10px] font-semibold text-[#84550e]">Privée</span>}
                           </div>
                         </div>
                       </div>
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-[#4a4a4a]">{session.calendar}</td>
-                    <td className="px-4 py-3 text-right font-semibold tabular-nums text-[#1a1a1a]">{session.totalRegistered}</td>
+                    <td className="px-4 py-3 text-right font-semibold tabular-nums text-[#1a1a1a]">
+                      {session.totalRegistered}{session.capacity != null ? ` / ${session.capacity}` : ''}
+                    </td>
                     <td className="px-4 py-3 text-right tabular-nums text-[#4a4a4a]">{registeredHotels(session).length}</td>
                     <td className="px-4 py-3"><StatusBadge status={session.status} /></td>
                     <td className="px-4 py-3 text-right">
@@ -473,6 +487,7 @@ function MobileSessionCards({
                   <p className="text-xs font-medium text-[#696969]">{session.date} · {session.time}</p>
                   <h3 className="mt-1 font-semibold text-[#1a1a1a]">{session.title}</h3>
                   <div className="mt-2"><Badge label={session.language} variant={session.language.toLowerCase() as 'fr' | 'en' | 'es'} /></div>
+                  {session.visibility === 'private' && <span className="mt-2 inline-flex rounded-full border border-[#ead5a7] bg-[#fff8e8] px-2 py-0.5 text-[10px] font-semibold text-[#84550e]">Privée</span>}
                 </div>
                 <StatusBadge status={session.status} />
               </div>
@@ -483,8 +498,10 @@ function MobileSessionCards({
                   <dd className="mt-0.5 font-medium text-[#4a4a4a]">{session.calendar}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-[#878787]">Inscriptions actives</dt>
-                  <dd className="mt-0.5 font-semibold tabular-nums text-[#1a1a1a]">{session.totalRegistered}</dd>
+                  <dt className="text-xs text-[#878787]">Inscriptions / capacité</dt>
+                  <dd className="mt-0.5 font-semibold tabular-nums text-[#1a1a1a]">
+                    {session.totalRegistered}{session.capacity != null ? ` / ${session.capacity}` : ''}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-xs text-[#878787]">Hôtels représentés</dt>
@@ -536,9 +553,12 @@ function EmptySessions({ filtered }: { filtered: boolean }) {
 }
 
 export default function TrainingsPage() {
+  const { user: currentUser } = useCurrentUser()
+  const [enterpriseConfigured, setEnterpriseConfigured] = useState<boolean | null>(null)
   const [period, setPeriod] = useState<Period>('3m')
   const [sessions, setSessions] = useState<TrainingSession[]>([])
   const [sourceTruncated, setSourceTruncated] = useState(false)
+  const [sourceDegraded, setSourceDegraded] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [retryVersion, setRetryVersion] = useState(0)
@@ -552,12 +572,26 @@ export default function TrainingsPage() {
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
+    if (currentUser?.role !== 'admin') {
+      setEnterpriseConfigured(null)
+      return
+    }
+    const controller = new AbortController()
+    fetch('/api/settings/health', { signal: controller.signal })
+      .then(response => response.json())
+      .then(body => setEnterpriseConfigured(body.acuityEnterpriseConfigured === true))
+      .catch(() => setEnterpriseConfigured(false))
+    return () => controller.abort()
+  }, [currentUser?.role])
+
+  useEffect(() => {
     const controller = new AbortController()
     const requestId = ++requestSequence.current
     setLoading(true)
     setError(null)
     setExpandedId(null)
     setSourceTruncated(false)
+    setSourceDegraded(false)
 
     async function loadSessions() {
       try {
@@ -566,13 +600,14 @@ export default function TrainingsPage() {
           const body = await response.json().catch(() => ({ error: response.statusText }))
           throw new Error(body.error ?? response.statusText)
         }
-        const body = await response.json() as { sessions?: unknown; meta?: { truncated?: boolean } }
+        const body = await response.json() as { sessions?: unknown; meta?: { truncated?: boolean; degraded?: boolean } }
         if (!Array.isArray(body.sessions)) throw new Error('Réponse Acuity invalide')
         if (requestId === requestSequence.current) {
           setSessions(body.sessions as TrainingSession[])
           setSourceTruncated(
             body.meta?.truncated === true || response.headers.get('X-Acuity-Truncated') === 'true',
           )
+          setSourceDegraded(body.meta?.degraded === true)
         }
       } catch (loadError) {
         if (loadError instanceof DOMException && loadError.name === 'AbortError') return
@@ -611,6 +646,7 @@ export default function TrainingsPage() {
   )), [animator, language, normalizedQuery, sessions, status])
 
   const stats = useMemo(() => computeStats(filteredSessions), [filteredSessions])
+  const draftCount = sessions.filter(session => session.isDraft).length
   const hasFilters = Boolean(search.trim()) || language !== 'all' || status !== 'all' || animator !== 'all'
 
   function resetFilters() {
@@ -672,11 +708,27 @@ export default function TrainingsPage() {
                 ? 'Chargement des sessions…'
                 : error
                   ? 'Données indisponibles'
-                  : `${sessions.length} ${plural(sessions.length, 'session')} sur la période`}
+                  : `${stats.totalSessions} ${plural(stats.totalSessions, 'session')} sur la période${draftCount > 0 ? ` · ${draftCount} brouillon${draftCount > 1 ? 's' : ''} privé${draftCount > 1 ? 's' : ''}` : ''}`}
             </p>
           </div>
 
-          <div className="max-w-full overflow-x-auto pb-1 lg:pb-0">
+          <div className="flex max-w-full items-center gap-3 overflow-x-auto pb-1 lg:pb-0">
+            {currentUser?.role === 'admin' && enterpriseConfigured === true && (
+              <Link
+                href="/trainings/manage"
+                className="inline-flex min-w-max items-center rounded-lg bg-[#59319f] px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3f2175] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8064b3] focus-visible:ring-offset-2"
+              >
+                Gérer les formations
+              </Link>
+            )}
+            {currentUser?.role === 'admin' && enterpriseConfigured === false && (
+              <Link
+                href="/settings"
+                className="inline-flex min-w-max items-center rounded-lg border border-[#d7b76d] bg-[#fffaf0] px-3.5 py-2 text-sm font-semibold text-[#754b08] transition-colors hover:bg-[#fff5df] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#d7b76d] focus-visible:ring-offset-2"
+              >
+                Configurer Acuity Enterprise
+              </Link>
+            )}
             <div role="group" aria-label="Période des formations" className="inline-flex min-w-max items-center gap-1 rounded-xl bg-[#f4f1f8] p-1">
               {periodOptions.map(option => (
                 <button
@@ -755,6 +807,13 @@ export default function TrainingsPage() {
               <div role="status" className="rounded-xl border border-[#edc86b] bg-[#fff8e8] px-4 py-3 text-sm text-[#84550e]">
                 <p className="font-semibold">Données Acuity partielles</p>
                 <p className="mt-0.5 text-xs">La source a atteint sa limite de pagination. Les sessions et indicateurs affichés peuvent être incomplets.</p>
+              </div>
+            )}
+
+            {sourceDegraded && (
+              <div role="status" className="rounded-xl border border-[#edc86b] bg-[#fff8e8] px-4 py-3 text-sm text-[#84550e]">
+                <p className="font-semibold">Disponibilités Acuity partielles</p>
+                <p className="mt-0.5 text-xs">Les rendez-vous sont affichés, mais certaines sessions sans inscription peuvent manquer temporairement.</p>
               </div>
             )}
 

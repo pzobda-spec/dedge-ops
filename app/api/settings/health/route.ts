@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { isAcuityEnterpriseConfigured } from '@/lib/acuity/enterprise'
 
 export async function GET() {
   return NextResponse.json(
@@ -12,6 +13,7 @@ export async function GET() {
       zohoProjectsConfigured: !!process.env.ZOHO_PROJECTS_REFRESH_TOKEN,
       linearConfigured: !!process.env.LINEAR_API_KEY,
       acuityConfigured: !!(process.env.ACUITY_USER_ID && process.env.ACUITY_API_KEY),
+      acuityEnterpriseConfigured: isAcuityEnterpriseConfigured(),
       supabaseConfigured: !!(
         process.env.NEXT_PUBLIC_SUPABASE_URL &&
         process.env.SUPABASE_SERVICE_ROLE_KEY

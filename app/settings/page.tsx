@@ -9,6 +9,7 @@ interface HealthStatus {
   zohoProjectsConfigured: boolean
   linearConfigured: boolean
   acuityConfigured: boolean
+  acuityEnterpriseConfigured: boolean
   supabaseConfigured: boolean
   openaiConfigured: boolean
   zohoFormsConfigured: boolean
@@ -30,6 +31,7 @@ const INTEGRATIONS: Integration[] = [
   { key: 'zohoFormsConfigured',    name: 'Zoho Forms',         type: 'OAuth2',         description: 'Formulaires de satisfaction client', scope: 'ZohoForms.form.READ (partage le token Zoho Desk)', envVars: ['ZOHO_FORMS_SATISFACTION_FORM'] },
   { key: 'linearConfigured',       name: 'Linear',             type: 'API Token',      description: 'Dashboard Bugs — workspace loungeup, équipe BUGS', scope: 'Issues READ', envVars: ['LINEAR_API_KEY'] },
   { key: 'acuityConfigured',       name: 'Acuity Scheduling',  type: 'Credentials',    description: 'Sessions de formation, participants, calendriers', scope: 'Appointments READ · Calendars READ', envVars: ['ACUITY_USER_ID', 'ACUITY_API_KEY'] },
+  { key: 'acuityEnterpriseConfigured', name: 'Acuity Enterprise', type: 'Enterprise API v2', description: 'Création des formations et publication des dates', scope: 'Appointment Types WRITE · Availability WRITE', envVars: ['ACUITY_ENTERPRISE_ID', 'ACUITY_ENTERPRISE_API_KEY', 'ACUITY_INSTANCE_ID'] },
   { key: 'supabaseConfigured',     name: 'Supabase',           type: 'REST + Postgres', description: 'Base de données, cache, vecteurs pgvector', scope: 'Service role (full access backend)', envVars: ['NEXT_PUBLIC_SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'] },
   { key: 'openaiConfigured',       name: 'OpenAI',             type: 'API Key',        description: 'Actions IA sur les tickets, suggestions', scope: 'GPT-4o mini · Chat Completions · Embeddings (text-embedding-3-small)', envVars: ['OPENAI_API_KEY'] },
 ]

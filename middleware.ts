@@ -7,6 +7,15 @@ import type { Role } from '@/lib/auth/roles'
 // Each entry: if the request path matches a prefix, only the listed roles may access it.
 
 const RESTRICTED_ROUTES: Array<{ prefixes: string[]; roles: Role[] }> = [
+  // Sensitive write surfaces must be matched before their broader read scopes.
+  {
+    prefixes: ['/trainings/manage', '/admin', '/api/admin'],
+    roles: ['admin'],
+  },
+  {
+    prefixes: ['/api/acuity/sessions'],
+    roles: ['admin', 'support'],
+  },
   // Admin + support only (onboarder and commercial_readonly are blocked)
   {
     prefixes: [
@@ -19,11 +28,6 @@ const RESTRICTED_ROUTES: Array<{ prefixes: string[]; roles: Role[] }> = [
       '/api/knowledge', '/api/google',
     ],
     roles: ['admin', 'support'],
-  },
-  // Admin only
-  {
-    prefixes: ['/admin', '/api/admin'],
-    roles: ['admin'],
   },
   // Onboarding scope: admin + onboarder + commercial_readonly
   {

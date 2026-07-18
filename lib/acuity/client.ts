@@ -63,6 +63,32 @@ interface AcuityRawAppointment {
   }>
 }
 
+interface AcuityRawClassOffering {
+  id?: number
+  appointmentTypeID: number
+  calendarID: number
+  name: string
+  time: string
+  calendar: string
+  duration: number
+  isSeries: boolean
+  slots: number
+  slotsAvailable: number
+}
+
+interface AcuityRawAppointmentType {
+  id: number
+  active?: boolean
+  name: string
+  description?: string
+  duration: number
+  category?: string
+  private?: boolean
+  type?: 'service' | 'class' | 'series'
+  classSize?: number | null
+  calendarIDs?: number[]
+}
+
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
@@ -79,6 +105,7 @@ export interface AcuityParticipant {
 export interface AcuitySession {
   id: string
   classID: number
+  appointmentTypeID: number
   title: string
   theme: string
   language: 'FR' | 'EN' | 'ES'
@@ -93,6 +120,10 @@ export interface AcuitySession {
   totalRegistered: number
   totalCancelled: number
   totalNoShow: number
+  capacity: number | null
+  availableSlots: number | null
+  visibility: 'public' | 'private'
+  isDraft: boolean
   uniqueHotels: string[]
   duplicateHotels: string[]
   status: 'scheduled' | 'completed' | 'cancelled'
@@ -105,6 +136,9 @@ export interface AcuitySessionsMeta {
   requests: number
   segments: number
   appointments: number
+  classes: number
+  degraded: boolean
+  warnings: string[]
   truncated: boolean
   truncatedRanges: Array<{ minDate: string; maxDate: string }>
 }
@@ -234,6 +268,16 @@ function formatDateDDMMYYYY(isoDatetime: string): string {
   return `${day}/${month}/${year}`
 }
 
+function formatClassTime(isoDatetime: string): string {
+  const match = /T(\d{2}:\d{2})/.exec(isoDatetime)
+  return match?.[1] ?? ''
+}
+
+function formatClassDate(isoDatetime: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(isoDatetime)
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : formatDateDDMMYYYY(isoDatetime)
+}
+
 function getParticipantStatus(appt: AcuityRawAppointment): AcuityParticipant['status'] {
   if (appt.noShow) return 'no_show'
   if (appt.canceled) return 'cancelled'
@@ -259,6 +303,34 @@ function getSessionIdentity(appt: AcuityRawAppointment): { id: string; classID: 
   }
 }
 
+function normalizedInstant(value: string): string {
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString()
+}
+
+function offeringMatchKey(value: {
+  appointmentTypeID: number
+  calendarID: number
+  datetime: string
+}): string {
+  return `${value.appointmentTypeID}:${value.calendarID}:${normalizedInstant(value.datetime)}`
+}
+
+function getOfferingIdentity(offering: AcuityRawClassOffering): { id: string; classID: number } {
+  const classID = Number(offering.id)
+  if (Number.isSafeInteger(classID) && classID > 0) {
+    return { id: `class:${classID}`, classID }
+  }
+  return {
+    id: `offering:${offeringMatchKey({
+      appointmentTypeID: Number(offering.appointmentTypeID),
+      calendarID: Number(offering.calendarID),
+      datetime: offering.time,
+    })}`,
+    classID: 0,
+  }
+}
+
 function buildCanonicalHotelNames(
   appointments: AcuityRawAppointment[]
 ): Map<string, string> {
@@ -278,7 +350,9 @@ function buildSession(
   id: string,
   classID: number,
   appointments: AcuityRawAppointment[],
-  canonicalHotelNames: Map<string, string>
+  canonicalHotelNames: Map<string, string>,
+  offering?: AcuityRawClassOffering,
+  appointmentType?: AcuityRawAppointmentType
 ): AcuitySession {
   // Sort by datetime
   const sorted = [...appointments].sort(
@@ -287,9 +361,10 @@ function buildSession(
 
   const first = sorted[0]
   const now = new Date()
-  const sessionDatetime = new Date(first.datetime)
+  const datetime = offering?.time ?? first.datetime
+  const sessionDatetime = new Date(datetime)
 
-  const title = cleanTitle(first.type)
+  const title = cleanTitle(offering?.name ?? first.type)
   const language = detectLanguage(first.category)
 
   const participants: AcuityParticipant[] = sorted.map(appt => {
@@ -323,8 +398,11 @@ function buildSession(
     .filter(hotel => hotel.count >= 2)
     .map(hotel => hotel.name)
 
-  const sessionStatus: AcuitySession['status'] =
-    totalRegistered === 0 && totalCancelled > 0 && totalNoShow === 0
+  const sessionStatus: AcuitySession['status'] = offering
+    ? sessionDatetime < now
+      ? 'completed'
+      : 'scheduled'
+    : totalRegistered === 0 && totalCancelled > 0 && totalNoShow === 0
       ? 'cancelled'
       : sessionDatetime < now
         ? 'completed'
@@ -333,23 +411,73 @@ function buildSession(
   return {
     id,
     classID,
+    appointmentTypeID: first.appointmentTypeID,
     title,
     theme: title,
     language,
-    datetime: first.datetime,
-    date: formatDateDDMMYYYY(first.datetime),
-    time: first.time,
-    duration: parseInt(first.duration, 10) || 0,
-    calendar: first.calendar,
-    calendarID: first.calendarID,
+    datetime,
+    date: offering ? formatClassDate(datetime) : formatDateDDMMYYYY(datetime),
+    time: offering ? formatClassTime(datetime) : first.time,
+    duration: (offering?.duration ?? parseInt(first.duration, 10)) || 0,
+    calendar: offering?.calendar ?? first.calendar,
+    calendarID: offering?.calendarID ?? first.calendarID,
     category: first.category,
     participants,
     totalRegistered,
     totalCancelled,
     totalNoShow,
+    capacity: Number.isFinite(Number(offering?.slots)) ? Number(offering?.slots) : null,
+    availableSlots: Number.isFinite(Number(offering?.slotsAvailable))
+      ? Number(offering?.slotsAvailable)
+      : null,
+    visibility: appointmentType?.private === true ? 'private' : 'public',
+    isDraft: false,
     uniqueHotels,
     duplicateHotels,
     status: sessionStatus,
+  }
+}
+
+function buildEmptySession(
+  offering: AcuityRawClassOffering,
+  appointmentType: AcuityRawAppointmentType
+): AcuitySession {
+  const datetime = offering.time
+  const parsedDatetime = new Date(datetime)
+  const title = cleanTitle(offering.name || appointmentType.name)
+  const category = appointmentType.category?.trim() ?? ''
+  const identity = getOfferingIdentity(offering)
+  const visibility = appointmentType.private === true ? 'private' : 'public'
+
+  return {
+    id: identity.id,
+    classID: identity.classID,
+    appointmentTypeID: offering.appointmentTypeID,
+    title,
+    theme: title,
+    language: detectLanguage(category),
+    datetime,
+    date: formatClassDate(datetime),
+    time: formatClassTime(datetime),
+    duration: Number(offering.duration) || Number(appointmentType.duration) || 0,
+    calendar: offering.calendar,
+    calendarID: offering.calendarID,
+    category,
+    participants: [],
+    totalRegistered: 0,
+    totalCancelled: 0,
+    totalNoShow: 0,
+    capacity: Number.isFinite(Number(offering.slots)) ? Number(offering.slots) : null,
+    availableSlots: Number.isFinite(Number(offering.slotsAvailable))
+      ? Number(offering.slotsAvailable)
+      : null,
+    visibility,
+    isDraft: visibility === 'private',
+    uniqueHotels: [],
+    duplicateHotels: [],
+    status: !Number.isNaN(parsedDatetime.getTime()) && parsedDatetime < new Date()
+      ? 'completed'
+      : 'scheduled',
   }
 }
 
@@ -550,6 +678,9 @@ async function fetchRawAppointmentsWithMeta(
         requests: context.requests,
         segments: 0,
         appointments: 0,
+        classes: 0,
+        degraded: false,
+        warnings: [],
         truncated: false,
         truncatedRanges: [],
       },
@@ -579,16 +710,38 @@ async function fetchRawAppointmentsWithMeta(
       requests: context.requests,
       segments: context.segments,
       appointments: appointments.length,
+      classes: 0,
+      degraded: false,
+      warnings: [],
       truncated: truncatedRanges.length > 0,
       truncatedRanges,
     },
   }
 }
 
-function buildSessions(appointments: AcuityRawAppointment[]): AcuitySession[] {
+function buildSessions(
+  appointments: AcuityRawAppointment[],
+  offerings: AcuityRawClassOffering[],
+  appointmentTypes: AcuityRawAppointmentType[]
+): AcuitySession[] {
   const trainingAppts = appointments.filter(a => isTrainingCategory(a.category))
   const canonicalHotelNames = buildCanonicalHotelNames(trainingAppts)
   const byClass = new Map<string, { classID: number; appointments: AcuityRawAppointment[] }>()
+  const offeringsByClassId = new Map(
+    offerings
+      .filter(offering => Number.isFinite(Number(offering.id)) && Number(offering.id) > 0)
+      .map(offering => [Number(offering.id), offering] as const)
+  )
+  const offeringsByMatchKey = new Map(
+    offerings.map(offering => [offeringMatchKey({
+      appointmentTypeID: Number(offering.appointmentTypeID),
+      calendarID: Number(offering.calendarID),
+      datetime: offering.time,
+    }), offering] as const)
+  )
+  const appointmentTypesById = new Map(
+    appointmentTypes.map(type => [Number(type.id), type] as const)
+  )
 
   for (const appt of trainingAppts) {
     const identity = getSessionIdentity(appt)
@@ -597,21 +750,107 @@ function buildSessions(appointments: AcuityRawAppointment[]): AcuitySession[] {
     byClass.set(identity.id, group)
   }
 
-  const sessions = Array.from(byClass.entries()).map(([id, group]) =>
-    buildSession(id, group.classID, group.appointments, canonicalHotelNames)
-  )
+  const matchedOfferings = new Set<AcuityRawClassOffering>()
+  const sessions = Array.from(byClass.entries()).map(([id, group]) => {
+    const first = group.appointments[0]
+    const offering = offeringsByClassId.get(group.classID) ?? offeringsByMatchKey.get(
+      offeringMatchKey({
+        appointmentTypeID: Number(first.appointmentTypeID),
+        calendarID: Number(first.calendarID),
+        datetime: first.datetime,
+      })
+    )
+    if (offering) matchedOfferings.add(offering)
+    const identity = offering ? getOfferingIdentity(offering) : { id, classID: group.classID }
+    return buildSession(
+      identity.id,
+      identity.classID,
+      group.appointments,
+      canonicalHotelNames,
+      offering,
+      appointmentTypesById.get(Number(first.appointmentTypeID))
+    )
+  })
+
+  for (const offering of offerings) {
+    if (matchedOfferings.has(offering)) continue
+    const appointmentType = appointmentTypesById.get(Number(offering.appointmentTypeID))
+    if (!appointmentType || appointmentType.active === false) continue
+    if (!isTrainingCategory(appointmentType.category ?? '')) continue
+    sessions.push(buildEmptySession(offering, appointmentType))
+  }
+
   sessions.sort((a, b) => new Date(b.datetime).getTime() - new Date(a.datetime).getTime())
   return sessions
+}
+
+function buildAvailabilityClassesPath(minDate: string, maxDate: string): string {
+  const searchParams = new URLSearchParams({
+    minDate,
+    maxDate,
+    includeUnavailable: 'true',
+    includePrivate: 'true',
+  })
+  return `/availability/classes?${searchParams.toString()}`
+}
+
+async function fetchRawClassOfferings(
+  minDate: string | null,
+  maxDate: string
+): Promise<{ offerings: AcuityRawClassOffering[]; appointmentTypes: AcuityRawAppointmentType[]; requests: number }> {
+  if (!minDate || minDate > maxDate) {
+    return { offerings: [], appointmentTypes: [], requests: 0 }
+  }
+
+  const [offerings, appointmentTypes] = await Promise.all([
+    acuityFetch<AcuityRawClassOffering[]>(buildAvailabilityClassesPath(minDate, maxDate)),
+    acuityFetch<AcuityRawAppointmentType[]>('/appointment-types'),
+  ])
+
+  if (!Array.isArray(offerings) || !Array.isArray(appointmentTypes)) {
+    throw new Error('Acuity returned an invalid classes catalog')
+  }
+
+  return {
+    offerings,
+    appointmentTypes,
+    requests: 2,
+  }
 }
 
 export async function fetchSessionsWithMeta(
   options: AcuitySessionOptions = {}
 ): Promise<AcuitySessionsResult> {
   const { appointments, meta } = await fetchRawAppointmentsWithMeta(options)
+  let offerings: AcuityRawClassOffering[] = []
+  let appointmentTypes: AcuityRawAppointmentType[] = []
+  let requests = 0
+  let degraded = false
+  const warnings: string[] = []
+  try {
+    const classesResult = await fetchRawClassOfferings(
+      meta.minDate ?? options.minDate ?? new Date().toISOString().slice(0, 10),
+      meta.maxDate
+    )
+    offerings = classesResult.offerings
+    appointmentTypes = classesResult.appointmentTypes
+    requests = classesResult.requests
+  } catch {
+    degraded = true
+    warnings.push(
+      'Les dates Acuity sans inscription ne sont temporairement pas disponibles. Les rendez-vous restent affichés.'
+    )
+  }
 
   return {
-    sessions: buildSessions(appointments),
-    meta,
+    sessions: buildSessions(appointments, offerings, appointmentTypes),
+    meta: {
+      ...meta,
+      requests: meta.requests + requests,
+      classes: offerings.length,
+      degraded,
+      warnings,
+    },
   }
 }
 

@@ -99,10 +99,15 @@ All integrations are planned for Sprint 2–8. Sprint 1 uses mock data only.
 - `GET /api/v1/appointments` — list appointments
 - `POST /api/v1/appointments` — create appointment
 - `GET /api/v1/appointment-types` — list session types
+- `GET /api/v1/availability/classes` — list class sessions, including sessions without attendees
 - `DELETE /api/v1/appointments/{id}` — cancel appointment
+- `POST /api/enterprise/v2/enterprises/{enterpriseId}/instance/{instanceId}/information/appointment-types` — create a group class type
+- `POST /api/enterprise/v2/enterprises/{enterpriseId}/instance/{instanceId}/information/availability/classes` — publish class dates
 - Webhook: `appointment.scheduled`, `appointment.canceled`, `appointment.rescheduled`
 
-**Auth:** API key + user ID (Basic Auth)
+**Auth:** Public API key + user ID for reads; separate Enterprise ID + Enterprise API key + Instance ID for writes (Basic Auth)
+
+Enterprise mutations are admin-only, use a Supabase-backed idempotency ledger, and create new appointment types as private until all requested dates are published successfully.
 
 ---
 
