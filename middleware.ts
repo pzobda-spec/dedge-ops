@@ -7,9 +7,9 @@ import type { Role } from '@/lib/auth/roles'
 // Each entry: if the request path matches a prefix, only the listed roles may access it.
 
 const RESTRICTED_ROUTES: Array<{ prefixes: string[]; roles: Role[] }> = [
-  // Sensitive write surfaces must be matched before their broader read scopes.
+  // Admin surfaces must be matched before their broader read scopes.
   {
-    prefixes: ['/trainings/manage', '/admin', '/api/admin'],
+    prefixes: ['/admin', '/api/admin'],
     roles: ['admin'],
   },
   {

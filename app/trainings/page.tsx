@@ -1,10 +1,8 @@
 'use client'
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import Link from 'next/link'
 import Badge from '@/components/ui/Badge'
 import type { AcuitySession } from '@/lib/acuity/client'
-import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
 
 type TrainingSession = AcuitySession & {
   id?: string
@@ -553,8 +551,6 @@ function EmptySessions({ filtered }: { filtered: boolean }) {
 }
 
 export default function TrainingsPage() {
-  const { user: currentUser } = useCurrentUser()
-  const [enterpriseConfigured, setEnterpriseConfigured] = useState<boolean | null>(null)
   const [period, setPeriod] = useState<Period>('3m')
   const [sessions, setSessions] = useState<TrainingSession[]>([])
   const [sourceTruncated, setSourceTruncated] = useState(false)
@@ -570,19 +566,6 @@ export default function TrainingsPage() {
   const [copyFeedback, setCopyFeedback] = useState<CopyFeedback | null>(null)
   const requestSequence = useRef(0)
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    if (currentUser?.role !== 'admin') {
-      setEnterpriseConfigured(null)
-      return
-    }
-    const controller = new AbortController()
-    fetch('/api/settings/health', { signal: controller.signal })
-      .then(response => response.json())
-      .then(body => setEnterpriseConfigured(body.acuityEnterpriseConfigured === true))
-      .catch(() => setEnterpriseConfigured(false))
-    return () => controller.abort()
-  }, [currentUser?.role])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -713,22 +696,6 @@ export default function TrainingsPage() {
           </div>
 
           <div className="flex max-w-full items-center gap-3 overflow-x-auto pb-1 lg:pb-0">
-            {currentUser?.role === 'admin' && enterpriseConfigured === true && (
-              <Link
-                href="/trainings/manage"
-                className="inline-flex min-w-max items-center rounded-lg bg-[#59319f] px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3f2175] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8064b3] focus-visible:ring-offset-2"
-              >
-                Gérer les formations
-              </Link>
-            )}
-            {currentUser?.role === 'admin' && enterpriseConfigured === false && (
-              <Link
-                href="/settings"
-                className="inline-flex min-w-max items-center rounded-lg border border-[#d7b76d] bg-[#fffaf0] px-3.5 py-2 text-sm font-semibold text-[#754b08] transition-colors hover:bg-[#fff5df] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#d7b76d] focus-visible:ring-offset-2"
-              >
-                Configurer Acuity Enterprise
-              </Link>
-            )}
             <div role="group" aria-label="Période des formations" className="inline-flex min-w-max items-center gap-1 rounded-xl bg-[#f4f1f8] p-1">
               {periodOptions.map(option => (
                 <button
