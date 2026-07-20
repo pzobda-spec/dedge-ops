@@ -28,6 +28,7 @@ const TICKET_COLUMNS = [
   'created_at',
   'resolved_at',
   'first_response_at',
+  'first_response_time_ms',
   'first_contact_resolution',
 ].join(',')
 
@@ -46,6 +47,7 @@ interface TicketAnalyticsRow {
   created_at: string | null
   resolved_at: string | null
   first_response_at: string | null
+  first_response_time_ms: number | string | null
   first_contact_resolution: boolean | null
 }
 
@@ -239,6 +241,7 @@ function aggregateTickets(
       granularity: timeSeries.granularity,
       generated_at: new Date().toISOString(),
       source_ticket_count: source.length,
+      unfiltered_total: options.length,
       source_truncated: false,
       aggregates_truncated: aggregateResult.truncated,
       fcr_is_estimate: true,
@@ -250,7 +253,12 @@ function normalizeTicket(row: TicketAnalyticsRow): NormalizedTicket {
   const createdAt = Date.parse(row.created_at ?? '')
   const resolvedAt = Date.parse(row.resolved_at ?? '')
   const firstResponseAt = Date.parse(row.first_response_at ?? '')
-  const firstResponseHours = Number.isFinite(createdAt)
+  const officialResponseMs = row.first_response_time_ms === null
+    ? Number.NaN
+    : Number(row.first_response_time_ms)
+  const firstResponseHours = Number.isFinite(officialResponseMs) && officialResponseMs >= 0
+    ? sensibleHours(officialResponseMs / 3_600_000)
+    : Number.isFinite(createdAt)
     && Number.isFinite(firstResponseAt)
     && firstResponseAt >= createdAt
     ? sensibleHours((firstResponseAt - createdAt) / 3_600_000)

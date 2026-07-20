@@ -59,6 +59,7 @@ export interface TicketAnalyticsResponse {
     granularity: 'day' | 'week' | 'month'
     generated_at: string
     source_ticket_count: number
+    unfiltered_total: number
     source_truncated: boolean
     aggregates_truncated: boolean
     fcr_is_estimate: boolean

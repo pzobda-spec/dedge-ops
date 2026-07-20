@@ -62,7 +62,7 @@ export interface ZohoTicket {
   account: { id: string; accountName: string } | null
   assignee: { id: string; firstName: string; lastName: string } | null
   sentiment: { type: string } | null
-  cf: Record<string, unknown>
+  cf?: Record<string, unknown>
 }
 
 export interface ZohoTicketsResponse {
@@ -91,6 +91,16 @@ export async function fetchTickets(params: {
 
 export async function fetchTicket(ticketId: string): Promise<ZohoTicket> {
   return zohoFetch<ZohoTicket>(`/tickets/${ticketId}`)
+}
+
+export interface ZohoTicketMetrics {
+  firstResponseTime?: string | number | null
+  reopenCount?: string | number | null
+  [key: string]: unknown
+}
+
+export async function fetchTicketMetrics(ticketId: string): Promise<ZohoTicketMetrics> {
+  return zohoFetch<ZohoTicketMetrics>(`/tickets/${ticketId}/metrics`)
 }
 
 export async function fetchTicketConversations(ticketId: string): Promise<{ data: Array<{ id: string; type: string; content: string; author: { name: string; type: string }; createdTime: string }> }> {

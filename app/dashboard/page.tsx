@@ -257,7 +257,8 @@ export default function DashboardPage() {
           {[
             {
               label: 'Sans 1ère réponse', value: noFirstReply.length,
-              sub: '> 2h · tickets ouverts', href: '/tickets',
+              sub: '> 2h · tickets ouverts',
+              href: 'https://support.loungeup.com/agent/loungeup/loungeup-support-team/tickets/list/just-open-tickets-not-escalated?view=table',
               loading: loadingTickets, severity: 'critical' as const,
               trend: noFirstReplyTrend, trendColor: '#b7221b',
             },
