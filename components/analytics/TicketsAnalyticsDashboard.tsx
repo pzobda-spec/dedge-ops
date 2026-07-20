@@ -72,6 +72,7 @@ export default function TicketsAnalyticsDashboard() {
   const [data, setData] = useState<TicketAnalyticsResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [openFilter, setOpenFilter] = useState<string | null>(null)
 
   const apiQuery = useMemo(() => {
     const params = new URLSearchParams({ from, to })
@@ -130,6 +131,10 @@ export default function TicketsAnalyticsDashboard() {
         ? selected.filter(item => item !== value)
         : [...selected, value],
     })
+  }
+
+  function setFilterOpen(key: string, open: boolean) {
+    setOpenFilter(current => open ? key : current === key ? null : current)
   }
 
   function resetFilters() {
@@ -232,12 +237,12 @@ export default function TicketsAnalyticsDashboard() {
           </div>
 
           <div className="mt-3 flex flex-wrap items-start gap-2">
-            <FilterMenu label="Catégorie" options={categoryOptions} selected={categories} onToggle={value => toggle('category', categories, value)} />
-            <FilterMenu label="Classification" options={classificationOptions} selected={classifications} onToggle={value => toggle('classification', classifications, value)} />
-            <FilterMenu label="Produit" options={productOptions} selected={products} onToggle={value => toggle('product', products, value)} />
-            <SearchSelect label="Client" options={clientOptions} selected={client} onSelect={value => updateQuery({ client: value || null })} />
-            <FilterMenu label="Statut" options={statusOptions} selected={statuses} onToggle={value => toggle('status', statuses, value)} />
-            <FilterMenu label="Priorité" options={priorityOptions} selected={priorities} onToggle={value => toggle('priority', priorities, value)} />
+            <FilterMenu label="Catégorie" options={categoryOptions} selected={categories} open={openFilter === 'category'} onOpenChange={open => setFilterOpen('category', open)} onToggle={value => toggle('category', categories, value)} />
+            <FilterMenu label="Classification" options={classificationOptions} selected={classifications} open={openFilter === 'classification'} onOpenChange={open => setFilterOpen('classification', open)} onToggle={value => toggle('classification', classifications, value)} />
+            <FilterMenu label="Produit" options={productOptions} selected={products} open={openFilter === 'product'} onOpenChange={open => setFilterOpen('product', open)} onToggle={value => toggle('product', products, value)} />
+            <SearchSelect label="Client" options={clientOptions} selected={client} open={openFilter === 'client'} onOpenChange={open => setFilterOpen('client', open)} onSelect={value => updateQuery({ client: value || null })} />
+            <FilterMenu label="Statut" options={statusOptions} selected={statuses} open={openFilter === 'status'} onOpenChange={open => setFilterOpen('status', open)} onToggle={value => toggle('status', statuses, value)} />
+            <FilterMenu label="Priorité" options={priorityOptions} selected={priorities} open={openFilter === 'priority'} onOpenChange={open => setFilterOpen('priority', open)} onToggle={value => toggle('priority', priorities, value)} />
           </div>
 
           <div className="mt-3 flex min-h-7 flex-wrap items-center justify-between gap-2 border-t border-[#efebf3] pt-3">
@@ -523,9 +528,9 @@ function moveOtherLast(data: AnalyticsBreakdown[]): AnalyticsBreakdown[] {
   return [...regular, ...other]
 }
 
-function FilterMenu({ label, options, selected, onToggle }: { label: string; options: string[]; selected: string[]; onToggle: (value: string) => void }) {
+function FilterMenu({ label, options, selected, open, onOpenChange, onToggle }: { label: string; options: string[]; selected: string[]; open: boolean; onOpenChange: (open: boolean) => void; onToggle: (value: string) => void }) {
   return (
-    <details className="group relative">
+    <details open={open} onToggle={event => onOpenChange(event.currentTarget.open)} className="group relative">
       <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg border border-[#d8d8d8] bg-white px-3 py-2 text-xs font-semibold text-[#4a4a4a] hover:border-[#8064b3] [&::-webkit-details-marker]:hidden">
         {label}
         {selected.length > 0 && <span className="rounded-full bg-[#59319f] px-1.5 py-0.5 text-[10px] text-white">{selected.length}</span>}
@@ -548,11 +553,11 @@ function FilterMenu({ label, options, selected, onToggle }: { label: string; opt
   )
 }
 
-function SearchSelect({ label, options, selected, onSelect }: { label: string; options: string[]; selected: string; onSelect: (value: string) => void }) {
+function SearchSelect({ label, options, selected, open, onOpenChange, onSelect }: { label: string; options: string[]; selected: string; open: boolean; onOpenChange: (open: boolean) => void; onSelect: (value: string) => void }) {
   const [query, setQuery] = useState('')
   const matches = options.filter(option => option.toLocaleLowerCase('fr-FR').includes(query.toLocaleLowerCase('fr-FR'))).slice(0, 50)
   return (
-    <details className="group relative">
+    <details open={open} onToggle={event => onOpenChange(event.currentTarget.open)} className="group relative">
       <summary className="flex max-w-[230px] cursor-pointer list-none items-center gap-2 rounded-lg border border-[#d8d8d8] bg-white px-3 py-2 text-xs font-semibold text-[#4a4a4a] hover:border-[#8064b3] [&::-webkit-details-marker]:hidden">
         <span className="truncate">{selected || label}</span>
         {selected && <span className="rounded-full bg-[#59319f] px-1.5 py-0.5 text-[10px] text-white">1</span>}
