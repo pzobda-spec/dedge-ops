@@ -14,19 +14,17 @@ import {
   RefreshCw,
   Sparkles,
 } from 'lucide-react'
-import AcuityAppointments from '@/components/onboarding/AcuityAppointments'
 import EmailComposer from '@/components/onboarding/EmailComposer'
-import ProjectProgress from '@/components/onboarding/ProjectProgress'
-import RecapModal from '@/components/onboarding/RecapModal'
+import ProjectWorkspace from '@/components/onboarding/ProjectWorkspace'
+import TrainingAttendance from '@/components/onboarding/TrainingAttendance'
 import Timeline from '@/components/onboarding/Timeline'
-import TodoistTimeline from '@/components/todoist/TodoistTimeline'
 import type { EmailTemplateKey } from '@/lib/onboarding/email-templates'
 import type { ProjectEvent } from '@/lib/onboarding/events'
 import type { OnboardingProjectDetail, ProjectStatusReport } from '@/lib/onboarding/projects'
 
 const tabs = [
-  { key: 'overview',   label: "Vue d'ensemble" },
-  { key: 'timeline',   label: 'Timeline' },
+  { key: 'overview',   label: 'Pilotage' },
+  { key: 'timeline',   label: 'Journal' },
   { key: 'documents',  label: 'Documents' },
 ] as const
 
@@ -299,7 +297,7 @@ function StatusReportSection({
             <h3 className="text-base font-semibold text-[#1a1a1a]">État des lieux</h3>
           </div>
           <p className="mt-1 text-xs leading-5 text-[#696969]">
-            Vue d&apos;ensemble, timeline projet et commentaires Todoist.
+            Vue d&apos;ensemble, timeline projet et journal de bord partagé.
             {generatedAt && ` Dernière génération : ${formatDateTime(generatedAt)}.`}
           </p>
         </div>
@@ -422,7 +420,6 @@ export function ProjectDetailTabs({
   const [timelineLoading, setTimelineLoading] = useState(true)
   const [timelineError, setTimelineError] = useState<string | null>(null)
   const [emailComposer, setEmailComposer] = useState<EmailTemplateKey | null>(null)
-  const [recapOpen, setRecapOpen] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const toastTimer = useRef<number | null>(null)
 
@@ -564,7 +561,8 @@ export function ProjectDetailTabs({
                       Mise à jour de la progression…
                     </p>
                   )}
-                  <ProjectProgress timeline={timeline} zohoStatus={project.zoho_status} />
+                  <ProjectWorkspace projectId={project.id} readonly={readonly} />
+                  <TrainingAttendance projectId={project.id} />
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -637,35 +635,9 @@ export function ProjectDetailTabs({
                     </div>
                   </div>
 
-                  <div className="border-t border-[#e2e2e2] pt-6">
-                    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <h3 className="text-base font-semibold text-[#1a1a1a]">Rendez-vous</h3>
-                        <p className="mt-0.5 text-xs leading-5 text-[#696969]">Planifiez avec Acuity ou préparez un compte rendu à partir de vos notes.</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setRecapOpen(true)}
-                        className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#59319f] px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-[#7b4dc4] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#59319f] focus-visible:ring-offset-2 sm:w-auto"
-                      >
-                        <Sparkles className="h-4 w-4" aria-hidden="true" />
-                        Préparer le récap RDV
-                      </button>
-                    </div>
-                    <AcuityAppointments
-                      project={project}
-                      readonly={false}
-                      onLogged={() => handleLogged('Lien Acuity loggé.')}
-                    />
-                  </div>
                 </section>
               )}
 
-              {readonly && (
-                <section aria-label="Rendez-vous Acuity" className="rounded-xl border border-[#e2e2e2] bg-[#faf9f5] p-4 sm:p-6">
-                  <AcuityAppointments project={project} readonly />
-                </section>
-              )}
             </div>
           )}
 
@@ -697,24 +669,12 @@ export function ProjectDetailTabs({
         </div>
       </div>
 
-      <TodoistTimeline
-        zoho_project_id={project.zoho_project_id ?? project.id}
-        canReviewMatch={!readonly}
-      />
-
       {emailComposer && (
         <EmailComposer
           project={project}
           templateKey={emailComposer}
           onClose={() => setEmailComposer(null)}
           onLogged={() => handleLogged('Email loggé.')}
-        />
-      )}
-      {recapOpen && (
-        <RecapModal
-          project={project}
-          onClose={() => setRecapOpen(false)}
-          onLogged={() => handleLogged('Récap RDV loggé.')}
         />
       )}
     </div>

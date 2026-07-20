@@ -38,8 +38,7 @@ const navItems: NavItem[] = [
     label: 'Onboarding',
     roles: ['admin', 'onboarder', 'commercial_readonly'],
     children: [
-      { href: '/onboarding', label: 'Mes projets' },
-      { href: '/onboarding/board', label: 'Board' },
+      { href: '/onboarding', label: 'Projets' },
       { href: '/onboarding/pilotage', label: 'Pilotage' },
     ],
   },
