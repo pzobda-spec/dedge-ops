@@ -23,7 +23,7 @@ const RESTRICTED_ROUTES: Array<{ prefixes: string[]; roles: Role[] }> = [
       '/tickets', '/escalations', '/trainings',
       '/knowledge', '/reporting', '/assistant',
       '/api/tickets', '/api/escalations', '/api/trainings',
-      '/api/analytics',
+      '/api/analytics', '/api/reporting',
       '/api/zoho/tickets', '/api/linear/issues',
       '/api/knowledge', '/api/google',
     ],

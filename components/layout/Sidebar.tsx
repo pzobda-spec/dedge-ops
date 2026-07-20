@@ -17,6 +17,7 @@ interface NavItem {
   href: string
   label: string
   roles: Role[]
+  hidden?: boolean
   children?: NavChild[]
 }
 
@@ -42,9 +43,9 @@ const navItems: NavItem[] = [
       { href: '/onboarding/pilotage', label: 'Pilotage' },
     ],
   },
-  { href: '/knowledge', label: 'Knowledge Base', roles: ['admin', 'support'] },
+  { href: '/knowledge', label: 'Knowledge Base', roles: ['admin', 'support'], hidden: true },
   { href: '/reporting', label: 'Reporting', roles: ['admin', 'support'] },
-  { href: '/assistant', label: 'Assistant IA', roles: ['admin', 'support'] },
+  { href: '/assistant', label: 'Assistant IA', roles: ['admin', 'support'], hidden: true },
   { href: '/settings', label: 'Paramètres', roles: ['admin', 'onboarder', 'support', 'commercial_readonly'] },
   {
     href: '/admin/users',
@@ -71,7 +72,7 @@ export default function Sidebar({ mobileOpen = false, onNavigate }: { mobileOpen
   const { user } = useCurrentUser()
 
   const visibleNavItems = useMemo(
-    () => navItems.filter(item => user && item.roles.includes(user.role)),
+    () => navItems.filter(item => !item.hidden && user && item.roles.includes(user.role)),
     [user],
   )
 
