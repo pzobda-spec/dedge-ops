@@ -9,6 +9,14 @@
       "schedule": "0 8 * * *"
     },
     {
+      "path": "/api/cron/sync-ticket-first-response",
+      "schedule": "10 8 * * *"
+    },
+    {
+      "path": "/api/cron/backfill-ticket-analytics",
+      "schedule": "15 8 * * *"
+    },
+    {
       "path": "/api/cron/sync-linear-analytics",
       "schedule": "0 8 * * *"
     },

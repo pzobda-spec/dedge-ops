@@ -10,6 +10,10 @@ import {
   ZOHO_SUPPORT_DEPARTMENT_ID,
   ZOHO_TICKET_PAGE_SIZE,
 } from '@/lib/zoho/constants'
+import {
+  persistDailyTicketSnapshotIfHistoryComplete,
+  type TicketSnapshotResult,
+} from '@/lib/zoho/ticketAnalyticsSnapshots'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -18,6 +22,7 @@ const TABLE_NAME = 'ticket_analytics'
 const DAY_MS = 24 * 60 * 60 * 1000
 const UPSERT_BATCH_SIZE = 250
 const ID_LOOKUP_PAGE_SIZE = 1_000
+const MODIFIED_LOOKBACK_DAYS = 3
 
 interface TicketAnalyticsRow {
   id: string
@@ -37,12 +42,14 @@ interface TicketAnalyticsRow {
   first_contact_resolution: boolean
   source: string | null
   last_synced_at: string
+  zoho_modified_at: string | null
 }
 
 interface SyncResult {
   synced: number
   created: number
   updated: number
+  snapshot: TicketSnapshotResult | null
 }
 
 function hasValidCronSecret(request: NextRequest): boolean {
@@ -83,8 +90,10 @@ async function runSync() {
 async function syncTicketAnalytics(): Promise<SyncResult> {
   const now = new Date()
   const cutoff = twelveMonthsAgo(now)
-  const [tickets, accountNames] = await Promise.all([
+  const modifiedCutoff = new Date(now.getTime() - MODIFIED_LOOKBACK_DAYS * DAY_MS)
+  const [recentTickets, modifiedTickets, accountNames] = await Promise.all([
     fetchTicketsSince(cutoff, now),
+    fetchTicketsModifiedSince(modifiedCutoff, now),
     fetchDeskAccountNames().catch(error => {
       console.warn('[cron/sync-ticket-analytics] account enrichment unavailable:', errorMessage(error))
       return {} satisfies DeskAccountNames
@@ -92,7 +101,9 @@ async function syncTicketAnalytics(): Promise<SyncResult> {
   ])
 
   const lastSyncedAt = new Date().toISOString()
-  const rows = tickets.map(ticket => toAnalyticsRow(ticket, accountNames, lastSyncedAt))
+  const tickets = new Map(recentTickets.map(ticket => [ticket.id, ticket]))
+  for (const ticket of modifiedTickets) tickets.set(ticket.id, ticket)
+  const rows = [...tickets.values()].map(ticket => toAnalyticsRow(ticket, accountNames, lastSyncedAt))
   const existingIds = await fetchExistingIds(rows.map(row => row.id), cutoff)
 
   for (const batch of chunk(rows, UPSERT_BATCH_SIZE)) {
@@ -103,10 +114,12 @@ async function syncTicketAnalytics(): Promise<SyncResult> {
   }
 
   const created = rows.reduce((count, row) => count + (existingIds.has(row.id) ? 0 : 1), 0)
+  const snapshot = await persistDailyTicketSnapshotIfHistoryComplete()
   return {
     synced: rows.length,
     created,
     updated: rows.length - created,
+    snapshot,
   }
 }
 
@@ -143,6 +156,48 @@ async function fetchTicketsSince(cutoff: Date, now: Date): Promise<ZohoTicket[]>
         continue
       }
       if (createdAt <= now.getTime()) tickets.set(ticket.id, ticket)
+    }
+
+    if (reachedCutoff || page.length < ZOHO_TICKET_PAGE_SIZE) break
+    offset += ZOHO_TICKET_PAGE_SIZE
+  }
+
+  return [...tickets.values()]
+}
+
+async function fetchTicketsModifiedSince(cutoff: Date, now: Date): Promise<ZohoTicket[]> {
+  const tickets = new Map<string, ZohoTicket>()
+  const seenPages = new Set<string>()
+  let offset = 0
+
+  while (true) {
+    const response = await withRetries(
+      () => fetchTickets({
+        limit: ZOHO_TICKET_PAGE_SIZE,
+        from: offset,
+        sortBy: '-modifiedTime',
+        departmentId: ZOHO_SUPPORT_DEPARTMENT_ID,
+      }),
+      `Zoho modified tickets page at offset ${offset}`,
+    )
+    const page = response.data ?? []
+    if (page.length === 0) break
+
+    const pageSignature = page.map(ticket => ticket.id).join(',')
+    if (seenPages.has(pageSignature)) {
+      throw new Error(`Zoho modified pagination returned a repeated page at offset ${offset}`)
+    }
+    seenPages.add(pageSignature)
+
+    let reachedCutoff = false
+    for (const ticket of page) {
+      const modifiedAt = Date.parse(ticket.modifiedTime)
+      if (!Number.isFinite(modifiedAt)) continue
+      if (modifiedAt < cutoff.getTime()) {
+        reachedCutoff = true
+        continue
+      }
+      if (modifiedAt <= now.getTime()) tickets.set(ticket.id, ticket)
     }
 
     if (reachedCutoff || page.length < ZOHO_TICKET_PAGE_SIZE) break
@@ -193,7 +248,7 @@ function toAnalyticsRow(
     priority: normalizePriority(ticket.priority),
     category: normalizeCategory(classification),
     classification,
-    product_area: normalizeProduct(rawProduct, ticket.subject),
+    product_area: normalizeProduct(rawProduct, ticket.subject ?? ''),
     client_name: clientName,
     client_id: clientId,
     assignee,
@@ -203,6 +258,7 @@ function toAnalyticsRow(
     first_contact_resolution: isFirstContactResolution(ticket),
     source: cleanOptionalLabel(ticket.channel),
     last_synced_at: lastSyncedAt,
+    zoho_modified_at: validIsoDate(ticket.modifiedTime),
   }
 }
 
@@ -263,8 +319,8 @@ function readReopenCount(ticket: ZohoTicket): number | null {
   return custom !== null && Number.isFinite(Number(custom)) ? Number(custom) : null
 }
 
-function normalizeStatus(status: string): string {
-  const normalized = normalizeText(status)
+function normalizeStatus(status: string | null | undefined): string {
+  const normalized = normalizeText(status ?? '')
   if (['closed', 'ferme', 'fermee'].includes(normalized)) return 'Closed'
   if (['solved', 'resolved', 'resolu', 'resolue'].includes(normalized)) return 'Resolved'
   if (['pending', 'managed', 'on hold', 'onhold', 'stuck client', 'waiting'].includes(normalized)) return 'Pending'

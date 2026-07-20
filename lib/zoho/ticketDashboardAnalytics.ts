@@ -297,6 +297,7 @@ function aggregateTicketAnalytics(
       granularity,
       generated_at: new Date().toISOString(),
       source_ticket_count: source.length,
+      unfiltered_total: currentUnfiltered.length,
       source_truncated: sourceTruncated,
       aggregates_truncated: aggregateResult.truncated,
       // Desk's ticket listing does not expose a full reopen history. We use
