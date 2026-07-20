@@ -1,5 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase/server'
 import { fetchAllZohoProjects, type OnboardingProject } from '@/lib/zoho/projectsClient'
+import { fetchAllCRMAccounts, type CRMAccount } from '@/lib/zoho/crmClient'
+import type { CommercialPlan } from './workspace'
 import type { ProjectEventType } from './events'
 
 export interface OnboardingProjectsSyncResult {
@@ -14,6 +16,11 @@ interface ExistingOnboardingProject {
   id: string
   zoho_project_id: string | null
   zoho_status: string | null
+  commercial_plan?: string | null
+  customer_tier?: string | null
+  customer_type?: string | null
+  dmbook_only?: boolean | null
+  enabled_options?: Record<string, boolean> | null
 }
 
 interface OnboardingEventInsert {
@@ -65,6 +72,34 @@ function legacyStatusFromZoho(status: OnboardingProject['status']): string {
 
 function clientIdForProject(project: OnboardingProject): string {
   return `zoho-project-${project.id}`
+}
+
+function normalizedName(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('fr-FR').replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+function commercialPlan(plans: string[]): CommercialPlan | null {
+  const values = plans.map(value => normalizedName(value))
+  if (values.some(value => value.includes('enterprise'))) return 'enterprise'
+  if (values.some(value => value.includes('engagement'))) return 'engagement'
+  if (values.some(value => value.includes('insight'))) return 'insight'
+  if (values.some(value => value.includes('communication'))) return 'communication'
+  return null
+}
+
+function crmOptions(plans: string[]): Record<string, boolean> {
+  const joined = normalizedName(plans.join(' '))
+  return {
+    membership_lite: joined.includes('membership lite'),
+    whatsapp: joined.includes('whatsapp') || joined.includes('whats app'),
+    loyalty_program: joined.includes('loyalty'),
+  }
+}
+
+function isDmbookOnly(account: CRMAccount | undefined, project: OnboardingProject): boolean {
+  const values = account?.plan?.length ? account.plan : [project.product]
+  const normalized = values.map(value => normalizedName(value)).filter(Boolean)
+  return normalized.length > 0 && normalized.every(value => value.includes('dmbook') || value.includes('dm book'))
 }
 
 async function hasRecentStatusTransition(params: {
@@ -127,7 +162,13 @@ export async function syncOnboardingProjects(options?: {
     requestedZohoProjectId = existingById?.zoho_project_id ?? options.projectId
   }
 
-  const allProjects = await fetchAllZohoProjects()
+  const [allProjects, crmAccounts] = await Promise.all([
+    fetchAllZohoProjects(),
+    fetchAllCRMAccounts().catch(error => {
+      console.warn('[onboarding-sync] CRM enrichment unavailable:', error instanceof Error ? error.message : String(error))
+      return []
+    }),
+  ])
   const projects = requestedZohoProjectId
     ? allProjects.filter(project => project.id === requestedZohoProjectId)
     : allProjects
@@ -139,7 +180,7 @@ export async function syncOnboardingProjects(options?: {
   const zohoIds = projects.map(project => project.id)
   const { data: existingRows, error: existingError } = await supabaseAdmin
     .from('onboarding_projects')
-    .select('id, zoho_project_id, zoho_status')
+    .select('id, zoho_project_id, zoho_status, commercial_plan, customer_tier, customer_type, dmbook_only, enabled_options')
     .in('zoho_project_id', zohoIds)
 
   if (existingError) throw new Error(existingError.message)
@@ -150,16 +191,20 @@ export async function syncOnboardingProjects(options?: {
   }
 
   const now = new Date().toISOString()
+  const crmByName = new Map(crmAccounts.map(account => [normalizedName(account.name), account]))
 
-  const clientRows = projects.map(project => ({
-    id: clientIdForProject(project),
-    name: project.hotelName || project.name,
-    segment: 'Bronze',
-    country: '',
-    language: 'FR',
-    products: project.product ? [project.product] : [],
-    updated_at: now,
-  }))
+  const clientRows = projects.map(project => {
+    const account = crmByName.get(normalizedName(project.accountCRMName || project.hotelName))
+    return {
+      id: clientIdForProject(project),
+      name: project.hotelName || project.name,
+      segment: account?.segment ?? 'Bronze',
+      country: account?.country ?? '',
+      language: 'FR',
+      products: account?.plan?.length ? account.plan : project.product ? [project.product] : [],
+      updated_at: now,
+    }
+  })
 
   const { error: clientsError } = await supabaseAdmin
     .from('clients')
@@ -167,23 +212,35 @@ export async function syncOnboardingProjects(options?: {
 
   if (clientsError) throw new Error(clientsError.message)
 
-  const projectRows = projects.map(project => ({
-    id: existingByZohoId.get(project.id)?.id ?? project.id,
-    client_id: clientIdForProject(project),
-    zoho_project_id: project.id,
-    zoho_status: project.status,
-    hotel_name: project.hotelName,
-    product: project.product || null,
-    owner: project.ownerShort || project.ownerName || '',
-    owner_email: project.ownerEmail,
-    status: legacyStatusFromZoho(project.status),
-    start_date: project.startDate,
-    target_go_live: project.endDate,
-    actual_go_live: project.actualGoLiveDate,
-    blockers: project.isBlocked ? 'Projet marque bloque dans Zoho Projects' : null,
-    last_synced_at: now,
-    updated_at: now,
-  }))
+  const projectRows = projects.map(project => {
+    const existing = existingByZohoId.get(project.id)
+    const account = crmByName.get(normalizedName(project.accountCRMName || project.hotelName))
+    const detectedOptions = crmOptions(account?.plan ?? [])
+    return {
+      id: existing?.id ?? project.id,
+      client_id: clientIdForProject(project),
+      zoho_project_id: project.id,
+      zoho_status: project.status,
+      hotel_name: project.hotelName,
+      product: project.product || null,
+      commercial_plan: existing?.commercial_plan ?? commercialPlan(account?.plan ?? []),
+      customer_tier: account
+        ? account.segment === 'Strategic' ? 'Key' : account.segment
+        : existing?.customer_tier ?? null,
+      customer_type: existing?.customer_type ?? project.clientType,
+      dmbook_only: existing?.dmbook_only ?? isDmbookOnly(account, project),
+      enabled_options: existing?.enabled_options && Object.keys(existing.enabled_options).length > 0 ? existing.enabled_options : detectedOptions,
+      owner: project.ownerShort || project.ownerName || '',
+      owner_email: project.ownerEmail,
+      status: legacyStatusFromZoho(project.status),
+      start_date: project.startDate,
+      target_go_live: project.endDate,
+      actual_go_live: project.actualGoLiveDate,
+      blockers: project.isBlocked ? 'Projet marque bloque dans Zoho Projects' : null,
+      last_synced_at: now,
+      updated_at: now,
+    }
+  })
 
   const { data: insertedRows, error: insertError } = await supabaseAdmin
     .from('onboarding_projects')

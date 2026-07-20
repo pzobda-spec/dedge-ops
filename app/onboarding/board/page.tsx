@@ -66,28 +66,6 @@ function productBadge(product: string): string {
   return productColors[product] ?? 'bg-[#f1f1f1] text-[#696969]'
 }
 
-function KpiCard({ label, value, subtitle, tone = 'default' }: {
-  label: string
-  value: number
-  subtitle: string
-  tone?: 'default' | 'danger' | 'warning' | 'success'
-}) {
-  const toneClass = {
-    default: 'text-[#1a1a1a]',
-    danger: 'text-[#b7221b]',
-    warning: 'text-[#903b07]',
-    success: 'text-[#1c6437]',
-  }[tone]
-
-  return (
-    <article className="min-w-0 rounded-xl border border-[#e2e2e2] bg-white p-4 shadow-[0_4px_10px_rgba(36,25,55,0.05)]">
-      <p className="min-h-8 text-xs font-semibold text-[#696969]">{label}</p>
-      <p className={`mt-1 text-2xl font-bold tabular-nums ${toneClass}`}>{value}</p>
-      <p className="mt-2 text-xs text-[#878787]">{subtitle}</p>
-    </article>
-  )
-}
-
 function ProjectCard({ project }: { project: OnboardingProject }) {
   const highRisk = project.riskLevel === 'high' || project.riskLevel === 'critical'
   const progress = Math.min(Math.max(project.percentComplete, 0), 100)
@@ -220,13 +198,6 @@ export default function OnboardingBoardPage() {
     })
   }, [attention, baseProjects, owner, product, scope, search])
 
-  const activeCount = visibleProjects.filter(project => project.status !== 'live' && project.status !== 'other').length
-  const blockedCount = visibleProjects.filter(project => project.isBlocked).length
-  const overdueCount = visibleProjects.filter(project => project.isOverdue).length
-  const highRiskCount = visibleProjects.filter(project => project.riskLevel === 'high' || project.riskLevel === 'critical').length
-  const portfolioLabel = scope === 'active' ? 'Projets actifs' : scope === 'live' ? 'Projets Live' : 'Projets affichés'
-  const portfolioValue = scope === 'active' ? activeCount : visibleProjects.length
-  const portfolioSubtitle = scope === 'active' ? 'Hors Live et Autre' : scope === 'live' ? 'Statut Live' : 'Tous statuts distincts'
   const hasFilters = scope !== 'active' || owner !== 'all' || product !== 'all' || attention !== 'all' || Boolean(search.trim())
 
   function resetFilters() {
@@ -240,21 +211,22 @@ export default function OnboardingBoardPage() {
   return (
     <main className="min-h-screen bg-[var(--bg-canvas)] text-[#1a1a1a]" style={{ fontFamily: 'var(--font-sans)' }}>
       <header className="border-b border-[#e2e2e2] bg-white">
-        <div className="mx-auto max-w-[1800px] px-4 py-5 sm:px-6 lg:px-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#8064b3]">Onboarding</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight">Board projets</h1>
+        <div className="mx-auto flex max-w-[1800px] flex-col gap-4 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+          <div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#8064b3]">Onboarding</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight">Projets d’implémentation</h1>
           <p className="mt-1 text-sm text-[#696969]">
-            {loading ? 'Chargement des projets…' : error ? 'Données indisponibles' : `${baseProjects.length} projets · ${new Set(baseProjects.map(project => project.hotelName)).size} comptes`}
-          </p>
+            {loading ? 'Chargement des projets…' : error ? 'Données indisponibles' : 'Les projets à faire avancer, organisés par statut.'}
+          </p></div>
+          <div className="inline-flex self-start rounded-lg border border-[#ded8e8] bg-[#f7f5fa] p-1" aria-label="Affichage des projets">
+            <Link href="/onboarding" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">Liste</Link>
+            <span aria-current="page" className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-[#59319f] shadow-sm">Board</span>
+          </div>
         </div>
       </header>
 
       <div className="mx-auto max-w-[1800px] space-y-6 px-4 py-6 sm:px-6 lg:px-8">
         {loading ? (
           <div className="space-y-5" aria-busy="true" aria-live="polite">
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              {Array.from({ length: 4 }, (_, index) => <div key={index} className="h-28 animate-pulse rounded-xl border border-[#e2e2e2] bg-white" />)}
-            </div>
             <div className="h-96 animate-pulse rounded-xl border border-[#e2e2e2] bg-white" />
           </div>
         ) : error ? (
@@ -269,13 +241,6 @@ export default function OnboardingBoardPage() {
           </div>
         ) : (
           <>
-            <section aria-label="Indicateurs du board" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <KpiCard label={portfolioLabel} value={portfolioValue} subtitle={portfolioSubtitle} />
-              <KpiCard label="À débloquer" value={blockedCount} subtitle="Statut Bloqué" tone={blockedCount > 0 ? 'danger' : 'success'} />
-              <KpiCard label="Go-live dépassé" value={overdueCount} subtitle="Cible passée, hors Live" tone={overdueCount > 0 ? 'danger' : 'success'} />
-              <KpiCard label="Risque élevé ou critique" value={highRiskCount} subtitle="Selon le niveau déclaré" tone={highRiskCount > 0 ? 'warning' : 'success'} />
-            </section>
-
             <section aria-label="Filtres du board" className="rounded-xl border border-[#ded8e8] bg-white p-4 shadow-[0_4px_10px_rgba(36,25,55,0.04)]">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>

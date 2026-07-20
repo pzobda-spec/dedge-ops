@@ -402,15 +402,19 @@ export default function MesProjetsPage() {
   return (
     <div style={{ fontFamily: 'var(--font-sans)', backgroundColor: 'var(--bg-canvas)' }} className="min-h-screen">
       <header className="border-b border-[#e2e2e2] bg-white">
-        <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
-          <h1 className="text-xl font-semibold text-[#1f1f1f]">Onboarding</h1>
+        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+          <div><h1 className="text-xl font-semibold text-[#1f1f1f]">Projets d’implémentation</h1>
           <p className="mt-1 text-sm text-[#696969]">
             {isLoading
               ? 'Chargement du portefeuille…'
               : error
                 ? 'Le portefeuille est momentanément indisponible.'
                 : `${baseProjects.length} ${plural(baseProjects.length, 'projet')} · ${new Set(baseProjects.map(project => project.hotelName)).size} ${plural(new Set(baseProjects.map(project => project.hotelName)).size, 'compte')}`}
-          </p>
+          </p></div>
+          <div className="inline-flex self-start rounded-lg border border-[#ded8e8] bg-[#f7f5fa] p-1" aria-label="Affichage des projets">
+            <button type="button" aria-pressed="true" className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-[#59319f] shadow-sm">Liste</button>
+            <button type="button" onClick={() => router.push('/onboarding/board')} aria-pressed="false" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">Board</button>
+          </div>
         </div>
       </header>
 
