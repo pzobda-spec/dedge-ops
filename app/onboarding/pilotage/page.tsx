@@ -48,7 +48,7 @@ const STATUS_CONFIG: Array<{ status: ProjectStatus; label: string; color: string
 
 const PRODUCT_COLORS = ['#59319f', '#3b72d1', '#1D9E75', '#d58b28', '#8c5bdb', '#447a76']
 
-type DatePreset = 'all' | 'prev_month' | 'curr_month' | 'curr_quarter' | 'last_6m' | 'custom'
+type DatePreset = 'all' | 'prev_month' | 'curr_month' | 'rolling_3m' | 'last_6m' | 'custom'
 type AttentionFilter = 'all' | 'attention' | 'blocked' | 'overdue' | 'high_risk'
 type ComparisonTone = 'positive' | 'negative' | 'neutral' | 'muted'
 
@@ -87,7 +87,7 @@ const DATE_PRESETS: Array<{ value: Exclude<DatePreset, 'custom'>; label: string 
   { value: 'all', label: 'Tous les projets' },
   { value: 'curr_month', label: 'Mois en cours' },
   { value: 'prev_month', label: 'Mois précédent' },
-  { value: 'curr_quarter', label: 'Trimestre en cours' },
+  { value: 'rolling_3m', label: '3 mois glissants' },
   { value: 'last_6m', label: '6 derniers mois' },
 ]
 
@@ -943,10 +943,7 @@ function computeDateRange(preset: DatePreset, customFrom: string, customTo: stri
   const month = today.getMonth()
   if (preset === 'curr_month') return { from: isoDay(new Date(year, month, 1)), to: isoDay(new Date(year, month + 1, 0)) }
   if (preset === 'prev_month') return { from: isoDay(new Date(year, month - 1, 1)), to: isoDay(new Date(year, month, 0)) }
-  if (preset === 'curr_quarter') {
-    const start = Math.floor(month / 3) * 3
-    return { from: isoDay(new Date(year, start, 1)), to: isoDay(new Date(year, start + 3, 0)) }
-  }
+  if (preset === 'rolling_3m') return { from: isoDay(new Date(year, month - 2, 1)), to: isoDay(today) }
   return { from: isoDay(new Date(year, month - 5, 1)), to: isoDay(today) }
 }
 
