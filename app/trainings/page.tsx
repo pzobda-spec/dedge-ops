@@ -682,7 +682,7 @@ export default function TrainingsPage() {
   return (
     <main className="min-h-screen bg-[var(--bg-canvas)] text-[#1a1a1a]" style={{ fontFamily: 'var(--font-sans)' }}>
       <header className="border-b border-[#e2e2e2] bg-white">
-        <div className="mx-auto flex max-w-[1600px] flex-col gap-4 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+        <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6 lg:px-8">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#8064b3]">Opérations</p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight">Formations</h1>
@@ -695,23 +695,93 @@ export default function TrainingsPage() {
             </p>
           </div>
 
-          <div className="flex max-w-full items-center gap-3 overflow-x-auto pb-1 lg:pb-0">
-            <div role="group" aria-label="Période des formations" className="inline-flex min-w-max items-center gap-1 rounded-xl bg-[#f4f1f8] p-1">
-              {periodOptions.map(option => (
-                <button
-                  key={option.value}
-                  type="button"
-                  aria-pressed={period === option.value}
-                  onClick={() => setPeriod(option.value)}
-                  className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-[#8064b3] focus:ring-offset-1 ${period === option.value ? 'bg-white text-[#59319f] shadow-sm' : 'text-[#696969] hover:text-[#3f2175]'}`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       </header>
+
+      <section
+        className="sticky top-0 z-20 border-b border-[#ded8e8] bg-white/95 shadow-[0_5px_16px_rgba(36,25,55,0.06)] backdrop-blur"
+        aria-label="Filtres des sessions de formation"
+      >
+        <div className="mx-auto flex max-w-[1600px] flex-col gap-3 px-4 py-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-end">
+            <div className="min-w-0 xl:shrink-0">
+              <span className="mb-1 block text-xs font-semibold text-[#4a4a4a]">Période</span>
+              <div className="overflow-x-auto pb-0.5">
+                <div role="group" aria-label="Période des formations" className="inline-flex min-w-max items-center gap-1 rounded-xl bg-[#f4f1f8] p-1">
+                  {periodOptions.map(option => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={period === option.value}
+                      onClick={() => setPeriod(option.value)}
+                      className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-[#8064b3] focus:ring-offset-1 ${period === option.value ? 'bg-white text-[#59319f] shadow-sm' : 'text-[#696969] hover:text-[#3f2175]'}`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid min-w-0 flex-1 gap-3 md:grid-cols-2 xl:grid-cols-[minmax(280px,2fr)_repeat(3,minmax(150px,1fr))]">
+              <label className="block min-w-0">
+                <span className="mb-1 block text-xs font-semibold text-[#4a4a4a]">Rechercher</span>
+                <div className="relative">
+                  <svg aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8a8a8a]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35m2.35-5.65a8 8 0 11-16 0 8 8 0 0116 0Z" />
+                  </svg>
+                  <input
+                    type="search"
+                    value={search}
+                    onChange={event => setSearch(event.target.value)}
+                    placeholder="Formation, hôtel, participant…"
+                    className="w-full rounded-lg border border-[#d8d8d8] bg-white py-2.5 pl-9 pr-3 text-sm outline-none placeholder:text-[#a1a1a1] focus:border-[#8064b3] focus:ring-2 focus:ring-[#e6dcf5]"
+                  />
+                </div>
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold text-[#4a4a4a]">Langue</span>
+                <select value={language} onChange={event => setLanguage(event.target.value as LanguageFilter)} className="w-full rounded-lg border border-[#d8d8d8] bg-white px-3 py-2.5 text-sm text-[#4a4a4a] outline-none focus:border-[#8064b3] focus:ring-2 focus:ring-[#e6dcf5]">
+                  <option value="all">Toutes les langues</option>
+                  <option value="FR">Français</option>
+                  <option value="EN">Anglais</option>
+                  <option value="ES">Espagnol</option>
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold text-[#4a4a4a]">Statut</span>
+                <select value={status} onChange={event => setStatus(event.target.value as StatusFilter)} className="w-full rounded-lg border border-[#d8d8d8] bg-white px-3 py-2.5 text-sm text-[#4a4a4a] outline-none focus:border-[#8064b3] focus:ring-2 focus:ring-[#e6dcf5]">
+                  <option value="all">Tous les statuts</option>
+                  <option value="scheduled">À venir</option>
+                  <option value="completed">Passée</option>
+                  <option value="cancelled">Annulée</option>
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold text-[#4a4a4a]">Animateur</span>
+                <select value={animator} onChange={event => setAnimator(event.target.value)} className="w-full rounded-lg border border-[#d8d8d8] bg-white px-3 py-2.5 text-sm text-[#4a4a4a] outline-none focus:border-[#8064b3] focus:ring-2 focus:ring-[#e6dcf5]">
+                  <option value="all">Tous les animateurs</option>
+                  {animatorOptions.map(name => <option key={name} value={name}>{name}</option>)}
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div className="flex min-h-6 flex-wrap items-center justify-between gap-2 border-t border-[#eeeaf2] pt-3">
+            <p className="text-xs text-[#696969]" aria-live="polite">
+              {filteredSessions.length} sur {sessions.length} {plural(sessions.length, 'session')}
+            </p>
+            {hasFilters && (
+              <button type="button" onClick={resetFilters} className="text-xs font-semibold text-[#59319f] hover:underline">
+                Réinitialiser les filtres
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
 
       <div className="mx-auto max-w-[1600px] space-y-6 px-4 py-6 sm:px-6 lg:px-8">
         {loading && (
@@ -783,68 +853,6 @@ export default function TrainingsPage() {
                 <p className="mt-0.5 text-xs">Les rendez-vous sont affichés, mais certaines sessions sans inscription peuvent manquer temporairement.</p>
               </div>
             )}
-
-            <section aria-label="Recherche et filtres" className="rounded-xl border border-[#ded8e8] bg-white p-4 shadow-[0_4px_10px_rgba(36,25,55,0.04)]">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h2 className="text-sm font-bold text-[#1a1a1a]">Sessions</h2>
-                  <p className="mt-0.5 text-xs text-[#696969]">
-                    {filteredSessions.length} sur {sessions.length} {plural(sessions.length, 'session')}
-                  </p>
-                </div>
-                {hasFilters && (
-                  <button type="button" onClick={resetFilters} className="text-xs font-semibold text-[#59319f] hover:underline">
-                    Réinitialiser les filtres
-                  </button>
-                )}
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(280px,2fr)_repeat(3,minmax(150px,1fr))]">
-                <label className="block min-w-0">
-                  <span className="mb-1 block text-xs font-semibold text-[#4a4a4a]">Rechercher</span>
-                  <div className="relative">
-                    <svg aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8a8a8a]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35m2.35-5.65a8 8 0 11-16 0 8 8 0 0116 0Z" />
-                    </svg>
-                    <input
-                      type="search"
-                      value={search}
-                      onChange={event => setSearch(event.target.value)}
-                      placeholder="Formation, hôtel, participant…"
-                      className="w-full rounded-lg border border-[#d8d8d8] bg-white py-2.5 pl-9 pr-3 text-sm outline-none placeholder:text-[#a1a1a1] focus:border-[#8064b3] focus:ring-2 focus:ring-[#e6dcf5]"
-                    />
-                  </div>
-                </label>
-
-                <label className="block">
-                  <span className="mb-1 block text-xs font-semibold text-[#4a4a4a]">Langue</span>
-                  <select value={language} onChange={event => setLanguage(event.target.value as LanguageFilter)} className="w-full rounded-lg border border-[#d8d8d8] bg-white px-3 py-2.5 text-sm text-[#4a4a4a] outline-none focus:border-[#8064b3] focus:ring-2 focus:ring-[#e6dcf5]">
-                    <option value="all">Toutes les langues</option>
-                    <option value="FR">Français</option>
-                    <option value="EN">Anglais</option>
-                    <option value="ES">Espagnol</option>
-                  </select>
-                </label>
-
-                <label className="block">
-                  <span className="mb-1 block text-xs font-semibold text-[#4a4a4a]">Statut</span>
-                  <select value={status} onChange={event => setStatus(event.target.value as StatusFilter)} className="w-full rounded-lg border border-[#d8d8d8] bg-white px-3 py-2.5 text-sm text-[#4a4a4a] outline-none focus:border-[#8064b3] focus:ring-2 focus:ring-[#e6dcf5]">
-                    <option value="all">Tous les statuts</option>
-                    <option value="scheduled">À venir</option>
-                    <option value="completed">Passée</option>
-                    <option value="cancelled">Annulée</option>
-                  </select>
-                </label>
-
-                <label className="block">
-                  <span className="mb-1 block text-xs font-semibold text-[#4a4a4a]">Animateur</span>
-                  <select value={animator} onChange={event => setAnimator(event.target.value)} className="w-full rounded-lg border border-[#d8d8d8] bg-white px-3 py-2.5 text-sm text-[#4a4a4a] outline-none focus:border-[#8064b3] focus:ring-2 focus:ring-[#e6dcf5]">
-                    <option value="all">Tous les animateurs</option>
-                    {animatorOptions.map(name => <option key={name} value={name}>{name}</option>)}
-                  </select>
-                </label>
-              </div>
-            </section>
 
             <span className="sr-only" aria-live="polite">
               {copyFeedback?.status === 'success' ? 'Liste des hôtels copiée.' : copyFeedback?.status === 'error' ? 'La copie a échoué.' : ''}

@@ -267,10 +267,10 @@ export default function TrainingsAnalyticsPage() {
       </header>
 
       <section
-        className="sticky top-0 z-20 border-b border-[#e2e2e2] bg-white/95 px-4 py-4 shadow-[0_2px_4px_rgba(0,0,0,0.05)] backdrop-blur sm:px-6 lg:px-8"
+        className="sticky top-0 z-20 border-b border-[#ded8e8] bg-white/95 shadow-[0_5px_16px_rgba(36,25,55,0.06)] backdrop-blur"
         aria-label="Filtres du dashboard Formations"
       >
-        <div className="flex flex-col gap-4">
+        <div className="mx-auto flex max-w-[1600px] flex-col gap-4 px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
               <div>
@@ -348,7 +348,7 @@ export default function TrainingsAnalyticsPage() {
         </div>
       </section>
 
-      <div className="space-y-6 px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1600px] space-y-6 px-4 py-6 sm:px-6 lg:px-8">
         {loading ? (
           <DashboardSkeleton />
         ) : error ? (
@@ -396,6 +396,26 @@ export default function TrainingsAnalyticsPage() {
             )}
 
             <section className="grid grid-cols-1 gap-5 xl:grid-cols-2" aria-label="Visualisations analytiques">
+              <ChartCard title="Formations par inscriptions actives" subtitle="Classement avec volume de sessions" wide>
+                {analytics.formations.length === 0 ? <EmptyChart /> : (
+                  <div className="h-full overflow-x-auto" role="img" aria-label="Barres horizontales des formations les plus suivies">
+                    <div className="h-full min-w-[640px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={analytics.formations.slice(0, 8)} layout="vertical" margin={{ top: 8, right: 22, left: 18, bottom: 8 }} barCategoryGap="24%">
+                          <CartesianGrid stroke="#ece8f0" strokeDasharray="3 3" horizontal={false} />
+                          <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: MUTED }} tickLine={false} axisLine={false} />
+                          <YAxis type="category" dataKey="name" width={175} tickFormatter={value => truncateLabel(String(value), 25)} tick={{ fontSize: 11, fill: '#4a4a4a' }} tickLine={false} axisLine={false} />
+                          <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(value, name) => [formatNumber(Number(value)), String(name)]} />
+                          <Legend wrapperStyle={{ fontSize: 11 }} />
+                          <Bar dataKey="registrations" name="Inscrits" fill={BRAND} radius={[0, 5, 5, 0]} maxBarSize={16} />
+                          <Bar dataKey="sessions" name="Sessions" fill="#b9a3dc" radius={[0, 5, 5, 0]} maxBarSize={16} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                )}
+              </ChartCard>
+
               <ChartCard title="Tendance mensuelle" subtitle="Sessions passées et inscriptions actives" wide>
                 {analytics.monthly.every(item => item.sessions === 0 && item.registrations === 0) ? <EmptyChart /> : (
                   <div className="h-full overflow-x-auto" role="img" aria-label="Évolution mensuelle du nombre de sessions et d’inscriptions">
@@ -411,26 +431,6 @@ export default function TrainingsAnalyticsPage() {
                           <Bar yAxisId="sessions" dataKey="sessions" name="Sessions" fill={BRAND} radius={[5, 5, 0, 0]} maxBarSize={42} />
                           <Line yAxisId="registrations" type="monotone" dataKey="registrations" name="Inscriptions" stroke={SUCCESS} strokeWidth={2.5} dot={{ r: 3, fill: SUCCESS }} activeDot={{ r: 5 }} />
                         </ComposedChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                )}
-              </ChartCard>
-
-              <ChartCard title="Formations par inscriptions actives" subtitle="Classement avec volume de sessions" wide>
-                {analytics.formations.length === 0 ? <EmptyChart /> : (
-                  <div className="h-full overflow-x-auto" role="img" aria-label="Barres horizontales des formations les plus suivies">
-                    <div className="h-full min-w-[640px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={analytics.formations.slice(0, 8)} layout="vertical" margin={{ top: 8, right: 22, left: 18, bottom: 8 }} barCategoryGap="24%">
-                          <CartesianGrid stroke="#ece8f0" strokeDasharray="3 3" horizontal={false} />
-                          <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: MUTED }} tickLine={false} axisLine={false} />
-                          <YAxis type="category" dataKey="name" width={175} tickFormatter={value => truncateLabel(String(value), 25)} tick={{ fontSize: 11, fill: '#4a4a4a' }} tickLine={false} axisLine={false} />
-                          <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(value, name) => [formatNumber(Number(value)), String(name)]} />
-                          <Legend wrapperStyle={{ fontSize: 11 }} />
-                          <Bar dataKey="registrations" name="Inscrits" fill={BRAND} radius={[0, 5, 5, 0]} maxBarSize={16} />
-                          <Bar dataKey="sessions" name="Sessions" fill="#b9a3dc" radius={[0, 5, 5, 0]} maxBarSize={16} />
-                        </BarChart>
                       </ResponsiveContainer>
                     </div>
                   </div>
