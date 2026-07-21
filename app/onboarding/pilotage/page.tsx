@@ -10,8 +10,10 @@ import {
   ComposedChart,
   Legend,
   Line,
+  LineChart,
   Pie,
   PieChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -20,7 +22,7 @@ import {
 import type { OnboardingProject, ProjectStatus } from '@/lib/zoho/projectsClient'
 import { formatDate } from '@/lib/utils/dates'
 import { IMPLEMENTATION_GROUP, isExcludedOnboardingOwner } from '@/lib/onboarding/constants'
-import { CAPACITY_THRESHOLD, OVERLOADED_THRESHOLD_PCT, isActiveProject } from '@/lib/onboarding/workload'
+import { CAPACITY_THRESHOLD, isActiveProject } from '@/lib/onboarding/workload'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
 import { useLocale } from '@/lib/i18n/LocaleContext'
 import { translate } from '@/lib/i18n/translate'
@@ -50,6 +52,7 @@ const STATUS_CONFIG: Array<{ status: ProjectStatus; label: string; color: string
 ]
 
 const PRODUCT_COLORS = ['#59319f', '#3b72d1', '#1D9E75', '#d58b28', '#8c5bdb', '#447a76']
+const OWNER_COLORS = ['#59319f', '#3b72d1', '#1D9E75', '#d58b28', '#c2410c', '#8c5bdb', '#447a76', '#b7221b']
 
 function plural(value: number, singular: string, pluralForm = `${singular}s`): string {
   return value === 1 ? singular : pluralForm
@@ -273,6 +276,7 @@ export default function OnboardingPilotagePage() {
   const perLanguage = useMemo(() => buildBreakdown(filteredProjects.map(project => project.implementationLanguage || 'Non renseignée')), [filteredProjects])
   const chartRange = useMemo(() => dateRange ?? rollingMonthRange(12), [dateRange])
   const monthly = useMemo(() => buildMonthlyData(dimensionFilteredProjects, chartRange, locale), [chartRange, dimensionFilteredProjects, locale])
+  const workloadTrend = useMemo(() => buildWorkloadTrend(dimensionFilteredProjects, chartRange, locale), [chartRange, dimensionFilteredProjects, locale])
   const hasActiveFilters = activeOwner !== 'Tous' || datePreset !== 'all' || Boolean(productFilter || statusFilter || search) || attentionFilter !== 'all'
   const nonSatisfactionFiltersActive = Boolean(productFilter || statusFilter) || attentionFilter !== 'all'
   const canSyncSatisfaction = currentUser?.role === 'admin' || currentUser?.role === 'onboarder'
@@ -502,7 +506,30 @@ export default function OnboardingPilotagePage() {
                   </ChartCard>
                 </section>
 
-                <WorkloadSection rows={perPerson} overloaded={overloaded} dateRange={dateRange} />
+                <WorkloadSection rows={perPerson} overloaded={overloaded} />
+
+                <ChartCard title={t('Évolution de la charge')} subtitle={`${t('Estimation à partir des dates Zoho (démarrage / mise en ligne), pas un relevé quotidien exact.')} · ${formatRange(chartRange, locale)}`} wide>
+                  {workloadTrend.data.length === 0 || workloadTrend.owners.length === 0 ? <EmptyChart /> : (
+                    <div className="h-full overflow-x-auto" role="img" aria-label={t('Évolution de la charge par chargé de projet')}>
+                      <div className="h-full" style={{ minWidth: Math.max(620, workloadTrend.data.length * 72) }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={workloadTrend.data} margin={{ top: 16, right: 16, left: -8, bottom: 12 }}>
+                            <CartesianGrid stroke="#ece8f0" strokeDasharray="3 3" vertical={false} />
+                            <XAxis dataKey="label" tick={{ fontSize: 11, fill: MUTED }} tickLine={false} axisLine={false} />
+                            <YAxis domain={[0, 200]} tickFormatter={value => `${value}%`} tick={{ fontSize: 11, fill: MUTED }} tickLine={false} axisLine={false} />
+                            <Tooltip contentStyle={TOOLTIP_STYLE} formatter={value => [`${value}%`, '']} />
+                            <Legend wrapperStyle={{ fontSize: 11 }} />
+                            <ReferenceLine y={80} stroke="#d58b28" strokeDasharray="4 4" label={{ value: '80%', fontSize: 10, fill: '#84550e', position: 'insideTopRight' }} />
+                            <ReferenceLine y={100} stroke="#b7221b" strokeDasharray="4 4" label={{ value: '100%', fontSize: 10, fill: '#b7221b', position: 'insideTopRight' }} />
+                            {workloadTrend.owners.map((owner, index) => (
+                              <Line key={owner} type="monotone" dataKey={owner} name={owner} stroke={OWNER_COLORS[index % OWNER_COLORS.length]} strokeWidth={2} dot={{ r: 2 }} connectNulls />
+                            ))}
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  )}
+                </ChartCard>
 
                 <section className="grid grid-cols-1 gap-5 lg:grid-cols-2" aria-label={t('Caractéristiques des projets')}>
                   {typologyCoverage > 0
@@ -642,62 +669,11 @@ interface PersonRow {
   satisfactionResponses: number
 }
 
-interface WorkloadSnapshot {
-  snapshot_date: string
-  owner: string
-  active_projects: number
-  charge_pct: number
-}
-
-function computeStreakDays(ownerSnapshots: WorkloadSnapshot[]): number {
-  let streak = 0
-  for (let i = ownerSnapshots.length - 1; i >= 0; i--) {
-    if (ownerSnapshots[i].charge_pct < OVERLOADED_THRESHOLD_PCT) break
-    if (streak > 0) {
-      const gap = daysBetween(ownerSnapshots[i].snapshot_date, ownerSnapshots[i + 1].snapshot_date)
-      if (gap !== 1) break
-    }
-    streak += 1
-  }
-  return streak
-}
-
-function useWorkloadHistory(dateRange: DateRange | null) {
-  const [history, setHistory] = useState<Map<string, WorkloadSnapshot[]>>(new Map())
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const controller = new AbortController()
-    setLoading(true)
-    const fallback = rollingMonthRange(6)
-    const params = new URLSearchParams({ from: dateRange?.from ?? fallback.from, to: dateRange?.to ?? fallback.to })
-
-    fetch(`/api/onboarding/workload-history?${params}`, { signal: controller.signal })
-      .then(response => response.ok ? response.json() as Promise<{ snapshots?: WorkloadSnapshot[] }> : Promise.reject(new Error(`HTTP ${response.status}`)))
-      .then(({ snapshots }) => {
-        const grouped = new Map<string, WorkloadSnapshot[]>()
-        for (const snapshot of snapshots ?? []) {
-          const current = grouped.get(snapshot.owner) ?? []
-          current.push(snapshot)
-          grouped.set(snapshot.owner, current)
-        }
-        setHistory(grouped)
-      })
-      .catch(error => { if (!isAbortError(error)) console.error(error) })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
-
-    return () => controller.abort()
-  }, [dateRange])
-
-  return { history, loading }
-}
-
-function WorkloadSection({ rows, overloaded, dateRange }: { rows: PersonRow[]; overloaded: number; dateRange: DateRange | null }) {
+function WorkloadSection({ rows, overloaded }: { rows: PersonRow[]; overloaded: number }) {
   const { locale, t } = useLocale()
-  const { history, loading: historyLoading } = useWorkloadHistory(dateRange)
   const headings = locale === 'en'
-    ? ['Person', 'Active', 'Accounts', 'To watch', 'Go-lives', 'Avg TTV', 'Satisfaction', 'Workload', 'Regularity']
-    : ['Personne', 'Actifs', 'Comptes', 'À surveiller', 'Go-lives', 'TTV moyen', 'Satisfaction', 'Charge', 'Régularité']
+    ? ['Person', 'Active', 'Accounts', 'To watch', 'Go-lives', 'Avg TTV', 'Satisfaction', 'Workload']
+    : ['Personne', 'Actifs', 'Comptes', 'À surveiller', 'Go-lives', 'TTV moyen', 'Satisfaction', 'Charge']
   return (
     <section className="overflow-hidden rounded-xl border border-[#e2e2e2] bg-white shadow-[0_4px_10px_rgba(36,25,55,0.05)]" aria-labelledby="workload-title">
       <div className="flex flex-col gap-1 border-b border-[#e2e2e2] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
@@ -717,7 +693,6 @@ function WorkloadSection({ rows, overloaded, dateRange }: { rows: PersonRow[]; o
                   {headings.map((heading, index) => (
                     <th
                       key={heading}
-                      title={index === headings.length - 1 ? t('Nombre de jours consécutifs au-dessus de 80 % de charge, sur la période sélectionnée.') : undefined}
                       className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-[#696969] ${index === 0 ? 'text-left' : 'text-center'}`}
                     >
                       {heading}
@@ -744,9 +719,6 @@ function WorkloadSection({ rows, overloaded, dateRange }: { rows: PersonRow[]; o
                         <span className={`w-10 text-right text-xs font-bold tabular-nums ${chargeTextColor(row.chargePct)}`}>{row.chargePct}%</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-center">
-                      <StreakBadge snapshots={history.get(row.owner)} loading={historyLoading} />
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -761,10 +733,6 @@ function WorkloadSection({ rows, overloaded, dateRange }: { rows: PersonRow[]; o
                   <span className={`text-sm font-bold tabular-nums ${chargeTextColor(row.chargePct)}`}>{row.chargePct} %</span>
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-[#e2e2e2]"><div className={`h-full rounded-full ${chargeBarColor(row.chargePct)}`} style={{ width: `${Math.min(row.chargePct, 100)}%` }} /></div>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-[#8a8a8a]">{t('Régularité')}</span>
-                  <StreakBadge snapshots={history.get(row.owner)} loading={historyLoading} />
-                </div>
                 <dl className="grid grid-cols-3 gap-3 text-center">
                   <PersonMetric label={t('Actifs')} value={row.active} />
                   <PersonMetric label={t('À surveiller')} value={row.attention} alert={row.attention > 0} />
@@ -779,22 +747,6 @@ function WorkloadSection({ rows, overloaded, dateRange }: { rows: PersonRow[]; o
         </>
       )}
     </section>
-  )
-}
-
-function StreakBadge({ snapshots, loading }: { snapshots?: WorkloadSnapshot[]; loading: boolean }) {
-  const { t } = useLocale()
-  if (loading) return <span className="text-xs text-[#c4c4c4]">…</span>
-  if (!snapshots || snapshots.length === 0) return <span className="text-xs text-[#c4c4c4]" title={t('Suivi de la charge démarré récemment, pas encore assez d’historique.')}>—</span>
-
-  const streak = computeStreakDays(snapshots)
-  if (streak === 0) return <span className="text-xs text-[#8a8a8a]">—</span>
-
-  const tone = streak >= 14 ? 'text-[#b7221b] bg-[#fee3e2]' : streak >= 7 ? 'text-[#84550e] bg-[#fbf1ca]' : 'text-[#8b6a24] bg-[#fff9e8]'
-  return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${tone}`}>
-      {streak} {t(streak === 1 ? 'jour ≥80 %' : 'jours ≥80 %')}
-    </span>
   )
 }
 
@@ -1212,6 +1164,38 @@ function buildMonthlyData(projects: OnboardingProject[], range: DateRange, local
       return liveDate?.startsWith(month) && isWithinRange(liveDate, range)
     }).length,
   }))
+}
+
+interface WorkloadTrend {
+  owners: string[]
+  data: Array<Record<string, string | number>>
+}
+
+// Reconstructs an approximate historical charge per project owner from Zoho's
+// start/live dates (a project counts as active for a month once it started
+// and until it went live). This is an estimate, not an exact daily snapshot:
+// there is no historical record of when a project's status actually changed.
+function buildWorkloadTrend(projects: OnboardingProject[], range: DateRange, locale: Locale): WorkloadTrend {
+  const scoped = projects.filter(project => !isExcludedOnboardingOwner(project.ownerShort) && project.status !== 'other')
+  const owners = [...new Set(scoped.map(project => project.ownerShort || project.ownerName || 'Non assigné'))].sort((a, b) => a.localeCompare(b, 'fr'))
+  const data = monthKeys(range).map(month => {
+    const [year, monthNumber] = month.split('-').map(Number)
+    const monthStart = `${month}-01`
+    const monthEnd = isoDay(new Date(year, monthNumber, 0))
+    const row: Record<string, string | number> = { month, label: formatMonth(month, locale) }
+    for (const owner of owners) {
+      const active = scoped.filter(project => {
+        if ((project.ownerShort || project.ownerName || 'Non assigné') !== owner) return false
+        if (!project.startDate || project.startDate > monthEnd) return false
+        const liveDate = getActualGoLiveDate(project)
+        if (liveDate && liveDate < monthStart) return false
+        return true
+      }).length
+      row[owner] = Math.round((active / CAPACITY_THRESHOLD) * 100)
+    }
+    return row
+  })
+  return { owners, data }
 }
 
 function isWithinRange(value: string, range: DateRange): boolean {
