@@ -34,6 +34,7 @@ export const EVENT_TYPES: Record<ProjectEventType, EventTypeMeta> = {
   v2_delivered: { key: 'v2_delivered', label: 'V2 livrée', icon: 'Package', color: 'green', category: 'delivery' },
   go_live: { key: 'go_live', label: 'Go-live', icon: 'Rocket', color: 'green', category: 'milestone' },
   project_blocked: { key: 'project_blocked', label: 'Projet bloqué', icon: 'AlertCircle', color: 'red', category: 'milestone' },
+  meeting_decision: { key: 'meeting_decision', label: 'Décision de rendez-vous', icon: 'FileText', color: 'purple', category: 'meeting' },
   note_added: { key: 'note_added', label: 'Note ajoutée', icon: 'StickyNote', color: 'gray', category: 'note' },
 }
 

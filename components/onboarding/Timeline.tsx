@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { formatDistanceToNow } from 'date-fns'
-import { fr } from 'date-fns/locale'
+import { fr, enUS } from 'date-fns/locale'
 import {
   AlertCircle,
   Box,
@@ -20,6 +20,8 @@ import {
 } from 'lucide-react'
 import { EVENT_TYPES, type EventCategory, type EventColor } from '@/lib/onboarding/eventTypes'
 import type { ProjectEvent } from '@/lib/onboarding/events'
+import { useLocale } from '@/lib/i18n/LocaleContext'
+import type { Locale } from '@/lib/i18n/locale'
 
 const ICONS: Record<string, LucideIcon> = {
   AlertCircle,
@@ -48,25 +50,30 @@ const colorClasses: Record<EventColor, { dot: string; text: string; bg: string }
 const categories: EventCategory[] = ['system', 'email', 'call', 'meeting', 'delivery', 'milestone', 'note']
 const PAGE_SIZE = 50
 
-function relativeDate(iso: string) {
-  return formatDistanceToNow(new Date(iso), { addSuffix: true, locale: fr })
+function relativeDate(iso: string, locale: Locale) {
+  return formatDistanceToNow(new Date(iso), { addSuffix: true, locale: locale === 'en' ? enUS : fr })
 }
 
-function metadataSummary(event: ProjectEvent): string | null {
+function metadataSummary(event: ProjectEvent, locale: Locale, t: (text: string) => string): string | null {
   const metadata = event.metadata ?? {}
   if (event.event_type.startsWith('email_')) {
     const subject = typeof metadata.subject === 'string' ? metadata.subject : ''
-    return subject ? `Sujet : ${subject.length > 60 ? `${subject.slice(0, 60)}...` : subject}` : null
+    if (!subject) return null
+    const truncated = subject.length > 60 ? `${subject.slice(0, 60)}...` : subject
+    return `${t('Sujet')} : ${truncated}`
   }
   if (event.event_type === 'recap_generated') {
     const length = typeof metadata.transcript_length === 'number' ? metadata.transcript_length : null
-    return length !== null ? `Transcript de ${length} caractères` : null
+    if (length === null) return null
+    return locale === 'en' ? `Transcript of ${length} characters` : `Transcript de ${length} caractères`
   }
-  if (event.event_type === 'kickoff_scheduled') return 'Lien Acuity 30 min ouvert'
-  if (event.event_type === 'implementation_scheduled') return 'Lien Acuity 60 min ouvert'
+  if (event.event_type === 'kickoff_scheduled') return t('Lien Acuity 30 min ouvert')
+  if (event.event_type === 'implementation_scheduled') return t('Lien Acuity 60 min ouvert')
   if (event.event_type === 'kickoff_completed' || event.event_type === 'implementation_completed') {
     const date = typeof metadata.appointment_datetime === 'string' ? metadata.appointment_datetime : null
-    return date ? `RDV réalisé le ${new Date(date).toLocaleDateString('fr-FR')}` : null
+    if (!date) return null
+    const formatted = new Date(date).toLocaleDateString(locale === 'en' ? 'en-GB' : 'fr-FR')
+    return locale === 'en' ? `Meeting held on ${formatted}` : `RDV réalisé le ${formatted}`
   }
   return null
 }
@@ -80,6 +87,7 @@ export default function Timeline({
   readonly?: boolean
   onTimelineChange?: (events: ProjectEvent[]) => void
 }) {
+  const { locale, t } = useLocale()
   const [events, setEvents] = useState<ProjectEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -101,7 +109,7 @@ export default function Timeline({
       setEvents(data.events ?? [])
       onTimelineChange?.(data.events ?? [])
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Impossible de charger la timeline.')
+      setError(err instanceof Error ? err.message : t('Impossible de charger la timeline.'))
     } finally {
       setLoading(false)
     }
@@ -142,7 +150,7 @@ export default function Timeline({
       setNoteOpen(false)
       await loadTimeline()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur lors de l’ajout de la note.')
+      setError(err instanceof Error ? err.message : t('Erreur lors de l’ajout de la note.'))
     } finally {
       setSubmitting(false)
     }
@@ -190,10 +198,10 @@ export default function Timeline({
             onChange={e => { setSince(e.target.value); setVisibleCount(PAGE_SIZE) }}
             className="text-xs px-2.5 py-1.5 rounded border border-slate-200 text-slate-600 bg-white"
           >
-            <option value="all">Toutes dates</option>
-            <option value="7">7 derniers jours</option>
-            <option value="30">30 derniers jours</option>
-            <option value="90">90 derniers jours</option>
+            <option value="all">{t('Toutes dates')}</option>
+            <option value="7">{t('7 derniers jours')}</option>
+            <option value="30">{t('30 derniers jours')}</option>
+            <option value="90">{t('90 derniers jours')}</option>
           </select>
         </div>
         {!readonly && (
@@ -201,7 +209,7 @@ export default function Timeline({
             onClick={() => setNoteOpen(true)}
             className="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-700 transition-colors"
           >
-            Ajouter une note
+            {t('Ajouter une note')}
           </button>
         )}
       </div>
@@ -210,7 +218,7 @@ export default function Timeline({
 
       {filteredEvents.length === 0 ? (
         <div className="text-center py-10 text-sm text-slate-400 border border-dashed border-slate-200 rounded-xl">
-          Aucune action enregistrée pour ce projet
+          {t('Aucune action enregistrée pour ce projet')}
         </div>
       ) : (
         <div className="relative pl-7">
@@ -221,7 +229,7 @@ export default function Timeline({
               const colors = colorClasses[meta.color]
               const Icon = ICONS[meta.icon] ?? StickyNote
               const hasMetadata = event.metadata && Object.keys(event.metadata).length > 0
-              const summary = metadataSummary(event)
+              const summary = metadataSummary(event, locale, t)
               return (
                 <div key={event.id} className="relative">
                   <span className={`absolute -left-[1.35rem] top-2 h-4 w-4 rounded-full border-2 border-white ${colors.dot}`} />
@@ -232,10 +240,10 @@ export default function Timeline({
                           <span className={`inline-flex h-7 w-7 items-center justify-center rounded ${colors.bg} ${colors.text}`}>
                             <Icon className="h-4 w-4" />
                           </span>
-                          <p className="text-sm font-semibold text-slate-900">{event.event_label || meta.label}</p>
+                          <p className="text-sm font-semibold text-slate-900">{t(event.event_label || meta.label)}</p>
                         </div>
                         <p className="text-xs text-slate-500 mt-1">
-                          {relativeDate(event.occurred_at)}
+                          {relativeDate(event.occurred_at, locale)}
                           {event.actor_email ? ` · ${event.actor_email}` : ''}
                         </p>
                         {summary && <p className="text-xs text-slate-600 mt-2">{summary}</p>}
@@ -245,7 +253,7 @@ export default function Timeline({
                           onClick={() => setDetailsId(detailsId === event.id ? null : event.id)}
                           className="text-xs text-slate-500 hover:text-slate-900"
                         >
-                          Détails
+                          {t('Détails')}
                         </button>
                       )}
                     </div>
@@ -264,7 +272,7 @@ export default function Timeline({
               onClick={() => setVisibleCount(count => count + PAGE_SIZE)}
               className="mt-4 text-sm text-slate-600 hover:text-slate-900"
             >
-              Afficher plus
+              {t('Afficher plus')}
             </button>
           )}
         </div>
@@ -273,24 +281,24 @@ export default function Timeline({
       {noteOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4">
           <div className="w-full max-w-lg rounded-xl bg-white border border-slate-200 shadow-xl p-5">
-            <h3 className="text-sm font-semibold text-slate-900 mb-3">Ajouter une note</h3>
+            <h3 className="text-sm font-semibold text-slate-900 mb-3">{t('Ajouter une note')}</h3>
             <textarea
               value={note}
               onChange={e => setNote(e.target.value)}
               rows={5}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
-              placeholder="Note interne..."
+              placeholder={t('Note interne...')}
             />
             <div className="mt-4 flex justify-end gap-2">
               <button onClick={() => setNoteOpen(false)} className="px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50">
-                Annuler
+                {t('Annuler')}
               </button>
               <button
                 onClick={submitNote}
                 disabled={submitting || !note.trim()}
                 className="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-700 disabled:opacity-50"
               >
-                {submitting ? 'Ajout...' : 'Ajouter'}
+                {submitting ? t('Ajout...') : t('Ajouter')}
               </button>
             </div>
           </div>

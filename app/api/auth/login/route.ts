@@ -3,12 +3,18 @@ import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/server'
 
-function getCallbackUrl(request: NextRequest): string {
+function safeNextPath(value: unknown): string | null {
+  return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') ? value : null
+}
+
+function getCallbackUrl(request: NextRequest, next: string | null): string {
   const host = request.headers.get('host') ?? ''
-  if (host.startsWith('localhost') || host.startsWith('127.')) {
-    return `http://${host}/auth/callback`
-  }
-  return 'https://dedge-ops-6zer.vercel.app/auth/callback'
+  const base = host.startsWith('localhost') || host.startsWith('127.')
+    ? `http://${host}/auth/callback`
+    : 'https://dedge-ops-6zer.vercel.app/auth/callback'
+  const callback = new URL(base)
+  if (next) callback.searchParams.set('next', next)
+  return callback.toString()
 }
 
 async function sendOtp(email: string, callbackUrl: string, shouldCreateUser: boolean) {
@@ -50,12 +56,13 @@ function isEmergencyAllowed(email: string): boolean {
 export async function POST(request: NextRequest) {
   const body = await request.json()
   const email: string = (body.email ?? '').trim().toLowerCase()
+  const next = safeNextPath(body.next)
 
   if (!email) {
     return NextResponse.json({ status: 'error', error: 'Email requis' }, { status: 400 })
   }
 
-  const callbackUrl = getCallbackUrl(request)
+  const callbackUrl = getCallbackUrl(request, next)
   console.log('[auth/login] email:', email, '| callback:', callbackUrl)
 
   // Admin email bypass — always allowed, creates account if needed
