@@ -20,6 +20,8 @@ export type Segment = 'Strategic' | 'Gold' | 'Silver' | 'Bronze'
 export interface CRMAccount {
   id: string
   name: string
+  parentId: string | null
+  parentName: string | null
   segment: Segment
   mrr: number
   country: string | null
@@ -44,6 +46,7 @@ interface RawCRMAccount {
   CSM: { name: string } | null
   Billing_Country: string | null
   LoungeUp_Client_ID: string | null
+  Parent_Account: { id: string; name: string } | null
 }
 
 function mapRaw(a: RawCRMAccount): CRMAccount {
@@ -51,6 +54,8 @@ function mapRaw(a: RawCRMAccount): CRMAccount {
   return {
     id: a.id,
     name: a.Account_Name,
+    parentId: a.Parent_Account?.id ?? null,
+    parentName: a.Parent_Account?.name ?? null,
     segment: segmentFromMRR(mrr),
     mrr,
     country: a.Billing_Country,
@@ -60,7 +65,7 @@ function mapRaw(a: RawCRMAccount): CRMAccount {
   }
 }
 
-const FIELDS = 'Account_Name,MRR_Total,MRR_CSM_manual1,Plan,CSM,Billing_Country,LoungeUp_Client_ID'
+const FIELDS = 'Account_Name,MRR_Total,MRR_CSM_manual1,Plan,CSM,Billing_Country,LoungeUp_Client_ID,Parent_Account'
 
 export async function fetchCRMAccounts(perPage = 200): Promise<CRMAccount[]> {
   const data = await crmFetch<{ data: RawCRMAccount[] }>(`/Accounts?fields=${FIELDS}&per_page=${perPage}`)
@@ -74,7 +79,7 @@ export async function fetchCRMAccountByName(name: string): Promise<CRMAccount | 
   return raw ? mapRaw(raw) : null
 }
 
-export async function fetchAllCRMAccounts(): Promise<CRMAccount[]> {
+export async function fetchAllCRMAccounts(options?: { includeZeroMrr?: boolean }): Promise<CRMAccount[]> {
   const all: CRMAccount[] = []
   let page = 1
   while (true) {
@@ -86,5 +91,5 @@ export async function fetchAllCRMAccounts(): Promise<CRMAccount[]> {
     if (!data.info?.more_records) break
     page++
   }
-  return all.filter(a => a.mrr > 0)
+  return options?.includeZeroMrr ? all : all.filter(a => a.mrr > 0)
 }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import Link from 'next/link'
 import { AlertCircle, Check, Clipboard, RefreshCw, RotateCcw, Search, TriangleAlert } from 'lucide-react'
 import {
   Bar,
@@ -64,7 +65,15 @@ function countLabel(value: number, locale: Locale, fr: string, en: string): stri
 
 type DatePreset = 'all' | 'prev_month' | 'curr_month' | 'rolling_3m' | 'last_6m' | 'custom'
 type AttentionFilter = 'all' | 'attention' | 'blocked' | 'overdue' | 'high_risk'
+type ClientTypologyFilter = 'all' | 'group' | 'individual' | 'unlinked'
 type ComparisonTone = 'positive' | 'negative' | 'neutral' | 'muted'
+
+interface ClientLinkageMeta {
+  matched: number
+  unlinked: number
+  byId: number
+  byName: number
+}
 
 interface DateRange {
   from: string
@@ -118,6 +127,7 @@ export default function OnboardingPilotagePage() {
   const today = useMemo(() => isoDay(new Date()), [])
   const { user: currentUser, loading: currentUserLoading } = useCurrentUser()
   const [projects, setProjects] = useState<OnboardingProject[]>([])
+  const [clientLinkage, setClientLinkage] = useState<ClientLinkageMeta | null>(null)
   const [satisfaction, setSatisfaction] = useState<SatisfactionRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -137,6 +147,7 @@ export default function OnboardingPilotagePage() {
   const [productFilter, setProductFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [attentionFilter, setAttentionFilter] = useState<AttentionFilter>('all')
+  const [clientTypologyFilter, setClientTypologyFilter] = useState<ClientTypologyFilter>('all')
   const [search, setSearch] = useState('')
 
   useEffect(() => {
@@ -147,9 +158,12 @@ export default function OnboardingPilotagePage() {
     fetch('/api/zoho/projects', { signal: controller.signal })
       .then(response => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
-        return response.json() as Promise<{ projects?: OnboardingProject[] }>
+        return response.json() as Promise<{ projects?: OnboardingProject[]; meta?: { clientLinkage?: ClientLinkageMeta } }>
       })
-      .then(data => setProjects(data.projects ?? []))
+      .then(data => {
+        setProjects(data.projects ?? [])
+        setClientLinkage(data.meta?.clientLinkage ?? null)
+      })
       .catch(fetchError => {
         if (isAbortError(fetchError)) return
         console.error(fetchError)
@@ -220,9 +234,10 @@ export default function OnboardingPilotagePage() {
       productFilter,
       statusFilter,
       attentionFilter,
+      clientTypologyFilter,
       search,
     })),
-    [activeOwner, attentionFilter, baseProjects, productFilter, resolvedOwners, search, statusFilter],
+    [activeOwner, attentionFilter, baseProjects, clientTypologyFilter, productFilter, resolvedOwners, search, statusFilter],
   )
   const filteredProjects = useMemo(
     () => filterByDateRange(dimensionFilteredProjects, dateRange),
@@ -242,7 +257,7 @@ export default function OnboardingPilotagePage() {
     [filteredProjects],
   )
   const uniqueAccounts = useMemo(
-    () => new Set(filteredProjects.map(project => project.hotelName.trim()).filter(Boolean)).size,
+    () => new Set(filteredProjects.map(project => project.clientId ?? `hotel:${project.hotelName.trim().toLocaleLowerCase('fr-FR')}`).filter(Boolean)).size,
     [filteredProjects],
   )
 
@@ -268,17 +283,13 @@ export default function OnboardingPilotagePage() {
   const overloaded = perPerson.filter(person => person.chargePct > 100).length
   const perStatus = useMemo(() => buildStatusData(filteredProjects), [filteredProjects])
   const perProduct = useMemo(() => buildBreakdown(filteredProjects.map(project => project.product || 'Autre')), [filteredProjects])
-  const perTypology = useMemo(() => buildBreakdown(filteredProjects.map(project => project.clientType || 'Non renseigné')), [filteredProjects])
-  const typologyCoverage = useMemo(
-    () => filteredProjects.filter(project => Boolean(project.clientType?.trim())).length,
-    [filteredProjects],
-  )
+  const perTypology = useMemo(() => buildClientTypologyBreakdown(filteredProjects), [filteredProjects])
   const perLanguage = useMemo(() => buildBreakdown(filteredProjects.map(project => project.implementationLanguage || 'Non renseignée')), [filteredProjects])
   const chartRange = useMemo(() => dateRange ?? rollingMonthRange(12), [dateRange])
   const monthly = useMemo(() => buildMonthlyData(dimensionFilteredProjects, chartRange, locale), [chartRange, dimensionFilteredProjects, locale])
   const workloadTrend = useMemo(() => buildWorkloadTrend(dimensionFilteredProjects, chartRange, locale), [chartRange, dimensionFilteredProjects, locale])
-  const hasActiveFilters = activeOwner !== 'Tous' || datePreset !== 'all' || Boolean(productFilter || statusFilter || search) || attentionFilter !== 'all'
-  const nonSatisfactionFiltersActive = Boolean(productFilter || statusFilter) || attentionFilter !== 'all'
+  const hasActiveFilters = activeOwner !== 'Tous' || datePreset !== 'all' || Boolean(productFilter || statusFilter || search) || attentionFilter !== 'all' || clientTypologyFilter !== 'all'
+  const nonSatisfactionFiltersActive = Boolean(productFilter || statusFilter) || attentionFilter !== 'all' || clientTypologyFilter !== 'all'
   const canSyncSatisfaction = currentUser?.role === 'admin' || currentUser?.role === 'onboarder'
 
   async function handleSync() {
@@ -311,6 +322,7 @@ export default function OnboardingPilotagePage() {
     setProductFilter('')
     setStatusFilter('')
     setAttentionFilter('all')
+    setClientTypologyFilter('all')
     setSearch('')
   }
 
@@ -356,15 +368,23 @@ export default function OnboardingPilotagePage() {
               {dateRange ? `${formatRange(dateRange, locale)} · ${t('projets dont le planning chevauche la période')}` : t('Vue opérationnelle de tous les projets')}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={copyReport}
-            disabled={loading || Boolean(error)}
-            className="inline-flex items-center justify-center gap-2 self-start rounded-lg bg-[#59319f] px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3f2175] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8064b3] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {copyStatus === 'success' ? <Check aria-hidden="true" size={16} /> : <Clipboard aria-hidden="true" size={16} />}
-            {copyStatus === 'success' ? t('Rapport copié') : copyStatus === 'error' ? t('Copie impossible') : t('Copier le rapport')}
-          </button>
+          <div className="flex flex-col items-start gap-2 sm:items-end">
+            <nav className="inline-flex rounded-lg border border-[#ded8e8] bg-[#f7f5fa] p-1" aria-label={t('Vues onboarding')}>
+              <Link href="/onboarding" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Liste')}</Link>
+              <Link href="/onboarding/board" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">Board</Link>
+              <span aria-current="page" className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-[#59319f] shadow-sm">{t('Pilotage')}</span>
+              <Link href="/onboarding/clients" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Clients')}</Link>
+            </nav>
+            <button
+              type="button"
+              onClick={copyReport}
+              disabled={loading || Boolean(error)}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#59319f] px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3f2175] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8064b3] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {copyStatus === 'success' ? <Check aria-hidden="true" size={16} /> : <Clipboard aria-hidden="true" size={16} />}
+              {copyStatus === 'success' ? t('Rapport copié') : copyStatus === 'error' ? t('Copie impossible') : t('Copier le rapport')}
+            </button>
+          </div>
         </div>
         <p className="sr-only" aria-live="polite">
           {copyStatus === 'success' ? t('Le rapport a été copié.') : copyStatus === 'error' ? t('Le rapport n’a pas pu être copié.') : ''}
@@ -399,11 +419,12 @@ export default function OnboardingPilotagePage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
               <SelectFilter id="onboarding-owner" label={t('Chargé de projet')} value={activeOwner} onChange={setActiveOwner} options={['Tous', 'Implémentation', ...availableOwners]} optionLabel={value => t(value)} />
               <SelectFilter id="onboarding-product" label={t('Produit')} value={productFilter} onChange={setProductFilter} options={availableProducts} allLabel={t('Tous les produits')} />
               <SelectFilter id="onboarding-status" label={t('Statut')} value={statusFilter} onChange={setStatusFilter} options={STATUS_CONFIG.map(status => status.status)} optionLabel={value => t(statusLabel(value))} allLabel={t('Tous les statuts')} />
               <SelectFilter id="onboarding-attention" label={t('Signal')} value={attentionFilter} onChange={value => setAttentionFilter(value as AttentionFilter)} options={ATTENTION_OPTIONS.map(option => option.value)} optionLabel={value => t(ATTENTION_OPTIONS.find(option => option.value === value)?.label ?? value)} />
+              <SelectFilter id="onboarding-client-typology" label={t('Typologie client')} value={clientTypologyFilter} onChange={value => setClientTypologyFilter(value as ClientTypologyFilter)} options={['group', 'individual', 'unlinked']} optionLabel={value => t(typologyLabel(value as Exclude<ClientTypologyFilter, 'all'>))} allLabel={t('Toutes les typologies')} />
             </div>
           </div>
 
@@ -452,6 +473,12 @@ export default function OnboardingPilotagePage() {
               <KpiCard label={t('TTV moyen réel')} value={formatDuration(averageTtv, locale)} subtitle={`${t('Sur')} ${countLabel(currentTtvSamples.length, locale, 'projet', 'project')} ${t('avec démarrage et live réels')}`} comparison={ttvComparison} />
               <KpiCard label={t(dateRange ? 'Go-lives période' : 'Go-lives renseignés')} value={formatNumber(currentLiveCohort.length, locale)} subtitle={t(dateRange ? 'Champ Live date dans la période' : 'Projets avec une Live date Zoho')} comparison={goLiveComparison} accent="text-[#1c6437]" />
             </section>
+
+            {clientLinkage && clientLinkage.unlinked > 0 && (
+              <p className="text-xs text-[#696969]">
+                {clientLinkage.unlinked} {t(clientLinkage.unlinked === 1 ? 'projet non rattaché' : 'projets non rattachés')}
+              </p>
+            )}
 
             {attentionProjects.length > 0 && (
               <aside className="flex flex-col gap-3 rounded-xl border border-[#ead7a6] bg-[#fff9e8] p-4 sm:flex-row sm:items-center sm:justify-between" aria-label={t('Points d’attention')}>
@@ -532,9 +559,7 @@ export default function OnboardingPilotagePage() {
                 </ChartCard>
 
                 <section className="grid grid-cols-1 gap-5 lg:grid-cols-2" aria-label={t('Caractéristiques des projets')}>
-                  {typologyCoverage > 0
-                    ? <BreakdownCard title={t('Typologie client')} data={perTypology} />
-                    : <UnavailableDimensionCard title={t('Typologie client')} message={t('Le champ de typologie n’est renseigné sur aucun projet Zoho de ce périmètre. Ce graphique sera disponible dès que la source sera configurée.')} />}
+                  <BreakdownCard title={t('Typologie client')} data={perTypology} />
                   <BreakdownCard title={t('Langue d’implémentation')} data={perLanguage} />
                 </section>
               </>
@@ -770,7 +795,7 @@ function BreakdownCard({ title, data }: { title: string; data: Array<{ name: str
         <div className="mt-4 space-y-3">
           {data.slice(0, 8).map(item => (
             <div key={item.name} className="grid grid-cols-[minmax(100px,150px)_minmax(0,1fr)_44px] items-center gap-3">
-              <span className="truncate text-xs font-medium text-[#4a4a4a]" title={item.name}>{item.name}</span>
+              <span className="truncate text-xs font-medium text-[#4a4a4a]" title={t(item.name)}>{t(item.name)}</span>
               <div className="h-2 overflow-hidden rounded-full bg-[#e8e8e8]"><div className="h-full rounded-full bg-[#8c5bdb]" style={{ width: `${(item.value / max) * 100}%` }} /></div>
               <span className="text-right text-xs tabular-nums text-[#696969]">{item.value} <span className="text-[#9a9a9a]">· {total > 0 ? Math.round((item.value / total) * 100) : 0}%</span></span>
             </div>
@@ -1047,16 +1072,33 @@ function filterByDateRange(projects: OnboardingProject[], range: DateRange | nul
   })
 }
 
-function projectMatchesFilters(project: OnboardingProject, filters: { activeOwner: string; resolvedOwners: string[]; productFilter: string; statusFilter: string; attentionFilter: AttentionFilter; search: string }): boolean {
+function typologyLabel(typology: Exclude<ClientTypologyFilter, 'all'>): string {
+  if (typology === 'group') return 'Groupe'
+  if (typology === 'individual') return 'Individuel'
+  return 'Non rattaché'
+}
+
+function buildClientTypologyBreakdown(projects: OnboardingProject[]): Array<{ name: string; value: number }> {
+  const clients = new Map<string, Exclude<ClientTypologyFilter, 'all'>>()
+  for (const project of projects) {
+    const hotelKey = project.hotelName.trim().toLocaleLowerCase('fr-FR')
+    const key = project.clientId ?? `hotel:${hotelKey}`
+    clients.set(key, project.clientTypology)
+  }
+  return buildBreakdown([...clients.values()].map(typologyLabel))
+}
+
+function projectMatchesFilters(project: OnboardingProject, filters: { activeOwner: string; resolvedOwners: string[]; productFilter: string; statusFilter: string; attentionFilter: AttentionFilter; clientTypologyFilter: ClientTypologyFilter; search: string }): boolean {
   if (filters.activeOwner !== 'Tous' && !filters.resolvedOwners.includes(project.ownerShort)) return false
   if (filters.productFilter && (project.product || 'Autre') !== filters.productFilter) return false
   if (filters.statusFilter && project.status !== filters.statusFilter) return false
+  if (filters.clientTypologyFilter !== 'all' && project.clientTypology !== filters.clientTypologyFilter) return false
   if (filters.attentionFilter === 'attention' && !isAttentionProject(project)) return false
   if (filters.attentionFilter === 'blocked' && !project.isBlocked) return false
   if (filters.attentionFilter === 'overdue' && !project.isOverdue) return false
   if (filters.attentionFilter === 'high_risk' && project.riskLevel !== 'high' && project.riskLevel !== 'critical') return false
   if (filters.search) {
-    const haystack = [project.name, project.hotelName, project.ownerName, project.product, project.pms, project.csmName, project.accountCRMName, project.statusLabel].filter(Boolean).join(' ').toLocaleLowerCase('fr-FR')
+    const haystack = [project.name, project.hotelName, project.ownerName, project.product, project.pms, project.csmName, project.accountCRMName, project.clientName, project.statusLabel].filter(Boolean).join(' ').toLocaleLowerCase('fr-FR')
     if (!haystack.includes(filters.search.trim().toLocaleLowerCase('fr-FR'))) return false
   }
   return true

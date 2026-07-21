@@ -2,6 +2,8 @@ import { unstable_cache } from 'next/cache'
 import { NextRequest, NextResponse } from 'next/server'
 import { fetchProjects } from '@/lib/zoho/projectsClient'
 import { ZOHO_PROJECTS_CACHE_SECONDS } from '@/lib/zoho/constants'
+import { getCRMAccountsMap } from '@/lib/zoho/accountCache'
+import { enrichProjectsWithClients } from '@/lib/onboarding/clientResolver'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -16,8 +18,21 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = req.nextUrl
     const status = searchParams.get('status') ?? ''
-    const projects = await getProjectsData(status)
-    return NextResponse.json({ projects })
+    const [projects, crmAccounts] = await Promise.all([
+      getProjectsData(status),
+      getCRMAccountsMap().catch(error => {
+        console.warn(
+          '[zoho/projects] CRM enrichment unavailable:',
+          error instanceof Error ? error.message : String(error),
+        )
+        return new Map()
+      }),
+    ])
+    const enriched = enrichProjectsWithClients(projects, crmAccounts)
+    return NextResponse.json({
+      projects: enriched.projects,
+      meta: { clientLinkage: enriched.meta },
+    })
   } catch (err) {
     console.error('[zoho/projects] GET error:', err)
     return NextResponse.json(
