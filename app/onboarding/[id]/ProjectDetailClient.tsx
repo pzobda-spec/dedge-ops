@@ -18,6 +18,8 @@ import EmailComposer from '@/components/onboarding/EmailComposer'
 import ProjectWorkspace from '@/components/onboarding/ProjectWorkspace'
 import TrainingAttendance from '@/components/onboarding/TrainingAttendance'
 import Timeline from '@/components/onboarding/Timeline'
+import { useLocale } from '@/lib/i18n/LocaleContext'
+import type { Locale } from '@/lib/i18n/locale'
 import type { EmailTemplateKey } from '@/lib/onboarding/email-templates'
 import type { ProjectEvent } from '@/lib/onboarding/events'
 import type { OnboardingProjectDetail, ProjectStatusReport } from '@/lib/onboarding/projects'
@@ -30,10 +32,10 @@ const tabs = [
 
 type TabKey = typeof tabs[number]['key']
 
-function formatDateTime(value: string): string {
+function formatDateTime(value: string, locale: Locale): string {
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Date invalide'
-  return new Intl.DateTimeFormat('fr-FR', {
+  if (Number.isNaN(date.getTime())) return locale === 'en' ? 'Invalid date' : 'Date invalide'
+  return new Intl.DateTimeFormat(locale === 'en' ? 'en-GB' : 'fr-FR', {
     dateStyle: 'medium',
     timeStyle: 'short',
     timeZone: 'Europe/Paris',
@@ -53,9 +55,9 @@ function parseDateOnly(value: string): Date | null {
   return date
 }
 
-function formatProjectDate(value: string): string {
+function formatProjectDate(value: string, locale: Locale): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value)
-  if (!match || !parseDateOnly(value)) return 'Date invalide'
+  if (!match || !parseDateOnly(value)) return locale === 'en' ? 'Invalid date' : 'Date invalide'
   return `${match[3]}/${match[2]}/${match[1]}`
 }
 
@@ -66,7 +68,11 @@ function daysBetween(start: string, end: string): number | null {
   return Math.round((endDate.getTime() - startDate.getTime()) / 86_400_000)
 }
 
-function projectDayLabel(days: number): string {
+function projectDayLabel(days: number, locale: Locale): string {
+  if (locale === 'en') {
+    if (days === 0) return 'on launch day'
+    return days > 0 ? `on day +${days}` : `${Math.abs(days)} days before launch`
+  }
   if (days === 0) return 'le jour du démarrage'
   return days > 0 ? `à J+${days}` : `${Math.abs(days)} j avant le démarrage`
 }
@@ -74,6 +80,7 @@ function projectDayLabel(days: number): string {
 // ─── Force sync button ─────────────────────────────────────────────────────────
 
 export function ForceSyncButton({ projectId }: { projectId: string }) {
+  const { locale, t } = useLocale()
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null)
@@ -88,19 +95,19 @@ export function ForceSyncButton({ projectId }: { projectId: string }) {
       const text = await res.text()
       let data: { error?: string; synced?: number } = {}
       try { data = text ? JSON.parse(text) : {} } catch { data = { error: text } }
-      if (!res.ok) throw new Error(data.error || `La synchronisation a échoué (HTTP ${res.status}).`)
+      if (!res.ok) throw new Error(data.error || (locale === 'en' ? `Sync failed (HTTP ${res.status}).` : `La synchronisation a échoué (HTTP ${res.status}).`))
       const synced = data.synced ?? 0
       setFeedback({
         tone: 'success',
         message: synced > 0
-          ? `${synced} projet${synced > 1 ? 's' : ''} synchronisé${synced > 1 ? 's' : ''}.`
-          : 'Synchronisation terminée, aucun changement détecté.',
+          ? (locale === 'en' ? `${synced} project${synced > 1 ? 's' : ''} synced.` : `${synced} projet${synced > 1 ? 's' : ''} synchronisé${synced > 1 ? 's' : ''}.`)
+          : (locale === 'en' ? 'Sync complete, no changes detected.' : 'Synchronisation terminée, aucun changement détecté.'),
       })
       router.refresh()
     } catch (err) {
       setFeedback({
         tone: 'error',
-        message: err instanceof Error ? err.message : 'Impossible de synchroniser le projet.',
+        message: err instanceof Error ? err.message : (locale === 'en' ? 'Unable to sync the project.' : 'Impossible de synchroniser le projet.'),
       })
     } finally {
       setLoading(false)
@@ -117,7 +124,7 @@ export function ForceSyncButton({ projectId }: { projectId: string }) {
         className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#59319f] px-3 py-2 text-sm font-medium text-[#59319f] transition-colors hover:bg-[#f3eeff] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#59319f] focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-50"
       >
         <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
-        {loading ? 'Synchronisation…' : 'Actualiser depuis Zoho'}
+        {loading ? t('Synchronisation…') : t('Actualiser depuis Zoho')}
       </button>
       {feedback && (
         <span
@@ -175,6 +182,7 @@ function ExecutiveSummary({
   project: OnboardingProjectDetail
   canGenerate: boolean
 }) {
+  const { locale, t } = useLocale()
   const [summary, setSummary] = useState(project.executive_summary)
   const [generatedAt, setGeneratedAt] = useState(project.executive_summary_generated_at)
   const [loading, setLoading] = useState(false)
@@ -196,7 +204,7 @@ function ExecutiveSummary({
       setSummary(data.summary ?? null)
       setGeneratedAt(data.generated_at ?? null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Impossible de générer le résumé.')
+      setError(err instanceof Error ? err.message : (locale === 'en' ? 'Unable to generate the summary.' : 'Impossible de générer le résumé.'))
     } finally {
       setLoading(false)
     }
@@ -208,11 +216,11 @@ function ExecutiveSummary({
         <div>
           <div className="flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-[#59319f]" aria-hidden="true" />
-            <h3 className="text-base font-semibold text-[#1a1a1a]">Résumé exécutif</h3>
+            <h3 className="text-base font-semibold text-[#1a1a1a]">{t('Résumé exécutif')}</h3>
           </div>
           <p className="mt-1 text-xs leading-5 text-[#696969]">
-            Synthèse courte du contexte et de l&apos;avancement.
-            {generatedAt && ` Dernière génération : ${formatDateTime(generatedAt)}.`}
+            {t('Synthèse courte du contexte et de l\'avancement.')}
+            {generatedAt && ` ${t('Dernière génération')} : ${formatDateTime(generatedAt, locale)}.`}
           </p>
         </div>
         {canGenerate && (
@@ -224,7 +232,7 @@ function ExecutiveSummary({
             className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#59319f] px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-[#7b4dc4] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#59319f] focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-50 sm:w-auto"
           >
             {loading ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Sparkles className="h-4 w-4" aria-hidden="true" />}
-            {loading ? 'Génération…' : summary ? 'Régénérer' : 'Générer le résumé'}
+            {loading ? t('Génération…') : summary ? t('Régénérer') : t('Générer le résumé')}
           </button>
         )}
       </div>
@@ -233,7 +241,7 @@ function ExecutiveSummary({
         <p className="whitespace-pre-wrap rounded-lg bg-[#faf9f5] p-4 text-sm leading-6 text-[#4a4a4a]">{summary}</p>
       ) : (
         <p className="rounded-lg border border-dashed border-[#d9d9d9] px-4 py-5 text-sm text-[#696969]">
-          Aucun résumé généré pour ce projet.
+          {t('Aucun résumé généré pour ce projet.')}
         </p>
       )}
     </div>
@@ -247,6 +255,7 @@ function StatusReportSection({
   project: OnboardingProjectDetail
   canGenerate: boolean
 }) {
+  const { locale, t } = useLocale()
   const [report, setReport] = useState<ProjectStatusReport | null>(project.status_report)
   const [generatedAt, setGeneratedAt] = useState(project.status_report_generated_at)
   const [loading, setLoading] = useState(false)
@@ -265,7 +274,7 @@ function StatusReportSection({
       let payload: unknown
       try { payload = text ? JSON.parse(text) : null } catch { payload = null }
       if (typeof payload !== 'object' || payload === null) {
-        throw new Error(text || `Réponse invalide (HTTP ${response.status})`)
+        throw new Error(text || (locale === 'en' ? `Invalid response (HTTP ${response.status})` : `Réponse invalide (HTTP ${response.status})`))
       }
 
       const data = payload as {
@@ -282,7 +291,7 @@ function StatusReportSection({
     } catch (generateError) {
       setError(generateError instanceof Error
         ? generateError.message
-        : 'Impossible de générer l’état des lieux.')
+        : (locale === 'en' ? 'Unable to generate the status report.' : 'Impossible de générer l’état des lieux.'))
     } finally {
       setLoading(false)
     }
@@ -294,11 +303,11 @@ function StatusReportSection({
         <div>
           <div className="flex items-center gap-2">
             <ClipboardList className="h-4 w-4 text-[#59319f]" />
-            <h3 className="text-base font-semibold text-[#1a1a1a]">État des lieux</h3>
+            <h3 className="text-base font-semibold text-[#1a1a1a]">{t('État des lieux')}</h3>
           </div>
           <p className="mt-1 text-xs leading-5 text-[#696969]">
-            Vue d&apos;ensemble, timeline projet et journal de bord partagé.
-            {generatedAt && ` Dernière génération : ${formatDateTime(generatedAt)}.`}
+            {t('Vue d\'ensemble, timeline projet et journal de bord partagé.')}
+            {generatedAt && ` ${t('Dernière génération')} : ${formatDateTime(generatedAt, locale)}.`}
           </p>
         </div>
         {canGenerate && (
@@ -315,10 +324,10 @@ function StatusReportSection({
               <Sparkles className="h-4 w-4" />
             )}
             {loading
-              ? 'Analyse en cours…'
+              ? t('Analyse en cours…')
               : report
-                ? 'Régénérer'
-                : 'Générer un état des lieux'}
+                ? t('Régénérer')
+                : t('Générer un état des lieux')}
           </button>
         )}
       </div>
@@ -337,23 +346,25 @@ function StatusReportSection({
           </div>
 
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-[#696969]">État actuel</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#696969]">{t('État actuel')}</p>
             <p className="mt-1 text-sm leading-6 text-[#4a4a4a]">{report.current_status}</p>
           </div>
 
           <div className="grid gap-4 md:grid-cols-3">
-            <ReportList title="Faits marquants" items={report.key_updates} emptyLabel="Aucun fait marquant identifié." />
-            <ReportList title="Risques / blocages" items={report.risks} emptyLabel="Aucun risque documenté." tone="risk" />
-            <ReportList title="Prochaines étapes" items={report.next_steps} emptyLabel="Aucune prochaine étape documentée." tone="next" />
+            <ReportList title={t('Faits marquants')} items={report.key_updates} emptyLabel={t('Aucun fait marquant identifié.')} />
+            <ReportList title={t('Risques / blocages')} items={report.risks} emptyLabel={t('Aucun risque documenté.')} tone="risk" />
+            <ReportList title={t('Prochaines étapes')} items={report.next_steps} emptyLabel={t('Aucune prochaine étape documentée.')} tone="next" />
           </div>
 
           <p className="text-xs text-[#8a8a8a]">
-            Analyse basée sur {report.source_comment_count} commentaire{report.source_comment_count > 1 ? 's' : ''} Todoist.
+            {locale === 'en'
+              ? `Analysis based on ${report.source_comment_count} Todoist comment${report.source_comment_count > 1 ? 's' : ''}.`
+              : `Analyse basée sur ${report.source_comment_count} commentaire${report.source_comment_count > 1 ? 's' : ''} Todoist.`}
           </p>
         </div>
       ) : (
         <p className="text-sm text-[#696969]">
-          Aucun état des lieux généré.
+          {t('Aucun état des lieux généré.')}
         </p>
       )}
     </div>
@@ -415,6 +426,7 @@ export function ProjectDetailTabs({
   project: OnboardingProjectDetail
   readonly?: boolean
 }) {
+  const { locale, t } = useLocale()
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
   const [timeline, setTimeline] = useState<ProjectEvent[]>([])
   const [timelineLoading, setTimelineLoading] = useState(true)
@@ -430,16 +442,18 @@ export function ProjectDetailTabs({
       const res = await fetch(`/api/onboarding/projects/${encodeURIComponent(project.id)}/timeline`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json() as { events?: unknown }
-      if (!Array.isArray(data.events)) throw new Error('Réponse timeline invalide')
+      if (!Array.isArray(data.events)) throw new Error(locale === 'en' ? 'Invalid timeline response' : 'Réponse timeline invalide')
       setTimeline(data.events as ProjectEvent[])
     } catch (loadError) {
       console.error(loadError)
       setTimeline([])
-      setTimelineError('La timeline n’a pas pu être chargée. Les indicateurs de progression peuvent être incomplets.')
+      setTimelineError(locale === 'en'
+        ? 'The timeline could not be loaded. Progress indicators may be incomplete.'
+        : 'La timeline n’a pas pu être chargée. Les indicateurs de progression peuvent être incomplets.')
     } finally {
       setTimelineLoading(false)
     }
-  }, [project.id])
+  }, [project.id, locale])
 
   useEffect(() => {
     void loadTimeline()
@@ -465,18 +479,32 @@ export function ProjectDetailTabs({
   const targetVariance = project.target_go_live && project.actual_go_live
     ? daysBetween(project.target_go_live, project.actual_go_live)
     : null
-  const targetDetail = plannedDuration === null
-    ? 'Prévision issue de Zoho — ce n’est pas la date réelle.'
-    : `Prévision ${projectDayLabel(plannedDuration)} — ce n’est pas la date réelle.`
-  const actualDetail = actualDuration === null
-    ? 'Champ Zoho « Live date » uniquement.'
-    : targetVariance === null
-      ? `Mise en ligne ${projectDayLabel(actualDuration)}.`
-      : targetVariance === 0
-        ? `Mise en ligne ${projectDayLabel(actualDuration)}, conforme à la cible.`
-        : targetVariance > 0
-          ? `Mise en ligne ${projectDayLabel(actualDuration)}, ${targetVariance} j après la cible.`
-          : `Mise en ligne ${projectDayLabel(actualDuration)}, ${Math.abs(targetVariance)} j avant la cible.`
+  const targetDetail = locale === 'en'
+    ? (plannedDuration === null
+      ? 'Forecast from Zoho — not the actual date.'
+      : `Forecast ${projectDayLabel(plannedDuration, locale)} — not the actual date.`)
+    : (plannedDuration === null
+      ? 'Prévision issue de Zoho — ce n’est pas la date réelle.'
+      : `Prévision ${projectDayLabel(plannedDuration, locale)} — ce n’est pas la date réelle.`)
+  const actualDetail = locale === 'en'
+    ? (actualDuration === null
+      ? 'Zoho "Live date" field only.'
+      : targetVariance === null
+        ? `Live ${projectDayLabel(actualDuration, locale)}.`
+        : targetVariance === 0
+          ? `Live ${projectDayLabel(actualDuration, locale)}, matching the target.`
+          : targetVariance > 0
+            ? `Live ${projectDayLabel(actualDuration, locale)}, ${targetVariance} day${targetVariance > 1 ? 's' : ''} after target.`
+            : `Live ${projectDayLabel(actualDuration, locale)}, ${Math.abs(targetVariance)} day${Math.abs(targetVariance) > 1 ? 's' : ''} before target.`)
+    : (actualDuration === null
+      ? 'Champ Zoho « Live date » uniquement.'
+      : targetVariance === null
+        ? `Mise en ligne ${projectDayLabel(actualDuration, locale)}.`
+        : targetVariance === 0
+          ? `Mise en ligne ${projectDayLabel(actualDuration, locale)}, conforme à la cible.`
+          : targetVariance > 0
+            ? `Mise en ligne ${projectDayLabel(actualDuration, locale)}, ${targetVariance} j après la cible.`
+            : `Mise en ligne ${projectDayLabel(actualDuration, locale)}, ${Math.abs(targetVariance)} j avant la cible.`)
 
   return (
     <div className="space-y-6">
@@ -493,7 +521,7 @@ export function ProjectDetailTabs({
 
       <div className="overflow-hidden rounded-xl border border-[#e2e2e2] bg-white shadow-[0_4px_12px_rgba(0,0,0,0.05)]">
         <div className="border-b border-[#e2e2e2] px-3 pt-3 sm:px-6 sm:pt-4">
-          <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Sections du projet">
+          <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label={t('Sections du projet')}>
             {tabs.map(tab => (
               <button
                 key={tab.key}
@@ -509,7 +537,7 @@ export function ProjectDetailTabs({
                     : 'border-transparent text-[#696969] hover:text-[#1a1a1a]'
                 }`}
               >
-                {tab.label}
+                {t(tab.label)}
               </button>
             ))}
           </div>
@@ -526,15 +554,15 @@ export function ProjectDetailTabs({
               {readonly && (
                 <div className="flex items-start gap-2 rounded-lg border border-[#d4e4f8] bg-[#f4f8fe] px-4 py-3 text-sm text-[#2b5bb7]">
                   <AlertCircle className="mt-0.5 h-4 w-4 flex-none" aria-hidden="true" />
-                  <p>Vous consultez cette fiche en lecture seule. Les actions et modifications sont masquées.</p>
+                  <p>{t('Vous consultez cette fiche en lecture seule. Les actions et modifications sont masquées.')}</p>
                 </div>
               )}
 
               <section aria-labelledby="pilotage-title" className="space-y-5 rounded-xl border border-[#e2e2e2] bg-[#faf9f5] p-4 sm:p-6">
                 <div>
-                  <h2 id="pilotage-title" className="text-lg font-semibold text-[#1a1a1a]">Pilotage du projet</h2>
+                  <h2 id="pilotage-title" className="text-lg font-semibold text-[#1a1a1a]">{t('Pilotage du projet')}</h2>
                   <p className="mt-1 text-sm leading-5 text-[#696969]">
-                    Avancement, jalons prévisionnels et dates réellement enregistrées dans Zoho.
+                    {t('Avancement, jalons prévisionnels et dates réellement enregistrées dans Zoho.')}
                   </p>
                 </div>
 
@@ -549,7 +577,7 @@ export function ProjectDetailTabs({
                       onClick={() => void loadTimeline()}
                       className="self-start font-semibold underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#b7221b] sm:self-auto"
                     >
-                      Réessayer
+                      {t('Réessayer')}
                     </button>
                   </div>
                 )}
@@ -558,7 +586,7 @@ export function ProjectDetailTabs({
                   {timelineLoading && (
                     <p role="status" className="mb-3 inline-flex items-center gap-2 text-xs text-[#696969]">
                       <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                      Mise à jour de la progression…
+                      {t('Mise à jour de la progression…')}
                     </p>
                   )}
                   <ProjectWorkspace projectId={project.id} readonly={readonly} />
@@ -567,47 +595,47 @@ export function ProjectDetailTabs({
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <MetricCard
-                    label="Démarrage"
-                    value={project.start_date ? formatProjectDate(project.start_date) : 'Non renseigné'}
-                    detail="Date de début enregistrée dans Zoho."
+                    label={t('Démarrage')}
+                    value={project.start_date ? formatProjectDate(project.start_date, locale) : t('Non renseigné')}
+                    detail={t('Date de début enregistrée dans Zoho.')}
                     icon={<Calendar className="h-4 w-4" />}
                   />
                   <MetricCard
-                    label="Date cible (prévision)"
-                    value={project.target_go_live ? formatProjectDate(project.target_go_live) : 'Non renseignée'}
+                    label={t('Date cible (prévision)')}
+                    value={project.target_go_live ? formatProjectDate(project.target_go_live, locale) : t('Non renseignée')}
                     detail={targetDetail}
                     icon={<CalendarClock className="h-4 w-4" />}
                     tone="target"
                   />
                   <MetricCard
-                    label="Mise en ligne réelle"
-                    value={project.actual_go_live ? formatProjectDate(project.actual_go_live) : 'Non renseignée'}
+                    label={t('Mise en ligne réelle')}
+                    value={project.actual_go_live ? formatProjectDate(project.actual_go_live, locale) : t('Non renseignée')}
                     detail={actualDetail}
                     icon={<CalendarCheck className="h-4 w-4" />}
                     tone={project.actual_go_live ? 'success' : 'neutral'}
                   />
                   <MetricCard
-                    label="Données actualisées"
-                    value={project.last_synced_at ? formatDateTime(project.last_synced_at) : 'Jamais synchronisées'}
-                    detail="Dernière synchronisation réussie avec Zoho."
+                    label={t('Données actualisées')}
+                    value={project.last_synced_at ? formatDateTime(project.last_synced_at, locale) : t('Jamais synchronisées')}
+                    detail={t('Dernière synchronisation réussie avec Zoho.')}
                     icon={<RefreshCw className="h-4 w-4" />}
                   />
                 </div>
               </section>
 
-              <section aria-label="Synthèses du projet" className="rounded-xl border border-[#e2e2e2] bg-white p-4 sm:p-6">
+              <section aria-label={t('Synthèses du projet')} className="rounded-xl border border-[#e2e2e2] bg-white p-4 sm:p-6">
                 <ExecutiveSummary project={project} canGenerate={!readonly} />
               </section>
 
-              <section aria-label="État des lieux du projet" className="rounded-xl border border-[#e2e2e2] bg-white p-4 sm:p-6">
+              <section aria-label={t('État des lieux du projet')} className="rounded-xl border border-[#e2e2e2] bg-white p-4 sm:p-6">
                 <StatusReportSection project={project} canGenerate={!readonly} />
               </section>
 
               {!readonly && (
                 <section aria-labelledby="actions-title" className="space-y-6 rounded-xl border border-[#e2e2e2] bg-[#faf9f5] p-4 sm:p-6">
                   <div>
-                    <h2 id="actions-title" className="text-lg font-semibold text-[#1a1a1a]">Actions du projet</h2>
-                    <p className="mt-1 text-sm leading-5 text-[#696969]">Communications, rendez-vous et comptes rendus liés à cet onboarding.</p>
+                    <h2 id="actions-title" className="text-lg font-semibold text-[#1a1a1a]">{t('Actions du projet')}</h2>
+                    <p className="mt-1 text-sm leading-5 text-[#696969]">{t('Communications, rendez-vous et comptes rendus liés à cet onboarding.')}</p>
                   </div>
 
                   <div>
@@ -616,8 +644,8 @@ export function ProjectDetailTabs({
                         <Mail className="h-4 w-4" aria-hidden="true" />
                       </span>
                       <div>
-                        <h3 className="text-base font-semibold text-[#1a1a1a]">Communications</h3>
-                        <p className="mt-0.5 text-xs leading-5 text-[#696969]">Prévisualisez et copiez le message avant de consigner l&apos;envoi dans la timeline.</p>
+                        <h3 className="text-base font-semibold text-[#1a1a1a]">{t('Communications')}</h3>
+                        <p className="mt-0.5 text-xs leading-5 text-[#696969]">{t('Prévisualisez et copiez le message avant de consigner l\'envoi dans la timeline.')}</p>
                       </div>
                     </div>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -629,7 +657,7 @@ export function ProjectDetailTabs({
                           className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[#d9caef] bg-white px-3 py-2.5 text-left text-sm font-medium text-[#59319f] transition-colors hover:border-[#59319f] hover:bg-[#f3eeff] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#59319f] focus-visible:ring-offset-2"
                         >
                           <Mail className="h-4 w-4 flex-none" aria-hidden="true" />
-                          {action.label}
+                          {t(action.label)}
                         </button>
                       ))}
                     </div>
@@ -662,8 +690,8 @@ export function ProjectDetailTabs({
               className="rounded-xl border border-dashed border-[#d9d9d9] bg-[#faf9f5] px-5 py-10 text-center"
             >
               <Calendar className="mx-auto h-6 w-6 text-[#8a8a8a]" aria-hidden="true" />
-              <h2 className="mt-3 text-base font-semibold text-[#1a1a1a]">Documents du projet</h2>
-              <p className="mt-1 text-sm text-[#696969]">Cet espace sera disponible dans une prochaine version.</p>
+              <h2 className="mt-3 text-base font-semibold text-[#1a1a1a]">{t('Documents du projet')}</h2>
+              <p className="mt-1 text-sm text-[#696969]">{t('Cet espace sera disponible dans une prochaine version.')}</p>
             </div>
           )}
         </div>
@@ -674,7 +702,7 @@ export function ProjectDetailTabs({
           project={project}
           templateKey={emailComposer}
           onClose={() => setEmailComposer(null)}
-          onLogged={() => handleLogged('Email loggé.')}
+          onLogged={() => handleLogged(t('Email loggé.'))}
         />
       )}
     </div>

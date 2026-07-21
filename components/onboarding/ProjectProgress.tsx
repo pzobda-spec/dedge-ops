@@ -1,6 +1,7 @@
 'use client'
 
 import type { ProjectEvent, ProjectEventType } from '@/lib/onboarding/events'
+import { useLocale } from '@/lib/i18n/LocaleContext'
 
 const PROGRESS_BY_EVENT: Partial<Record<ProjectEventType, number>> = {
   project_created: 5,
@@ -19,6 +20,7 @@ export default function ProjectProgress({
   timeline: ProjectEvent[]
   zohoStatus?: string | null
 }) {
+  const { locale, t } = useLocale()
   const timelineProgress = timeline.reduce((max, event) => {
     return Math.max(max, PROGRESS_BY_EVENT[event.event_type] ?? 0)
   }, 0)
@@ -31,8 +33,8 @@ export default function ProjectProgress({
     <div className="bg-white border border-slate-200 rounded-xl p-5">
       <div className="flex items-center justify-between gap-4 mb-3">
         <div>
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Progression</p>
-          <p className="text-sm font-medium text-slate-900 mt-1">{progress}% complet</p>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('Progression')}</p>
+          <p className="text-sm font-medium text-slate-900 mt-1">{locale === 'en' ? `${progress}% complete` : `${progress}% complet`}</p>
         </div>
         <div className="flex items-center gap-2">
           {zohoStatus && (
@@ -42,7 +44,7 @@ export default function ProjectProgress({
           )}
           {isBlocked && (
             <span className="text-xs font-medium px-2 py-1 rounded bg-red-100 text-red-700">
-              Bloqué
+              {t('Bloqué')}
             </span>
           )}
         </div>

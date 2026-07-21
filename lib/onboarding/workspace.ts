@@ -5,7 +5,7 @@ export const PRODUCT_KEYS = ['campaigns', 'app', 'guest_profile'] as const
 export const OPTION_KEYS = ['membership_lite', 'whatsapp', 'loyalty_program'] as const
 export type ProjectProductKey = typeof PRODUCT_KEYS[number] | typeof OPTION_KEYS[number]
 
-export const PRODUCT_STATUSES = ['not_started', 'in_progress', 'pending_client', 'blocked', 'live', 'cancelled'] as const
+export const PRODUCT_STATUSES = ['not_started', 'in_progress', 'on_hold', 'pending_client', 'blocked', 'live', 'cancelled'] as const
 export type ProjectProductStatus = typeof PRODUCT_STATUSES[number]
 
 export const IMPLEMENTATION_PHASES = [

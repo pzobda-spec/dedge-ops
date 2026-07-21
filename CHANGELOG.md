@@ -6,10 +6,30 @@ Les entrées antérieures au 15 juillet 2026 ont été reconstituées à partir 
 l’historique Git ; elles synthétisent les changements fonctionnels encore
 pertinents plutôt que chaque correction intermédiaire.
 
+## 2026-07-21 — Traduction anglaise de l’onboarding et suivi de la charge
+
+### Ajouté
+
+- Version anglaise de l’espace onboarding (liste, board, fiche projet,
+  pilotage) avec un sélecteur FR/EN par utilisateur, préférence persistée dans
+  `user_settings.ui_language`.
+- Snapshots quotidiens de la charge par chargé de projet
+  (`onboarding_workload_snapshots`) et indicateur de régularité dans le
+  pilotage : nombre de jours consécutifs au-dessus de 80 % de charge sur la
+  période sélectionnée. Le suivi démarre à partir de cette date, sans
+  historique reconstitué.
+
 ## 2026-07-20 — Restauration fonctionnelle et fiabilisation des données
 
 ### Ajouté
 
+- Serveur MCP Onboarding connectable à Claude : lecture du contexte projet et
+  enregistrement sécurisé de comptes rendus, décisions, actions, mises à jour
+  produit et références Google Calendar.
+- Authentification OAuth 2.1 du connecteur via Supabase et le magic link
+  existant, avec droits d’écriture limités aux admins et onboarders.
+- Statut produit « En pause » avec raison et date de reprise, visible dans le
+  cockpit d’implémentation.
 - Mécanisme de backfill Zoho Desk complet et reprenable pour reconstituer les
   données analytiques disponibles dans l’API.
 - Snapshots quotidiens de chaque ticket, datés selon le jour métier

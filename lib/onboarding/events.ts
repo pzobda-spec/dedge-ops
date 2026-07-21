@@ -24,6 +24,7 @@ export type ProjectEventType =
   | 'v2_delivered'
   | 'go_live'
   | 'project_blocked'
+  | 'meeting_decision'
   | 'note_added'
 
 export interface ProjectEvent {

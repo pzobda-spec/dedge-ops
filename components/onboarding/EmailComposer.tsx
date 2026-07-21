@@ -8,6 +8,7 @@ import {
   type EmailTemplateKey,
 } from '@/lib/onboarding/email-templates'
 import type { OnboardingProjectDetail } from '@/lib/onboarding/projects'
+import { useLocale } from '@/lib/i18n/LocaleContext'
 
 interface UserSettings {
   acuity_link_15min?: string | null
@@ -44,6 +45,7 @@ function todayDate(): string {
 }
 
 export default function EmailComposer({ project, templateKey, onClose, onLogged }: EmailComposerProps) {
+  const { t } = useLocale()
   const [settings, setSettings] = useState<UserSettings>({})
   const [language, setLanguage] = useState<'fr' | 'en'>('fr')
   const [vars, setVars] = useState<Record<string, string>>({
@@ -98,7 +100,7 @@ export default function EmailComposer({ project, templateKey, onClose, onLogged 
 
   async function copyEmail() {
     await navigator.clipboard.writeText(`${subject}\n\n${body}`)
-    setMessage('Email copié.')
+    setMessage(t('Email copié.'))
   }
 
   function openGmail() {
@@ -127,7 +129,7 @@ export default function EmailComposer({ project, templateKey, onClose, onLogged 
       onLogged?.()
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Impossible de logger l’email.')
+      setError(err instanceof Error ? err.message : t('Impossible de logger l’email.'))
     } finally {
       setLogging(false)
     }
@@ -141,10 +143,10 @@ export default function EmailComposer({ project, templateKey, onClose, onLogged 
       <div className="w-full max-w-3xl rounded-xl bg-white border border-slate-200 shadow-xl max-h-[90vh] overflow-auto">
         <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-5">
           <div>
-            <h3 className="text-base font-semibold text-slate-900">{templateNames[templateKey]}</h3>
-            <p className="text-sm text-slate-500 mt-1">{project.hotel_name ?? 'Projet onboarding'}</p>
+            <h3 className="text-base font-semibold text-slate-900">{t(templateNames[templateKey])}</h3>
+            <p className="text-sm text-slate-500 mt-1">{project.hotel_name ?? t('Projet onboarding')}</p>
           </div>
-          <button onClick={onClose} className="p-2 rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-700" aria-label="Fermer">
+          <button onClick={onClose} className="p-2 rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-700" aria-label={t('Fermer')}>
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -152,38 +154,38 @@ export default function EmailComposer({ project, templateKey, onClose, onLogged 
         <div className="p-5 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <label className="block">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Langue</span>
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('Langue de l’email')}</span>
               <select value={language} onChange={e => setLanguage(e.target.value === 'en' ? 'en' : 'fr')} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
                 <option value="fr">FR</option>
                 <option value="en">EN</option>
               </select>
             </label>
             <label className="block">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Prénom client</span>
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('Prénom client')}</span>
               <input value={vars.prenom_client} onChange={e => updateVar('prenom_client', e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
             </label>
             <label className="block">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Prénom onboarder</span>
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('Prénom onboarder')}</span>
               <input value={vars.prenom_onboarder} onChange={e => updateVar('prenom_onboarder', e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
             </label>
             <label className="block">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Date du RDV</span>
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('Date du RDV')}</span>
               <input value={vars.date_rdv} onChange={e => updateVar('date_rdv', e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" placeholder="12/06/2026" />
             </label>
             {needsDrive && (
               <label className="block col-span-2">
-                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Lien Drive</span>
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('Lien Drive')}</span>
                 <input value={vars.drive_link} onChange={e => updateVar('drive_link', e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
               </label>
             )}
             {needsFollowup && (
               <>
                 <label className="block">
-                  <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Livrable précis</span>
+                  <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('Livrable précis')}</span>
                   <input value={vars.livrable_precis} onChange={e => updateVar('livrable_precis', e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
                 </label>
                 <label className="block">
-                  <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Date butoir</span>
+                  <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('Date butoir')}</span>
                   <input type="date" value={vars.date_butoir} onChange={e => updateVar('date_butoir', e.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
                 </label>
               </>
@@ -205,15 +207,15 @@ export default function EmailComposer({ project, templateKey, onClose, onLogged 
           <div className="flex flex-wrap justify-end gap-2">
             <button onClick={copyEmail} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50">
               <Copy className="h-4 w-4" />
-              Copier
+              {t('Copier')}
             </button>
             <button onClick={openGmail} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50">
               <ExternalLink className="h-4 w-4" />
-              Ouvrir dans Gmail
+              {t('Ouvrir dans Gmail')}
             </button>
             <button onClick={markSent} disabled={logging} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-700 disabled:opacity-50">
               <MailCheck className="h-4 w-4" />
-              {logging ? 'Logging…' : 'Marquer comme envoyé'}
+              {logging ? 'Logging…' : t('Marquer comme envoyé')}
             </button>
           </div>
         </div>

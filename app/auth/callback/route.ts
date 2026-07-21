@@ -2,10 +2,14 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
 
+function safeNextPath(value: string | null): string {
+  return value?.startsWith('/') && !value.startsWith('//') ? value : '/dashboard'
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
-  const next = searchParams.get('next') ?? '/dashboard'
+  const next = safeNextPath(searchParams.get('next'))
 
   if (code) {
     const cookieStore = await cookies()

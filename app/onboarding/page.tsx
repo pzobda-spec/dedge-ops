@@ -6,6 +6,8 @@ import type { OnboardingProject, ProjectStatus, RiskLevel } from '@/lib/zoho/pro
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
 import { IMPLEMENTATION_GROUP, isExcludedOnboardingOwner } from '@/lib/onboarding/constants'
 import { formatDate } from '@/lib/utils/dates'
+import { useLocale } from '@/lib/i18n/LocaleContext'
+import type { Locale } from '@/lib/i18n/locale'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -95,6 +97,10 @@ function plural(value: number, singular: string, pluralForm = `${singular}s`): s
   return value === 1 ? singular : pluralForm
 }
 
+function countLabel(value: number, locale: Locale, fr: string, en: string): string {
+  return `${value} ${locale === 'en' ? plural(value, en) : plural(value, fr)}`
+}
+
 function normalizePerson(value: string): string {
   return value
     .normalize('NFD')
@@ -106,31 +112,34 @@ function normalizePerson(value: string): string {
 // ─── Small components ────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: ProjectStatus }) {
+  const { t } = useLocale()
   const colors = STATUS_COLORS[status]
   return (
     <span className={`inline-flex rounded-md px-2 py-1 text-xs font-medium ${colors.bg} ${colors.text}`}>
-      {STATUS_LABELS[status]}
+      {t(STATUS_LABELS[status])}
     </span>
   )
 }
 
 function RiskBadge({ risk }: { risk: RiskLevel }) {
-  if (!risk) return <span className="text-xs text-[#9a9a9a]">Non renseigné</span>
+  const { t } = useLocale()
+  if (!risk) return <span className="text-xs text-[#9a9a9a]">{t('Non renseigné')}</span>
   return (
     <span className={`inline-flex rounded-md px-2 py-1 text-xs font-medium ${RISK_COLORS[risk]}`}>
-      {RISK_LABELS[risk]}
+      {t(RISK_LABELS[risk])}
     </span>
   )
 }
 
 function ProgressBar({ value }: { value: number }) {
+  const { t } = useLocale()
   const safeValue = Math.max(0, Math.min(value, 100))
   return (
     <div className="flex min-w-[120px] items-center gap-2.5">
       <div
         className="h-2 flex-1 overflow-hidden rounded-full bg-[#e8e8e8]"
         role="progressbar"
-        aria-label="Progression du projet"
+        aria-label={t('Progression du projet')}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={safeValue}
@@ -212,9 +221,10 @@ function KpiCard({
 }
 
 function LoadingState() {
+  const { t } = useLocale()
   return (
     <div className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-6 lg:px-8" aria-live="polite" aria-busy="true">
-      <p className="sr-only">Chargement des projets d’onboarding…</p>
+      <p className="sr-only">{t('Chargement des projets d’onboarding…')}</p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {Array.from({ length: 5 }).map((_, index) => (
           <div key={index} className="h-[132px] animate-pulse rounded-xl border border-[#e2e2e2] bg-white p-4">
@@ -233,6 +243,7 @@ function LoadingState() {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function MesProjetsPage() {
+  const { locale, t } = useLocale()
   const router = useRouter()
   const { user, loading: userLoading } = useCurrentUser()
   const [projects, setProjects] = useState<OnboardingProject[]>([])
@@ -257,12 +268,12 @@ export default function MesProjetsPage() {
         const response = await fetch('/api/zoho/projects', { signal: controller.signal })
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
         const data = await response.json() as { projects?: OnboardingProject[] }
-        if (!Array.isArray(data.projects)) throw new Error('Réponse invalide')
+        if (!Array.isArray(data.projects)) throw new Error(t('Réponse invalide'))
         setProjects(data.projects)
       } catch (loadError) {
         if (controller.signal.aborted) return
         console.error(loadError)
-        setError('Impossible de charger les projets d’onboarding.')
+        setError(t('Impossible de charger les projets d’onboarding.'))
       } finally {
         if (!controller.signal.aborted) setLoading(false)
       }
@@ -270,7 +281,7 @@ export default function MesProjetsPage() {
 
     void loadProjects()
     return () => controller.abort()
-  }, [requestKey])
+  }, [requestKey, t])
 
   const baseProjects = useMemo(
     () => projects.filter(project => !isExcludedOnboardingOwner(project.ownerShort)),
@@ -403,16 +414,16 @@ export default function MesProjetsPage() {
     <div style={{ fontFamily: 'var(--font-sans)', backgroundColor: 'var(--bg-canvas)' }} className="min-h-screen">
       <header className="border-b border-[#e2e2e2] bg-white">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-          <div><h1 className="text-xl font-semibold text-[#1f1f1f]">Projets d’implémentation</h1>
+          <div><h1 className="text-xl font-semibold text-[#1f1f1f]">{t('Projets d’implémentation')}</h1>
           <p className="mt-1 text-sm text-[#696969]">
             {isLoading
-              ? 'Chargement du portefeuille…'
+              ? t('Chargement du portefeuille…')
               : error
-                ? 'Le portefeuille est momentanément indisponible.'
-                : `${baseProjects.length} ${plural(baseProjects.length, 'projet')} · ${new Set(baseProjects.map(project => project.hotelName)).size} ${plural(new Set(baseProjects.map(project => project.hotelName)).size, 'compte')}`}
+                ? t('Le portefeuille est momentanément indisponible.')
+                : `${countLabel(baseProjects.length, locale, 'projet', 'project')} · ${countLabel(new Set(baseProjects.map(project => project.hotelName)).size, locale, 'compte', 'account')}`}
           </p></div>
-          <div className="inline-flex self-start rounded-lg border border-[#ded8e8] bg-[#f7f5fa] p-1" aria-label="Affichage des projets">
-            <button type="button" aria-pressed="true" className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-[#59319f] shadow-sm">Liste</button>
+          <div className="inline-flex self-start rounded-lg border border-[#ded8e8] bg-[#f7f5fa] p-1" aria-label={t('Affichage des projets')}>
+            <button type="button" aria-pressed="true" className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-[#59319f] shadow-sm">{t('Liste')}</button>
             <button type="button" onClick={() => router.push('/onboarding/board')} aria-pressed="false" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">Board</button>
           </div>
         </div>
@@ -424,22 +435,22 @@ export default function MesProjetsPage() {
         <main className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
           <div className="rounded-xl border border-[#f3b9b7] bg-white px-6 py-12 text-center shadow-sm" role="alert">
             <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[#fee3e2] font-semibold text-[#b7221b]" aria-hidden="true">!</div>
-            <h2 className="mt-4 text-base font-semibold text-[#1f1f1f]">Chargement impossible</h2>
+            <h2 className="mt-4 text-base font-semibold text-[#1f1f1f]">{t('Chargement impossible')}</h2>
             <p className="mt-1 text-sm text-[#696969]">{error}</p>
             <button
               type="button"
               onClick={() => setRequestKey(key => key + 1)}
               className="mt-5 rounded-lg bg-[#59319f] px-4 py-2 text-sm font-medium text-white hover:bg-[#48277f] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#59319f] focus-visible:ring-offset-2"
             >
-              Réessayer
+              {t('Réessayer')}
             </button>
           </div>
         </main>
       ) : (
         <main className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-6 lg:px-8">
           <section aria-labelledby="scope-heading">
-            <h2 id="scope-heading" className="sr-only">Périmètre du portefeuille</h2>
-            <div className="inline-flex w-full rounded-xl border border-[#e2e2e2] bg-white p-1 sm:w-auto" role="group" aria-label="Périmètre du portefeuille">
+            <h2 id="scope-heading" className="sr-only">{t('Périmètre du portefeuille')}</h2>
+            <div className="inline-flex w-full rounded-xl border border-[#e2e2e2] bg-white p-1 sm:w-auto" role="group" aria-label={t('Périmètre du portefeuille')}>
               {SCOPE_OPTIONS.map(option => (
                 <button
                   key={option.value}
@@ -452,7 +463,7 @@ export default function MesProjetsPage() {
                       : 'text-[#696969] hover:bg-[#f7f5fa] hover:text-[#59319f]'
                   }`}
                 >
-                  {option.label}
+                  {t(option.label)}
                 </button>
               ))}
             </div>
@@ -461,47 +472,47 @@ export default function MesProjetsPage() {
           <section aria-labelledby="kpi-heading">
             <div className="mb-3 flex items-end justify-between gap-3">
               <div>
-                <h2 id="kpi-heading" className="text-base font-semibold text-[#1f1f1f]">Priorités du portefeuille</h2>
-                <p className="mt-0.5 text-xs text-[#696969]">Cliquez sur un indicateur pour afficher les projets concernés.</p>
+                <h2 id="kpi-heading" className="text-base font-semibold text-[#1f1f1f]">{t('Priorités du portefeuille')}</h2>
+                <p className="mt-0.5 text-xs text-[#696969]">{t('Cliquez sur un indicateur pour afficher les projets concernés.')}</p>
               </div>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
               <KpiCard
-                label="Projets du périmètre"
+                label={t('Projets du périmètre')}
                 value={metrics.total}
-                detail={`${metrics.accounts} ${plural(metrics.accounts, 'compte')}`}
+                detail={countLabel(metrics.accounts, locale, 'compte', 'account')}
                 tone="neutral"
                 selected={statusFilter === 'all' && riskFilter === 'all' && !overdueOnly}
                 onClick={showAllPortfolio}
               />
               <KpiCard
-                label="Bloqués"
+                label={t('Bloqués')}
                 value={metrics.blocked}
-                detail="À débloquer en priorité"
+                detail={t('À débloquer en priorité')}
                 tone="danger"
                 selected={statusFilter === 'blocked' && riskFilter === 'all' && !overdueOnly}
                 onClick={showBlockedProjects}
               />
               <KpiCard
-                label="Risque élevé"
+                label={t('Risque élevé')}
                 value={metrics.highRisk}
-                detail="Niveau élevé ou critique"
+                detail={t('Niveau élevé ou critique')}
                 tone="warning"
                 selected={statusFilter === 'all' && riskFilter === 'high_or_critical' && !overdueOnly}
                 onClick={showHighRiskProjects}
               />
               <KpiCard
-                label="Date cible dépassée"
+                label={t('Date cible dépassée')}
                 value={metrics.overdue}
-                detail="Hors projets déjà live"
+                detail={t('Hors projets déjà live')}
                 tone="amber"
                 selected={statusFilter === 'all' && riskFilter === 'all' && overdueOnly}
                 onClick={showOverdueProjects}
               />
               <KpiCard
-                label="En attente client"
+                label={t('En attente client')}
                 value={metrics.pendingClient}
-                detail="Dépendance côté client"
+                detail={t('Dépendance côté client')}
                 tone="client"
                 selected={statusFilter === 'pending_client' && riskFilter === 'all' && !overdueOnly}
                 onClick={showPendingClientProjects}
@@ -512,9 +523,11 @@ export default function MesProjetsPage() {
           <section className="rounded-xl border border-[#e2e2e2] bg-white p-4 shadow-[0_2px_8px_rgba(0,0,0,0.04)]" aria-labelledby="filters-heading">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 id="filters-heading" className="text-sm font-semibold text-[#1f1f1f]">Affiner la liste</h2>
+                <h2 id="filters-heading" className="text-sm font-semibold text-[#1f1f1f]">{t('Affiner la liste')}</h2>
                 <p className="mt-0.5 text-xs text-[#696969]">
-                  {filteredProjects.length} {plural(filteredProjects.length, 'projet')} affiché{filteredProjects.length === 1 ? '' : 's'}
+                  {locale === 'en'
+                    ? `${countLabel(filteredProjects.length, locale, 'project', 'project')} shown`
+                    : `${filteredProjects.length} ${plural(filteredProjects.length, 'projet')} affiché${filteredProjects.length === 1 ? '' : 's'}`}
                 </p>
               </div>
               {hasListFilters && (
@@ -523,14 +536,14 @@ export default function MesProjetsPage() {
                   onClick={resetListFilters}
                   className="self-start text-xs font-medium text-[#59319f] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#59319f] sm:self-auto"
                 >
-                  Effacer les filtres
+                  {t('Effacer les filtres')}
                 </button>
               )}
             </div>
 
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[minmax(260px,1.5fr)_repeat(3,minmax(150px,1fr))]">
               <label className="block">
-                <span className="mb-1.5 block text-xs font-medium text-[#4a4a4a]">Recherche</span>
+                <span className="mb-1.5 block text-xs font-medium text-[#4a4a4a]">{t('Recherche')}</span>
                 <div className="relative">
                   <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8a8a8a]" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                     <circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" strokeWidth="1.5" />
@@ -538,7 +551,7 @@ export default function MesProjetsPage() {
                   </svg>
                   <input
                     type="search"
-                    placeholder="Hôtel, produit, responsable, PMS…"
+                    placeholder={t('Hôtel, produit, responsable, PMS…')}
                     value={search}
                     onChange={event => setSearch(event.target.value)}
                     className="h-10 w-full rounded-lg border border-[#d8d8d8] bg-white pl-9 pr-3 text-sm text-[#1a1a1a] placeholder:text-[#9a9a9a] focus:border-[#8c5bdb] focus:outline-none focus:ring-2 focus:ring-[#e8dbfa]"
@@ -547,44 +560,44 @@ export default function MesProjetsPage() {
               </label>
 
               <label className={scope === 'mine' ? 'hidden' : 'block'}>
-                <span className="mb-1.5 block text-xs font-medium text-[#4a4a4a]">Responsable</span>
+                <span className="mb-1.5 block text-xs font-medium text-[#4a4a4a]">{t('Responsable')}</span>
                 <select
                   value={ownerFilter}
                   onChange={event => setOwnerFilter(event.target.value)}
                   className="h-10 w-full rounded-lg border border-[#d8d8d8] bg-white px-3 text-sm text-[#1a1a1a] focus:border-[#8c5bdb] focus:outline-none focus:ring-2 focus:ring-[#e8dbfa]"
                 >
-                  <option value="all">Tous les responsables</option>
+                  <option value="all">{t('Tous les responsables')}</option>
                   {owners.map(owner => <option key={owner} value={owner}>{owner}</option>)}
                 </select>
               </label>
 
               <label className="block">
-                <span className="mb-1.5 block text-xs font-medium text-[#4a4a4a]">Statut Zoho</span>
+                <span className="mb-1.5 block text-xs font-medium text-[#4a4a4a]">{t('Statut Zoho')}</span>
                 <select
                   value={statusFilter}
                   onChange={event => setStatusFilter(event.target.value as ProjectStatus | 'all')}
                   className="h-10 w-full rounded-lg border border-[#d8d8d8] bg-white px-3 text-sm text-[#1a1a1a] focus:border-[#8c5bdb] focus:outline-none focus:ring-2 focus:ring-[#e8dbfa]"
                 >
-                  <option value="all">Tous les statuts</option>
+                  <option value="all">{t('Tous les statuts')}</option>
                   {(Object.entries(STATUS_LABELS) as [ProjectStatus, string][]).map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
+                    <option key={value} value={value}>{t(label)}</option>
                   ))}
                 </select>
               </label>
 
               <label className="block">
-                <span className="mb-1.5 block text-xs font-medium text-[#4a4a4a]">Niveau de risque</span>
+                <span className="mb-1.5 block text-xs font-medium text-[#4a4a4a]">{t('Niveau de risque')}</span>
                 <select
                   value={riskFilter}
                   onChange={event => setRiskFilter(event.target.value as RiskFilter)}
                   className="h-10 w-full rounded-lg border border-[#d8d8d8] bg-white px-3 text-sm text-[#1a1a1a] focus:border-[#8c5bdb] focus:outline-none focus:ring-2 focus:ring-[#e8dbfa]"
                 >
-                  <option value="all">Tous les niveaux</option>
-                  <option value="high_or_critical">Élevé ou critique</option>
-                  <option value="critical">Critique</option>
-                  <option value="high">Élevé</option>
-                  <option value="medium">Modéré</option>
-                  <option value="low">Faible</option>
+                  <option value="all">{t('Tous les niveaux')}</option>
+                  <option value="high_or_critical">{t('Élevé ou critique')}</option>
+                  <option value="critical">{t('Critique')}</option>
+                  <option value="high">{t('Élevé')}</option>
+                  <option value="medium">{t('Modéré')}</option>
+                  <option value="low">{t('Faible')}</option>
                 </select>
               </label>
             </div>
@@ -596,15 +609,15 @@ export default function MesProjetsPage() {
                 onChange={event => setOverdueOnly(event.target.checked)}
                 className="h-4 w-4 rounded border-[#c6c6c6] text-[#59319f] focus:ring-[#8c5bdb]"
               />
-              Uniquement les dates cibles dépassées
+              {t('Uniquement les dates cibles dépassées')}
             </label>
           </section>
 
           <section aria-labelledby="projects-heading">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
-                <h2 id="projects-heading" className="text-base font-semibold text-[#1f1f1f]">Projets</h2>
-                <p className="mt-0.5 text-xs text-[#696969]">Les alertes les plus prioritaires apparaissent en premier.</p>
+                <h2 id="projects-heading" className="text-base font-semibold text-[#1f1f1f]">{t('Projets')}</h2>
+                <p className="mt-0.5 text-xs text-[#696969]">{t('Les alertes les plus prioritaires apparaissent en premier.')}</p>
               </div>
               <span className="rounded-full bg-[#eee8f8] px-2.5 py-1 text-xs font-semibold tabular-nums text-[#59319f]">
                 {filteredProjects.length}
@@ -616,11 +629,11 @@ export default function MesProjetsPage() {
                 <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[#f0eafb] text-lg text-[#59319f]" aria-hidden="true">⌕</div>
                 <h3 className="mt-4 text-sm font-semibold text-[#1f1f1f]">
                   {scope === 'mine' && portfolioProjects.length === 0
-                    ? 'Aucun projet ne vous est attribué'
-                    : 'Aucun projet trouvé'}
+                    ? t('Aucun projet ne vous est attribué')
+                    : t('Aucun projet trouvé')}
                 </h3>
                 <p className="mt-1 text-sm text-[#696969]">
-                  {hasListFilters ? 'Modifiez ou effacez les filtres pour élargir la liste.' : 'Ce périmètre ne contient actuellement aucun projet.'}
+                  {hasListFilters ? t('Modifiez ou effacez les filtres pour élargir la liste.') : t('Ce périmètre ne contient actuellement aucun projet.')}
                 </p>
                 {hasListFilters && (
                   <button
@@ -628,7 +641,7 @@ export default function MesProjetsPage() {
                     onClick={resetListFilters}
                     className="mt-4 rounded-lg border border-[#c8b1eb] bg-white px-3 py-2 text-xs font-medium text-[#59319f] hover:bg-[#f7f5fa] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#59319f]"
                   >
-                    Effacer les filtres
+                    {t('Effacer les filtres')}
                   </button>
                 )}
               </div>
@@ -639,13 +652,13 @@ export default function MesProjetsPage() {
                     <table className="w-full min-w-[1080px] text-sm">
                       <thead className="border-b border-[#e2e2e2] bg-[#f7f7f7]">
                         <tr>
-                          <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#696969]">Hôtel / compte</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#696969]">Produit</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#696969]">Responsable</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#696969]">Statut Zoho</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#696969]">Risque</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#696969]">Progression</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#696969]">Go-live cible</th>
+                          <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#696969]">{t('Hôtel / compte')}</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#696969]">{t('Produit')}</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#696969]">{t('Responsable')}</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#696969]">{t('Statut Zoho')}</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#696969]">{t('Risque')}</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#696969]">{t('Progression')}</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#696969]">{t('Go-live cible')}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#ededed]">
@@ -654,7 +667,7 @@ export default function MesProjetsPage() {
                             key={project.id}
                             role="link"
                             tabIndex={0}
-                            aria-label={`Ouvrir le projet ${project.hotelName}`}
+                            aria-label={`${t('Ouvrir le projet')} ${project.hotelName}`}
                             onClick={() => openProject(project)}
                             onKeyDown={event => {
                               if (event.key === 'Enter' || event.key === ' ') {
@@ -666,7 +679,7 @@ export default function MesProjetsPage() {
                           >
                             <td className="px-5 py-3.5">
                               <div className="flex items-center gap-2">
-                                {project.isBlocked && <span className="h-2 w-2 flex-none rounded-full bg-[#ed524e]" aria-label="Projet bloqué" />}
+                                {project.isBlocked && <span className="h-2 w-2 flex-none rounded-full bg-[#ed524e]" aria-label={t('Projet bloqué')} />}
                                 <span className="max-w-[230px] truncate font-medium text-[#1a1a1a]">{project.hotelName}</span>
                               </div>
                               {project.accountCRMName && (
@@ -677,18 +690,18 @@ export default function MesProjetsPage() {
                               {project.product ? (
                                 <span className={`inline-flex rounded-md px-2 py-1 text-xs font-medium ${productBadge(project.product)}`}>{project.product}</span>
                               ) : (
-                                <span className="text-xs text-[#9a9a9a]">Non renseigné</span>
+                                <span className="text-xs text-[#9a9a9a]">{t('Non renseigné')}</span>
                               )}
                             </td>
-                            <td className="px-4 py-3.5 text-sm text-[#4a4a4a]">{project.ownerShort || 'Non assigné'}</td>
+                            <td className="px-4 py-3.5 text-sm text-[#4a4a4a]">{project.ownerShort || t('Non assigné')}</td>
                             <td className="px-4 py-3.5"><StatusBadge status={project.status} /></td>
                             <td className="px-4 py-3.5"><RiskBadge risk={project.riskLevel} /></td>
                             <td className="w-44 px-4 py-3.5"><ProgressBar value={project.percentComplete} /></td>
                             <td className="px-4 py-3.5 whitespace-nowrap">
                               <span className={`text-xs font-medium ${project.isOverdue ? 'text-[#b7221b]' : 'text-[#4a4a4a]'}`}>
-                                {project.endDate ? formatDate(project.endDate) : 'Non renseignée'}
+                                {project.endDate ? formatDate(project.endDate) : t('Non renseignée')}
                               </span>
-                              {project.isOverdue && <p className="mt-1 text-[11px] font-medium text-[#b7221b]">Date dépassée</p>}
+                              {project.isOverdue && <p className="mt-1 text-[11px] font-medium text-[#b7221b]">{t('Date dépassée')}</p>}
                             </td>
                           </tr>
                         ))}
@@ -703,7 +716,7 @@ export default function MesProjetsPage() {
                       key={project.id}
                       type="button"
                       onClick={() => openProject(project)}
-                      aria-label={`Ouvrir le projet ${project.hotelName}`}
+                      aria-label={`${t('Ouvrir le projet')} ${project.hotelName}`}
                       className="rounded-xl border border-[#e2e2e2] bg-white p-4 text-left shadow-[0_2px_8px_rgba(0,0,0,0.05)] transition hover:border-[#c8b1eb] hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-[#59319f] focus-visible:ring-offset-2"
                     >
                       <div className="flex items-start justify-between gap-3">
@@ -712,7 +725,7 @@ export default function MesProjetsPage() {
                             {project.isBlocked && <span className="h-2 w-2 flex-none rounded-full bg-[#ed524e]" aria-hidden="true" />}
                             <h3 className="truncate text-sm font-semibold text-[#1a1a1a]">{project.hotelName}</h3>
                           </div>
-                          <p className="mt-1 truncate text-xs text-[#696969]">{project.ownerShort || 'Non assigné'}</p>
+                          <p className="mt-1 truncate text-xs text-[#696969]">{project.ownerShort || t('Non assigné')}</p>
                         </div>
                         <svg className="mt-0.5 h-4 w-4 flex-none text-[#8a8a8a]" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                           <path d="m7.5 4.5 5 5-5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -726,19 +739,19 @@ export default function MesProjetsPage() {
                           <span className={`inline-flex rounded-md px-2 py-1 text-xs font-medium ${productBadge(project.product)}`}>{project.product}</span>
                         )}
                         {project.isOverdue && (
-                          <span className="inline-flex rounded-md bg-[#fee3e2] px-2 py-1 text-xs font-medium text-[#b7221b]">Date dépassée</span>
+                          <span className="inline-flex rounded-md bg-[#fee3e2] px-2 py-1 text-xs font-medium text-[#b7221b]">{t('Date dépassée')}</span>
                         )}
                       </div>
 
                       <div className="mt-4">
-                        <p className="mb-1.5 text-xs text-[#696969]">Progression</p>
+                        <p className="mb-1.5 text-xs text-[#696969]">{t('Progression')}</p>
                         <ProgressBar value={project.percentComplete} />
                       </div>
 
                       <div className="mt-4 flex items-center justify-between border-t border-[#ededed] pt-3 text-xs">
-                        <span className="text-[#696969]">Go-live cible</span>
+                        <span className="text-[#696969]">{t('Go-live cible')}</span>
                         <span className={`font-medium ${project.isOverdue ? 'text-[#b7221b]' : 'text-[#4a4a4a]'}`}>
-                          {project.endDate ? formatDate(project.endDate) : 'Non renseignée'}
+                          {project.endDate ? formatDate(project.endDate) : t('Non renseignée')}
                         </span>
                       </div>
                     </button>

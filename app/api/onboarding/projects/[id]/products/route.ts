@@ -24,12 +24,22 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       return NextResponse.json({ error: 'Ce produit ou cette option n’est pas activé sur le projet' }, { status: 400 })
     }
     const comment = typeof body.comment === 'string' && body.comment.trim() ? body.comment.trim() : null
+    const pausedUntil = body.status === 'on_hold' && typeof body.paused_until === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.paused_until)
+      ? body.paused_until
+      : null
+    const pauseReason = body.status === 'on_hold' && typeof body.pause_reason === 'string' && body.pause_reason.trim()
+      ? body.pause_reason.trim()
+      : null
+    if (body.status === 'on_hold' && (!pausedUntil || !pauseReason)) {
+      return NextResponse.json({ error: 'Une date de reprise et une raison sont requises pour mettre un produit en pause.' }, { status: 400 })
+    }
     const { data, error } = await supabaseAdmin.from('project_product_updates').upsert({
       project_id: project.id, product_key: body.product_key, status: body.status,
-      comment, updated_by: user.email, updated_at: new Date().toISOString(),
+      comment, paused_until: pausedUntil, pause_reason: pauseReason,
+      updated_by: user.email, updated_at: new Date().toISOString(),
     }, { onConflict: 'project_id,product_key' }).select('*').single()
     if (error) throw error
-    await logProjectEvent({ project_id: project.id, event_type: 'note_added', event_label: 'Avancement produit mis à jour', actor_email: user.email, metadata: { product_key: body.product_key, status: body.status, comment } })
+    await logProjectEvent({ project_id: project.id, event_type: 'note_added', event_label: 'Avancement produit mis à jour', actor_email: user.email, metadata: { product_key: body.product_key, status: body.status, comment, paused_until: pausedUntil, pause_reason: pauseReason } })
     return NextResponse.json({ product: data })
   } catch (error) {
     return authErrorResponse(error) ?? NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 })

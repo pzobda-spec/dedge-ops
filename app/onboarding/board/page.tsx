@@ -6,6 +6,7 @@ import { AlertTriangle, ExternalLink, RotateCcw, Search } from 'lucide-react'
 import type { OnboardingProject, ProjectStatus } from '@/lib/zoho/projectsClient'
 import { formatDate } from '@/lib/utils/dates'
 import { IMPLEMENTATION_GROUP, isExcludedOnboardingOwner } from '@/lib/onboarding/constants'
+import { useLocale } from '@/lib/i18n/LocaleContext'
 
 type AttentionFilter = 'all' | 'blocked' | 'overdue' | 'high_risk'
 type ScopeFilter = 'active' | 'all' | 'live'
@@ -67,6 +68,7 @@ function productBadge(product: string): string {
 }
 
 function ProjectCard({ project }: { project: OnboardingProject }) {
+  const { t } = useLocale()
   const highRisk = project.riskLevel === 'high' || project.riskLevel === 'critical'
   const progress = Math.min(Math.max(project.percentComplete, 0), 100)
 
@@ -80,8 +82,8 @@ function ProjectCard({ project }: { project: OnboardingProject }) {
           href={project.projectUrl}
           target="_blank"
           rel="noopener noreferrer"
-          aria-label={`Ouvrir ${project.hotelName} dans Zoho Projects`}
-          title="Ouvrir dans Zoho Projects"
+          aria-label={`${t('Ouvrir')} ${project.hotelName} ${t('dans Zoho Projects')}`}
+          title={t('Ouvrir dans Zoho Projects')}
           className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-[#ded8e8] text-[#696969] hover:border-[#c7b4e3] hover:bg-[#f5f0fb] hover:text-[#59319f] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8064b3]"
         >
           <ExternalLink aria-hidden="true" size={13} />
@@ -90,14 +92,14 @@ function ProjectCard({ project }: { project: OnboardingProject }) {
 
       <div className="mt-2 flex flex-wrap gap-1.5">
         {project.product && <span className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${productBadge(project.product)}`}>{project.product}</span>}
-        {project.isBlocked && <span className="rounded-md bg-[#fff0ef] px-2 py-0.5 text-[11px] font-semibold text-[#b7221b]">Bloqué</span>}
-        {project.isOverdue && <span className="rounded-md bg-[#fff7df] px-2 py-0.5 text-[11px] font-semibold text-[#84550e]">Go-live dépassé</span>}
-        {highRisk && <span className="rounded-md bg-[#fff2e8] px-2 py-0.5 text-[11px] font-semibold text-[#903b07]">Risque {project.riskLevel === 'critical' ? 'critique' : 'élevé'}</span>}
+        {project.isBlocked && <span className="rounded-md bg-[#fff0ef] px-2 py-0.5 text-[11px] font-semibold text-[#b7221b]">{t('Bloqué')}</span>}
+        {project.isOverdue && <span className="rounded-md bg-[#fff7df] px-2 py-0.5 text-[11px] font-semibold text-[#84550e]">{t('Go-live dépassé')}</span>}
+        {highRisk && <span className="rounded-md bg-[#fff2e8] px-2 py-0.5 text-[11px] font-semibold text-[#903b07]">{t('Risque')} {t(project.riskLevel === 'critical' ? 'critique' : 'élevé')}</span>}
       </div>
 
       <div className="mt-3">
         <div className="mb-1 flex items-center justify-between text-[11px]">
-          <span className="text-[#878787]">Progression déclarée</span>
+          <span className="text-[#878787]">{t('Progression déclarée')}</span>
           <span className="font-semibold tabular-nums text-[#4a4a4a]">{progress} %</span>
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-[#e7e3ea]">
@@ -108,24 +110,25 @@ function ProjectCard({ project }: { project: OnboardingProject }) {
       <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-[#eeeeee] pt-3 text-[11px]">
         <div className="min-w-0">
           <dt className="text-[#878787]">Owner</dt>
-          <dd className="truncate font-semibold text-[#4a4a4a]">{project.ownerShort || 'Non attribué'}</dd>
+          <dd className="truncate font-semibold text-[#4a4a4a]">{project.ownerShort || t('Non attribué')}</dd>
         </div>
         <div className="text-right">
-          <dt className="text-[#878787]">Go-live cible</dt>
+          <dt className="text-[#878787]">{t('Go-live cible')}</dt>
           <dd className={`font-semibold tabular-nums ${project.isOverdue ? 'text-[#b7221b]' : 'text-[#4a4a4a]'}`}>
-            {project.endDate ? formatDate(project.endDate) : 'Non renseigné'}
+            {project.endDate ? formatDate(project.endDate) : t('Non renseigné')}
           </dd>
         </div>
       </dl>
 
       <Link href={`/onboarding/${project.id}`} className="mt-3 inline-flex text-xs font-semibold text-[#59319f] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8064b3]">
-        Voir le détail
+        {t('Voir le détail')}
       </Link>
     </article>
   )
 }
 
 export default function OnboardingBoardPage() {
+  const { t } = useLocale()
   const [projects, setProjects] = useState<OnboardingProject[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -144,21 +147,21 @@ export default function OnboardingBoardPage() {
     fetch('/api/zoho/projects', { signal: controller.signal })
       .then(async response => {
         const body = await response.json().catch(() => ({}))
-        if (!response.ok) throw new Error(body.error ?? `Erreur HTTP ${response.status}`)
-        if (!Array.isArray(body.projects)) throw new Error('Réponse projets invalide')
+        if (!response.ok) throw new Error(body.error ?? `${t('Erreur HTTP')} ${response.status}`)
+        if (!Array.isArray(body.projects)) throw new Error(t('Réponse projets invalide'))
         return body.projects as OnboardingProject[]
       })
       .then(data => setProjects(data))
       .catch(fetchError => {
         if (fetchError instanceof Error && fetchError.name === 'AbortError') return
-        setError(fetchError instanceof Error ? fetchError.message : 'Impossible de charger les projets.')
+        setError(fetchError instanceof Error ? fetchError.message : t('Impossible de charger les projets.'))
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false)
       })
 
     return () => controller.abort()
-  }, [retryVersion])
+  }, [retryVersion, t])
 
   const baseProjects = useMemo(
     () => projects.filter(project => !isExcludedOnboardingOwner(project.ownerShort)),
@@ -213,12 +216,12 @@ export default function OnboardingBoardPage() {
       <header className="border-b border-[#e2e2e2] bg-white">
         <div className="mx-auto flex max-w-[1800px] flex-col gap-4 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
           <div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#8064b3]">Onboarding</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight">Projets d’implémentation</h1>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight">{t('Projets d’implémentation')}</h1>
           <p className="mt-1 text-sm text-[#696969]">
-            {loading ? 'Chargement des projets…' : error ? 'Données indisponibles' : 'Les projets à faire avancer, organisés par statut.'}
+            {loading ? t('Chargement des projets…') : error ? t('Données indisponibles') : t('Les projets à faire avancer, organisés par statut.')}
           </p></div>
-          <div className="inline-flex self-start rounded-lg border border-[#ded8e8] bg-[#f7f5fa] p-1" aria-label="Affichage des projets">
-            <Link href="/onboarding" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">Liste</Link>
+          <div className="inline-flex self-start rounded-lg border border-[#ded8e8] bg-[#f7f5fa] p-1" aria-label={t('Affichage des projets')}>
+            <Link href="/onboarding" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Liste')}</Link>
             <span aria-current="page" className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-[#59319f] shadow-sm">Board</span>
           </div>
         </div>
@@ -232,66 +235,66 @@ export default function OnboardingBoardPage() {
         ) : error ? (
           <div role="alert" className="flex flex-col gap-3 rounded-xl border border-[#efb4b0] bg-[#fff8f7] p-5 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="font-semibold text-[#8f211d]">Impossible de charger le board.</p>
+              <p className="font-semibold text-[#8f211d]">{t('Impossible de charger le board.')}</p>
               <p className="mt-1 text-sm text-[#a33b36]">{error}</p>
             </div>
             <button type="button" onClick={() => setRetryVersion(value => value + 1)} className="self-start rounded-lg border border-[#d98984] bg-white px-3 py-2 text-xs font-semibold text-[#8f211d] hover:bg-[#fff1f0] sm:self-auto">
-              Réessayer
+              {t('Réessayer')}
             </button>
           </div>
         ) : (
           <>
-            <section aria-label="Filtres du board" className="rounded-xl border border-[#ded8e8] bg-white p-4 shadow-[0_4px_10px_rgba(36,25,55,0.04)]">
+            <section aria-label={t('Filtres du board')} className="rounded-xl border border-[#ded8e8] bg-white p-4 shadow-[0_4px_10px_rgba(36,25,55,0.04)]">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <h2 className="text-sm font-bold">Projets</h2>
-                  <p className="mt-0.5 text-xs text-[#696969]">{visibleProjects.length} sur {baseProjects.length}</p>
+                  <h2 className="text-sm font-bold">{t('Projets')}</h2>
+                  <p className="mt-0.5 text-xs text-[#696969]">{visibleProjects.length} {t('sur')} {baseProjects.length}</p>
                 </div>
                 {hasFilters && (
                   <button type="button" onClick={resetFilters} className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#59319f] hover:underline">
-                    <RotateCcw aria-hidden="true" size={13} /> Réinitialiser
+                    <RotateCcw aria-hidden="true" size={13} /> {t('Réinitialiser')}
                   </button>
                 )}
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(260px,2fr)_repeat(4,minmax(150px,1fr))]">
                 <label className="block min-w-0">
-                  <span className="mb-1 block text-xs font-semibold text-[#4a4a4a]">Rechercher</span>
+                  <span className="mb-1 block text-xs font-semibold text-[#4a4a4a]">{t('Rechercher')}</span>
                   <span className="relative block">
                     <Search aria-hidden="true" size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8a8a8a]" />
-                    <input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Hôtel, compte, produit…" className="w-full rounded-lg border border-[#d8d8d8] py-2.5 pl-9 pr-3 text-sm outline-none focus:border-[#8064b3] focus:ring-2 focus:ring-[#e6dcf5]" />
+                    <input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder={t('Hôtel, compte, produit…')} className="w-full rounded-lg border border-[#d8d8d8] py-2.5 pl-9 pr-3 text-sm outline-none focus:border-[#8064b3] focus:ring-2 focus:ring-[#e6dcf5]" />
                   </span>
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-xs font-semibold text-[#4a4a4a]">Périmètre</span>
+                  <span className="mb-1 block text-xs font-semibold text-[#4a4a4a]">{t('Périmètre')}</span>
                   <select value={scope} onChange={event => setScope(event.target.value as ScopeFilter)} className="w-full rounded-lg border border-[#d8d8d8] bg-white px-3 py-2.5 text-sm outline-none focus:border-[#8064b3] focus:ring-2 focus:ring-[#e6dcf5]">
-                    <option value="active">Projets actifs</option>
-                    <option value="all">Tous les projets</option>
-                    <option value="live">Projets Live</option>
+                    <option value="active">{t('Projets actifs')}</option>
+                    <option value="all">{t('Tous les projets')}</option>
+                    <option value="live">{t('Projets Live')}</option>
                   </select>
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-xs font-semibold text-[#4a4a4a]">Owner</span>
                   <select value={owner} onChange={event => setOwner(event.target.value)} className="w-full rounded-lg border border-[#d8d8d8] bg-white px-3 py-2.5 text-sm outline-none focus:border-[#8064b3] focus:ring-2 focus:ring-[#e6dcf5]">
-                    <option value="all">Tous les owners</option>
-                    <option value="implementation">Équipe Implémentation</option>
+                    <option value="all">{t('Tous les owners')}</option>
+                    <option value="implementation">{t('Équipe Implémentation')}</option>
                     {ownerOptions.map(option => <option key={option} value={option}>{option}</option>)}
                   </select>
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-xs font-semibold text-[#4a4a4a]">Produit</span>
+                  <span className="mb-1 block text-xs font-semibold text-[#4a4a4a]">{t('Produit')}</span>
                   <select value={product} onChange={event => setProduct(event.target.value)} className="w-full rounded-lg border border-[#d8d8d8] bg-white px-3 py-2.5 text-sm outline-none focus:border-[#8064b3] focus:ring-2 focus:ring-[#e6dcf5]">
-                    <option value="all">Tous les produits</option>
+                    <option value="all">{t('Tous les produits')}</option>
                     {productOptions.map(option => <option key={option} value={option}>{option}</option>)}
                   </select>
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-xs font-semibold text-[#4a4a4a]">Attention requise</span>
+                  <span className="mb-1 block text-xs font-semibold text-[#4a4a4a]">{t('Attention requise')}</span>
                   <select value={attention} onChange={event => setAttention(event.target.value as AttentionFilter)} className="w-full rounded-lg border border-[#d8d8d8] bg-white px-3 py-2.5 text-sm outline-none focus:border-[#8064b3] focus:ring-2 focus:ring-[#e6dcf5]">
-                    <option value="all">Tous les projets</option>
-                    <option value="blocked">Bloqués</option>
-                    <option value="overdue">Go-live dépassé</option>
-                    <option value="high_risk">Risque élevé ou critique</option>
+                    <option value="all">{t('Tous les projets')}</option>
+                    <option value="blocked">{t('Bloqués')}</option>
+                    <option value="overdue">{t('Go-live dépassé')}</option>
+                    <option value="high_risk">{t('Risque élevé ou critique')}</option>
                   </select>
                 </label>
               </div>
@@ -300,11 +303,11 @@ export default function OnboardingBoardPage() {
             {visibleProjects.length === 0 ? (
               <div className="rounded-xl border border-dashed border-[#d8d8d8] bg-white px-5 py-12 text-center">
                 <AlertTriangle aria-hidden="true" className="mx-auto text-[#a1a1a1]" size={22} />
-                <p className="mt-3 text-sm font-semibold text-[#4a4a4a]">Aucun projet ne correspond à ces filtres.</p>
-                <button type="button" onClick={resetFilters} className="mt-2 text-xs font-semibold text-[#59319f] hover:underline">Réinitialiser les filtres</button>
+                <p className="mt-3 text-sm font-semibold text-[#4a4a4a]">{t('Aucun projet ne correspond à ces filtres.')}</p>
+                <button type="button" onClick={resetFilters} className="mt-2 text-xs font-semibold text-[#59319f] hover:underline">{t('Réinitialiser les filtres')}</button>
               </div>
             ) : (
-              <section aria-label="Board par statut" className="overflow-x-auto pb-3">
+              <section aria-label={t('Board par statut')} className="overflow-x-auto pb-3">
                 <div className="flex min-w-max snap-x snap-mandatory gap-4">
                   {columns.map(column => {
                     const items = visibleProjects.filter(project => project.status === column.status).sort(compareProjects)
@@ -314,13 +317,13 @@ export default function OnboardingBoardPage() {
                         <div className={`flex items-center justify-between rounded-t-xl border border-b-0 px-3.5 py-2.5 ${colors.header}`}>
                           <h2 id={`board-${column.status}`} className="flex items-center gap-2 text-xs font-bold">
                             <span aria-hidden="true" className={`h-2 w-2 rounded-full ${colors.dot}`} />
-                            {column.label}
+                            {t(column.label)}
                           </h2>
                           <span className="rounded-full bg-white/75 px-2 py-0.5 text-xs font-bold tabular-nums">{items.length}</span>
                         </div>
                         <div className={`min-h-36 space-y-2.5 rounded-b-xl border border-t-0 p-2.5 ${colors.column}`}>
                           {items.length === 0
-                            ? <p className="px-3 py-8 text-center text-xs text-[#a1a1a1]">{column.empty}</p>
+                            ? <p className="px-3 py-8 text-center text-xs text-[#a1a1a1]">{t(column.empty)}</p>
                             : items.map(project => <ProjectCard key={project.id} project={project} />)}
                         </div>
                       </section>

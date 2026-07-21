@@ -108,7 +108,11 @@ export async function middleware(request: NextRequest) {
     path.startsWith('/login') ||
     path.startsWith('/auth') ||
     path.startsWith('/api/auth') ||
+    path.startsWith('/api/mcp') ||
+    path.startsWith('/.well-known/oauth-protected-resource') ||
+    path.startsWith('/oauth/consent') ||
     path.startsWith('/api/cron') ||
+    path.startsWith('/api/webhooks/zoho-forms') ||
     path.startsWith('/forbidden')
 
   // Not authenticated → redirect to login

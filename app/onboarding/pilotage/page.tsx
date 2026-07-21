@@ -20,9 +20,12 @@ import {
 import type { OnboardingProject, ProjectStatus } from '@/lib/zoho/projectsClient'
 import { formatDate } from '@/lib/utils/dates'
 import { IMPLEMENTATION_GROUP, isExcludedOnboardingOwner } from '@/lib/onboarding/constants'
+import { CAPACITY_THRESHOLD, OVERLOADED_THRESHOLD_PCT, isActiveProject } from '@/lib/onboarding/workload'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
+import { useLocale } from '@/lib/i18n/LocaleContext'
+import { translate } from '@/lib/i18n/translate'
+import type { Locale } from '@/lib/i18n/locale'
 
-const CAPACITY_THRESHOLD = 50
 const DAY_MS = 86_400_000
 const BRAND = '#59319f'
 const SUCCESS = '#1D9E75'
@@ -47,6 +50,14 @@ const STATUS_CONFIG: Array<{ status: ProjectStatus; label: string; color: string
 ]
 
 const PRODUCT_COLORS = ['#59319f', '#3b72d1', '#1D9E75', '#d58b28', '#8c5bdb', '#447a76']
+
+function plural(value: number, singular: string, pluralForm = `${singular}s`): string {
+  return value === 1 ? singular : pluralForm
+}
+
+function countLabel(value: number, locale: Locale, fr: string, en: string): string {
+  return `${value} ${locale === 'en' ? plural(value, en) : plural(value, fr)}`
+}
 
 type DatePreset = 'all' | 'prev_month' | 'curr_month' | 'rolling_3m' | 'last_6m' | 'custom'
 type AttentionFilter = 'all' | 'attention' | 'blocked' | 'overdue' | 'high_risk'
@@ -100,6 +111,7 @@ const ATTENTION_OPTIONS: Array<{ value: AttentionFilter; label: string }> = [
 ]
 
 export default function OnboardingPilotagePage() {
+  const { locale, t } = useLocale()
   const today = useMemo(() => isoDay(new Date()), [])
   const { user: currentUser, loading: currentUserLoading } = useCurrentUser()
   const [projects, setProjects] = useState<OnboardingProject[]>([])
@@ -138,14 +150,14 @@ export default function OnboardingPilotagePage() {
       .catch(fetchError => {
         if (isAbortError(fetchError)) return
         console.error(fetchError)
-        setError('Impossible de charger les projets Zoho.')
+        setError(t('Impossible de charger les projets Zoho.'))
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false)
       })
 
     return () => controller.abort()
-  }, [retryKey])
+  }, [retryKey, t])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -164,14 +176,14 @@ export default function OnboardingPilotagePage() {
       })
       .catch(fetchError => {
         if (isAbortError(fetchError)) return
-        setSatisfactionError('Les réponses de satisfaction sont indisponibles.')
+        setSatisfactionError(t('Les réponses de satisfaction sont indisponibles.'))
       })
       .finally(() => {
         if (!controller.signal.aborted) setSatisfactionLoading(false)
       })
 
     return () => controller.abort()
-  }, [])
+  }, [t])
 
   const baseProjects = useMemo(
     () => projects.filter(project => !isExcludedOnboardingOwner(project.ownerShort)),
@@ -193,7 +205,7 @@ export default function OnboardingPilotagePage() {
     if (!dateRange || dateRange.from > today) return null
     return { from: dateRange.from, to: dateRange.to > today ? today : dateRange.to }
   }, [dateRange, today])
-  const rangeError = datePreset === 'custom' ? validateRange(dateRange, customFrom, customTo) : null
+  const rangeError = datePreset === 'custom' ? validateRange(dateRange, customFrom, customTo, t) : null
   const resolvedOwners = useMemo(
     () => resolveOwnerFilter(activeOwner, availableOwners),
     [activeOwner, availableOwners],
@@ -243,8 +255,8 @@ export default function OnboardingPilotagePage() {
     [dimensionFilteredProjects, previousRange],
   )
   const previousAverageTtv = average(getTtvSamples(previousLiveCohort))
-  const goLiveComparison = compareCount(currentLiveCohort.length, previousLiveCohort.length, Boolean(previousRange))
-  const ttvComparison = compareDuration(averageTtv, previousAverageTtv, Boolean(previousRange))
+  const goLiveComparison = compareCount(currentLiveCohort.length, previousLiveCohort.length, Boolean(previousRange), locale)
+  const ttvComparison = compareDuration(averageTtv, previousAverageTtv, Boolean(previousRange), locale)
 
   const perPerson = useMemo(
     () => buildPerPerson(filteredProjects, dimensionFilteredProjects, filteredSatisfaction, dateRange, eventRange),
@@ -260,7 +272,7 @@ export default function OnboardingPilotagePage() {
   )
   const perLanguage = useMemo(() => buildBreakdown(filteredProjects.map(project => project.implementationLanguage || 'Non renseignée')), [filteredProjects])
   const chartRange = useMemo(() => dateRange ?? rollingMonthRange(12), [dateRange])
-  const monthly = useMemo(() => buildMonthlyData(dimensionFilteredProjects, chartRange), [chartRange, dimensionFilteredProjects])
+  const monthly = useMemo(() => buildMonthlyData(dimensionFilteredProjects, chartRange, locale), [chartRange, dimensionFilteredProjects, locale])
   const hasActiveFilters = activeOwner !== 'Tous' || datePreset !== 'all' || Boolean(productFilter || statusFilter || search) || attentionFilter !== 'all'
   const nonSatisfactionFiltersActive = Boolean(productFilter || statusFilter) || attentionFilter !== 'all'
   const canSyncSatisfaction = currentUser?.role === 'admin' || currentUser?.role === 'onboarder'
@@ -279,9 +291,9 @@ export default function OnboardingPilotagePage() {
       setSatisfaction(data ?? [])
       setSatisfactionConfigured(configured ?? null)
       setSatisfactionTableAvailable(tableAvailable ?? null)
-      setSyncMessage('Satisfaction mise à jour.')
+      setSyncMessage(t('Satisfaction mise à jour.'))
     } catch {
-      setSatisfactionError('La synchronisation de satisfaction a échoué. Réessayez.')
+      setSatisfactionError(t('La synchronisation de satisfaction a échoué. Réessayez.'))
     } finally {
       setSatisfactionSyncing(false)
     }
@@ -308,6 +320,7 @@ export default function OnboardingPilotagePage() {
   async function copyReport() {
     try {
       const report = buildReport({
+        locale,
         range: dateRange,
         projects: filteredProjects,
         activeProjects: activeProjects.length,
@@ -334,9 +347,9 @@ export default function OnboardingPilotagePage() {
       <header className="border-b border-[#e2e2e2] bg-white px-4 py-5 sm:px-6 lg:px-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold tracking-tight text-[#1a1a1a]">Pilotage onboarding</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-[#1a1a1a]">{t('Pilotage onboarding')}</h1>
             <p className="mt-1 text-sm text-[#696969]">
-              {dateRange ? `${formatRange(dateRange)} · projets dont le planning chevauche la période` : 'Vue opérationnelle de tous les projets'}
+              {dateRange ? `${formatRange(dateRange, locale)} · ${t('projets dont le planning chevauche la période')}` : t('Vue opérationnelle de tous les projets')}
             </p>
           </div>
           <button
@@ -346,20 +359,20 @@ export default function OnboardingPilotagePage() {
             className="inline-flex items-center justify-center gap-2 self-start rounded-lg bg-[#59319f] px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#3f2175] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8064b3] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {copyStatus === 'success' ? <Check aria-hidden="true" size={16} /> : <Clipboard aria-hidden="true" size={16} />}
-            {copyStatus === 'success' ? 'Rapport copié' : copyStatus === 'error' ? 'Copie impossible' : 'Copier le rapport'}
+            {copyStatus === 'success' ? t('Rapport copié') : copyStatus === 'error' ? t('Copie impossible') : t('Copier le rapport')}
           </button>
         </div>
         <p className="sr-only" aria-live="polite">
-          {copyStatus === 'success' ? 'Le rapport a été copié.' : copyStatus === 'error' ? 'Le rapport n’a pas pu être copié.' : ''}
+          {copyStatus === 'success' ? t('Le rapport a été copié.') : copyStatus === 'error' ? t('Le rapport n’a pas pu être copié.') : ''}
         </p>
       </header>
 
-      <section className="sticky top-0 z-20 border-b border-[#e2e2e2] bg-white/95 px-4 py-4 shadow-[0_2px_4px_rgba(0,0,0,0.05)] backdrop-blur sm:px-6 lg:px-8" aria-label="Filtres du pilotage onboarding">
+      <section className="sticky top-0 z-20 border-b border-[#e2e2e2] bg-white/95 px-4 py-4 shadow-[0_2px_4px_rgba(0,0,0,0.05)] backdrop-blur sm:px-6 lg:px-8" aria-label={t('Filtres du pilotage onboarding')}>
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
             <div>
-              <FilterLabel>Périmètre planning</FilterLabel>
-              <div className="flex flex-wrap gap-1 rounded-lg bg-[#f7f7f7] p-1" role="group" aria-label="Choisir la période">
+              <FilterLabel>{t('Périmètre planning')}</FilterLabel>
+              <div className="flex flex-wrap gap-1 rounded-lg bg-[#f7f7f7] p-1" role="group" aria-label={t('Choisir la période')}>
                 {DATE_PRESETS.map(option => (
                   <button
                     key={option.value}
@@ -368,7 +381,7 @@ export default function OnboardingPilotagePage() {
                     onClick={() => setDatePreset(option.value)}
                     className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8064b3] ${datePreset === option.value ? 'bg-white text-[#59319f] shadow-sm' : 'text-[#696969] hover:text-[#1a1a1a]'}`}
                   >
-                    {option.label}
+                    {t(option.label)}
                   </button>
                 ))}
                 <button
@@ -377,27 +390,27 @@ export default function OnboardingPilotagePage() {
                   onClick={enableCustomRange}
                   className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8064b3] ${datePreset === 'custom' ? 'bg-white text-[#59319f] shadow-sm' : 'text-[#696969] hover:text-[#1a1a1a]'}`}
                 >
-                  Plage personnalisée
+                  {t('Plage personnalisée')}
                 </button>
               </div>
             </div>
 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              <SelectFilter id="onboarding-owner" label="Chargé de projet" value={activeOwner} onChange={setActiveOwner} options={['Tous', 'Implémentation', ...availableOwners]} />
-              <SelectFilter id="onboarding-product" label="Produit" value={productFilter} onChange={setProductFilter} options={availableProducts} allLabel="Tous les produits" />
-              <SelectFilter id="onboarding-status" label="Statut" value={statusFilter} onChange={setStatusFilter} options={STATUS_CONFIG.map(status => status.status)} optionLabel={statusLabel} allLabel="Tous les statuts" />
-              <SelectFilter id="onboarding-attention" label="Signal" value={attentionFilter} onChange={value => setAttentionFilter(value as AttentionFilter)} options={ATTENTION_OPTIONS.map(option => option.value)} optionLabel={value => ATTENTION_OPTIONS.find(option => option.value === value)?.label ?? value} />
+              <SelectFilter id="onboarding-owner" label={t('Chargé de projet')} value={activeOwner} onChange={setActiveOwner} options={['Tous', 'Implémentation', ...availableOwners]} optionLabel={value => t(value)} />
+              <SelectFilter id="onboarding-product" label={t('Produit')} value={productFilter} onChange={setProductFilter} options={availableProducts} allLabel={t('Tous les produits')} />
+              <SelectFilter id="onboarding-status" label={t('Statut')} value={statusFilter} onChange={setStatusFilter} options={STATUS_CONFIG.map(status => status.status)} optionLabel={value => t(statusLabel(value))} allLabel={t('Tous les statuts')} />
+              <SelectFilter id="onboarding-attention" label={t('Signal')} value={attentionFilter} onChange={value => setAttentionFilter(value as AttentionFilter)} options={ATTENTION_OPTIONS.map(option => option.value)} optionLabel={value => t(ATTENTION_OPTIONS.find(option => option.value === value)?.label ?? value)} />
             </div>
           </div>
 
           {datePreset === 'custom' && (
             <div className="grid max-w-md grid-cols-1 gap-2 sm:grid-cols-2">
               <label className="text-xs font-medium text-[#696969]" htmlFor="onboarding-range-from">
-                Du
+                {t('Du')}
                 <input id="onboarding-range-from" type="date" value={customFrom} max={customTo || undefined} onChange={event => setCustomFrom(event.target.value)} className="mt-1 block w-full rounded-lg border border-[#d8d8d8] bg-white px-3 py-2 text-xs text-[#1a1a1a] outline-none focus:border-[#8064b3] focus:ring-1 focus:ring-[#8064b3]" />
               </label>
               <label className="text-xs font-medium text-[#696969]" htmlFor="onboarding-range-to">
-                Au
+                {t('Au')}
                 <input id="onboarding-range-to" type="date" value={customTo} min={customFrom || undefined} onChange={event => setCustomTo(event.target.value)} className="mt-1 block w-full rounded-lg border border-[#d8d8d8] bg-white px-3 py-2 text-xs text-[#1a1a1a] outline-none focus:border-[#8064b3] focus:ring-1 focus:ring-[#8064b3]" />
               </label>
             </div>
@@ -406,12 +419,12 @@ export default function OnboardingPilotagePage() {
           <div className="flex flex-col gap-2 border-t border-[#eeeeee] pt-3 sm:flex-row sm:items-center">
             <label className="relative block min-w-0 flex-1 sm:max-w-md" htmlFor="onboarding-search">
               <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8a8a8a]" size={15} />
-              <span className="sr-only">Rechercher un projet</span>
-              <input id="onboarding-search" type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Hôtel, projet, PMS, CSM…" className="w-full rounded-lg border border-[#d8d8d8] bg-white py-2 pl-9 pr-3 text-sm text-[#1a1a1a] outline-none placeholder:text-[#9a9a9a] focus:border-[#8064b3] focus:ring-1 focus:ring-[#8064b3]" />
+              <span className="sr-only">{t('Rechercher un projet')}</span>
+              <input id="onboarding-search" type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder={t('Hôtel, projet, PMS, CSM…')} className="w-full rounded-lg border border-[#d8d8d8] bg-white py-2 pl-9 pr-3 text-sm text-[#1a1a1a] outline-none placeholder:text-[#9a9a9a] focus:border-[#8064b3] focus:ring-1 focus:ring-[#8064b3]" />
             </label>
             {hasActiveFilters && (
               <button type="button" onClick={resetFilters} className="inline-flex items-center gap-1.5 self-start px-1 py-2 text-xs font-semibold text-[#59319f] hover:text-[#3f2175] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8064b3] sm:ml-auto">
-                <RotateCcw aria-hidden="true" size={13} /> Réinitialiser les filtres
+                <RotateCcw aria-hidden="true" size={13} /> {t('Réinitialiser les filtres')}
               </button>
             )}
           </div>
@@ -428,25 +441,29 @@ export default function OnboardingPilotagePage() {
           <ErrorState message={rangeError} />
         ) : (
           <>
-            <section aria-label="Indicateurs clés" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
-              <KpiCard label="Projets actifs" value={formatNumber(activeProjects.length)} subtitle="Hors Live et Autre · Standby reste distinct" />
-              <KpiCard label="Comptes uniques" value={formatNumber(uniqueAccounts)} subtitle={`${formatNumber(filteredProjects.length)} projet${filteredProjects.length !== 1 ? 's' : ''} dans le périmètre`} />
-              <KpiCard label="À surveiller" value={formatNumber(attentionProjects.length)} subtitle={`${blockedCount} bloqué${blockedCount !== 1 ? 's' : ''} · ${overdueCount} en retard · ${highRiskCount} risque élevé`} accent={attentionProjects.length > 0 ? 'text-[#b7221b]' : undefined} />
-              <KpiCard label="TTV moyen réel" value={formatDuration(averageTtv)} subtitle={`Sur ${currentTtvSamples.length} projet${currentTtvSamples.length !== 1 ? 's' : ''} avec démarrage et live réels`} comparison={ttvComparison} />
-              <KpiCard label={dateRange ? 'Go-lives période' : 'Go-lives renseignés'} value={formatNumber(currentLiveCohort.length)} subtitle={dateRange ? 'Champ Live date dans la période' : 'Projets avec une Live date Zoho'} comparison={goLiveComparison} accent="text-[#1c6437]" />
+            <section aria-label={t('Indicateurs clés')} className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              <KpiCard label={t('Projets actifs')} value={formatNumber(activeProjects.length, locale)} subtitle={t('Hors Live et Autre · Standby reste distinct')} />
+              <KpiCard label={t('Comptes uniques')} value={formatNumber(uniqueAccounts, locale)} subtitle={countLabel(filteredProjects.length, locale, 'projet', 'project') + ' ' + t('dans le périmètre')} />
+              <KpiCard label={t('À surveiller')} value={formatNumber(attentionProjects.length, locale)} subtitle={`${countLabel(blockedCount, locale, 'bloqué', 'blocked')} · ${overdueCount} ${t('en retard')} · ${highRiskCount} ${t('risque élevé')}`} accent={attentionProjects.length > 0 ? 'text-[#b7221b]' : undefined} />
+              <KpiCard label={t('TTV moyen réel')} value={formatDuration(averageTtv, locale)} subtitle={`${t('Sur')} ${countLabel(currentTtvSamples.length, locale, 'projet', 'project')} ${t('avec démarrage et live réels')}`} comparison={ttvComparison} />
+              <KpiCard label={t(dateRange ? 'Go-lives période' : 'Go-lives renseignés')} value={formatNumber(currentLiveCohort.length, locale)} subtitle={t(dateRange ? 'Champ Live date dans la période' : 'Projets avec une Live date Zoho')} comparison={goLiveComparison} accent="text-[#1c6437]" />
             </section>
 
             {attentionProjects.length > 0 && (
-              <aside className="flex flex-col gap-3 rounded-xl border border-[#ead7a6] bg-[#fff9e8] p-4 sm:flex-row sm:items-center sm:justify-between" aria-label="Points d’attention">
+              <aside className="flex flex-col gap-3 rounded-xl border border-[#ead7a6] bg-[#fff9e8] p-4 sm:flex-row sm:items-center sm:justify-between" aria-label={t('Points d’attention')}>
                 <div className="flex items-start gap-3">
                   <TriangleAlert aria-hidden="true" className="mt-0.5 shrink-0 text-[#9a6710]" size={18} />
                   <div>
-                    <p className="text-sm font-semibold text-[#754b08]">{attentionProjects.length} projet{attentionProjects.length !== 1 ? 's' : ''} demande{attentionProjects.length === 1 ? '' : 'nt'} une attention</p>
-                    <p className="mt-0.5 text-xs text-[#8b6a24]">Un projet n’est compté qu’une fois, même s’il cumule blocage, retard et risque élevé.</p>
+                    <p className="text-sm font-semibold text-[#754b08]">
+                      {locale === 'en'
+                        ? `${attentionProjects.length} project${attentionProjects.length !== 1 ? 's' : ''} need${attentionProjects.length === 1 ? 's' : ''} attention`
+                        : `${attentionProjects.length} projet${attentionProjects.length !== 1 ? 's' : ''} demande${attentionProjects.length === 1 ? '' : 'nt'} une attention`}
+                    </p>
+                    <p className="mt-0.5 text-xs text-[#8b6a24]">{t('Un projet n’est compté qu’une fois, même s’il cumule blocage, retard et risque élevé.')}</p>
                   </div>
                 </div>
                 <button type="button" onClick={() => setAttentionFilter('attention')} className="self-start rounded-lg border border-[#d7b76d] bg-white px-3 py-2 text-xs font-semibold text-[#754b08] hover:bg-[#fffdf7] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#d7b76d]">
-                  Afficher uniquement ces projets
+                  {t('Afficher uniquement ces projets')}
                 </button>
               </aside>
             )}
@@ -455,19 +472,19 @@ export default function OnboardingPilotagePage() {
               <EmptyDashboard onReset={resetFilters} />
             ) : (
               <>
-                <section className="grid grid-cols-1 gap-5 xl:grid-cols-2" aria-label="Visualisations onboarding">
-                  <ChartCard title="Cadence onboarding" subtitle={`Démarrages planifiés et go-lives réels (Live date) · ${formatRange(chartRange)}`} wide>
+                <section className="grid grid-cols-1 gap-5 xl:grid-cols-2" aria-label={t('Visualisations onboarding')}>
+                  <ChartCard title={t('Cadence onboarding')} subtitle={`${t('Démarrages planifiés et go-lives réels (Live date)')} · ${formatRange(chartRange, locale)}`} wide>
                     {monthly.every(month => month.starts === 0 && month.goLives === 0) ? <EmptyChart /> : (
-                      <div className="h-full overflow-x-auto" role="img" aria-label="Évolution mensuelle des démarrages et go-lives">
+                      <div className="h-full overflow-x-auto" role="img" aria-label={t('Évolution mensuelle des démarrages et go-lives')}>
                         <div className="h-full" style={{ minWidth: Math.max(620, monthly.length * 72) }}>
                           <ResponsiveContainer width="100%" height="100%">
                             <ComposedChart data={monthly} margin={{ top: 16, right: 16, left: -8, bottom: 12 }}>
                               <CartesianGrid stroke="#ece8f0" strokeDasharray="3 3" vertical={false} />
                               <XAxis dataKey="label" tick={{ fontSize: 11, fill: MUTED }} tickLine={false} axisLine={false} />
                               <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: MUTED }} tickLine={false} axisLine={false} />
-                              <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(value, name) => [formatNumber(Number(value)), String(name)]} />
+                              <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(value, name) => [formatNumber(Number(value), locale), t(String(name))]} />
                               <Legend wrapperStyle={{ fontSize: 11 }} />
-                              <Bar dataKey="starts" name="Démarrages" fill={BRAND} radius={[5, 5, 0, 0]} maxBarSize={38} />
+                              <Bar dataKey="starts" name={t('Démarrages')} fill={BRAND} radius={[5, 5, 0, 0]} maxBarSize={38} />
                               <Line type="monotone" dataKey="goLives" name="Go-lives" stroke={SUCCESS} strokeWidth={2.5} dot={{ r: 3, fill: SUCCESS }} activeDot={{ r: 5 }} />
                             </ComposedChart>
                           </ResponsiveContainer>
@@ -476,22 +493,22 @@ export default function OnboardingPilotagePage() {
                     )}
                   </ChartCard>
 
-                  <ChartCard title="Répartition par statut" subtitle="Statuts Zoho conservés séparément">
+                  <ChartCard title={t('Répartition par statut')} subtitle={t('Statuts Zoho conservés séparément')}>
                     <StatusChart data={perStatus} />
                   </ChartCard>
 
-                  <ChartCard title="Répartition par produit" subtitle="Nombre de projets dans le périmètre">
+                  <ChartCard title={t('Répartition par produit')} subtitle={t('Nombre de projets dans le périmètre')}>
                     <ProductChart data={perProduct} />
                   </ChartCard>
                 </section>
 
-                <WorkloadSection rows={perPerson} overloaded={overloaded} />
+                <WorkloadSection rows={perPerson} overloaded={overloaded} dateRange={dateRange} />
 
-                <section className="grid grid-cols-1 gap-5 lg:grid-cols-2" aria-label="Caractéristiques des projets">
+                <section className="grid grid-cols-1 gap-5 lg:grid-cols-2" aria-label={t('Caractéristiques des projets')}>
                   {typologyCoverage > 0
-                    ? <BreakdownCard title="Typologie client" data={perTypology} />
-                    : <UnavailableDimensionCard title="Typologie client" message="Le champ de typologie n’est renseigné sur aucun projet Zoho de ce périmètre. Ce graphique sera disponible dès que la source sera configurée." />}
-                  <BreakdownCard title="Langue d’implémentation" data={perLanguage} />
+                    ? <BreakdownCard title={t('Typologie client')} data={perTypology} />
+                    : <UnavailableDimensionCard title={t('Typologie client')} message={t('Le champ de typologie n’est renseigné sur aucun projet Zoho de ce périmètre. Ce graphique sera disponible dès que la source sera configurée.')} />}
+                  <BreakdownCard title={t('Langue d’implémentation')} data={perLanguage} />
                 </section>
               </>
             )}
@@ -504,7 +521,7 @@ export default function OnboardingPilotagePage() {
               tableAvailable={satisfactionTableAvailable}
               syncing={satisfactionSyncing}
               syncMessage={syncMessage}
-              filterLabel={satisfactionFilterLabel(activeOwner, dateRange, search)}
+              filterLabel={satisfactionFilterLabel(activeOwner, dateRange, search, locale)}
               partialFilters={nonSatisfactionFiltersActive}
               canSync={canSyncSatisfaction}
               authLoading={currentUserLoading}
@@ -560,26 +577,27 @@ function ChartCard({ title, subtitle, wide = false, children }: { title: string;
 }
 
 function StatusChart({ data }: { data: Array<{ status: ProjectStatus; label: string; value: number; color: string }> }) {
+  const { locale, t } = useLocale()
   const nonEmpty = data.filter(item => item.value > 0)
   const total = nonEmpty.reduce((sum, item) => sum + item.value, 0)
   if (nonEmpty.length === 0) return <EmptyChart />
 
   return (
     <div className="grid h-full grid-cols-1 items-center gap-2 sm:grid-cols-[minmax(0,1fr)_180px]">
-      <div className="h-[210px] sm:h-full" role="img" aria-label="Diagramme circulaire des projets par statut">
+      <div className="h-[210px] sm:h-full" role="img" aria-label={t('Diagramme circulaire des projets par statut')}>
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie data={nonEmpty} dataKey="value" nameKey="label" innerRadius="45%" outerRadius="72%" paddingAngle={2} stroke="#fff" strokeWidth={2}>
               {nonEmpty.map(item => <Cell key={item.status} fill={item.color} />)}
             </Pie>
-            <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(value, name) => [`${formatNumber(Number(value))} · ${total > 0 ? Math.round((Number(value) / total) * 100) : 0} %`, String(name)]} />
+            <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(value, name) => [`${formatNumber(Number(value), locale)} · ${total > 0 ? Math.round((Number(value) / total) * 100) : 0} %`, t(String(name))]} />
           </PieChart>
         </ResponsiveContainer>
       </div>
-      <div className="space-y-2" role="list" aria-label="Détail par statut">
+      <div className="space-y-2" role="list" aria-label={t('Détail par statut')}>
         {data.map(item => (
           <div key={item.status} className="flex items-center justify-between gap-3 text-xs" role="listitem">
-            <span className="flex min-w-0 items-center gap-2 text-[#4a4a4a]"><span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.color }} /><span className="truncate">{item.label}</span></span>
+            <span className="flex min-w-0 items-center gap-2 text-[#4a4a4a]"><span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.color }} /><span className="truncate">{t(item.label)}</span></span>
             <span className="font-bold tabular-nums text-[#1a1a1a]">{item.value}</span>
           </div>
         ))}
@@ -589,19 +607,20 @@ function StatusChart({ data }: { data: Array<{ status: ProjectStatus; label: str
 }
 
 function ProductChart({ data }: { data: Array<{ name: string; value: number }> }) {
+  const { locale, t } = useLocale()
   if (data.length === 0) return <EmptyChart />
   const shown = data.slice(0, 8)
 
   return (
-    <div className="h-full overflow-x-auto" role="img" aria-label="Barres des projets par produit">
+    <div className="h-full overflow-x-auto" role="img" aria-label={t('Barres des projets par produit')}>
       <div className="h-full min-w-[520px]">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={shown} layout="vertical" margin={{ top: 4, right: 20, left: 12, bottom: 4 }} barCategoryGap="28%">
             <CartesianGrid stroke="#ece8f0" strokeDasharray="3 3" horizontal={false} />
             <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: MUTED }} tickLine={false} axisLine={false} />
             <YAxis type="category" dataKey="name" width={130} tickFormatter={value => truncateLabel(String(value), 20)} tick={{ fontSize: 11, fill: '#4a4a4a' }} tickLine={false} axisLine={false} />
-            <Tooltip contentStyle={TOOLTIP_STYLE} formatter={value => [formatNumber(Number(value)), 'Projets']} />
-            <Bar dataKey="value" name="Projets" radius={[0, 5, 5, 0]} maxBarSize={24}>
+            <Tooltip contentStyle={TOOLTIP_STYLE} formatter={value => [formatNumber(Number(value), locale), t('Projets')]} />
+            <Bar dataKey="value" name={t('Projets')} radius={[0, 5, 5, 0]} maxBarSize={24}>
               {shown.map((item, index) => <Cell key={item.name} fill={PRODUCT_COLORS[index % PRODUCT_COLORS.length]} />)}
             </Bar>
           </BarChart>
@@ -623,25 +642,86 @@ interface PersonRow {
   satisfactionResponses: number
 }
 
-function WorkloadSection({ rows, overloaded }: { rows: PersonRow[]; overloaded: number }) {
+interface WorkloadSnapshot {
+  snapshot_date: string
+  owner: string
+  active_projects: number
+  charge_pct: number
+}
+
+function computeStreakDays(ownerSnapshots: WorkloadSnapshot[]): number {
+  let streak = 0
+  for (let i = ownerSnapshots.length - 1; i >= 0; i--) {
+    if (ownerSnapshots[i].charge_pct < OVERLOADED_THRESHOLD_PCT) break
+    if (streak > 0) {
+      const gap = daysBetween(ownerSnapshots[i].snapshot_date, ownerSnapshots[i + 1].snapshot_date)
+      if (gap !== 1) break
+    }
+    streak += 1
+  }
+  return streak
+}
+
+function useWorkloadHistory(dateRange: DateRange | null) {
+  const [history, setHistory] = useState<Map<string, WorkloadSnapshot[]>>(new Map())
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setLoading(true)
+    const fallback = rollingMonthRange(6)
+    const params = new URLSearchParams({ from: dateRange?.from ?? fallback.from, to: dateRange?.to ?? fallback.to })
+
+    fetch(`/api/onboarding/workload-history?${params}`, { signal: controller.signal })
+      .then(response => response.ok ? response.json() as Promise<{ snapshots?: WorkloadSnapshot[] }> : Promise.reject(new Error(`HTTP ${response.status}`)))
+      .then(({ snapshots }) => {
+        const grouped = new Map<string, WorkloadSnapshot[]>()
+        for (const snapshot of snapshots ?? []) {
+          const current = grouped.get(snapshot.owner) ?? []
+          current.push(snapshot)
+          grouped.set(snapshot.owner, current)
+        }
+        setHistory(grouped)
+      })
+      .catch(error => { if (!isAbortError(error)) console.error(error) })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+
+    return () => controller.abort()
+  }, [dateRange])
+
+  return { history, loading }
+}
+
+function WorkloadSection({ rows, overloaded, dateRange }: { rows: PersonRow[]; overloaded: number; dateRange: DateRange | null }) {
+  const { locale, t } = useLocale()
+  const { history, loading: historyLoading } = useWorkloadHistory(dateRange)
+  const headings = locale === 'en'
+    ? ['Person', 'Active', 'Accounts', 'To watch', 'Go-lives', 'Avg TTV', 'Satisfaction', 'Workload', 'Regularity']
+    : ['Personne', 'Actifs', 'Comptes', 'À surveiller', 'Go-lives', 'TTV moyen', 'Satisfaction', 'Charge', 'Régularité']
   return (
     <section className="overflow-hidden rounded-xl border border-[#e2e2e2] bg-white shadow-[0_4px_10px_rgba(36,25,55,0.05)]" aria-labelledby="workload-title">
       <div className="flex flex-col gap-1 border-b border-[#e2e2e2] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
         <div>
-          <h2 id="workload-title" className="text-sm font-bold text-[#1a1a1a]">Charge par chargé de projet</h2>
-          <p className="mt-0.5 text-xs text-[#8a8a8a]">{CAPACITY_THRESHOLD} projets actifs = 100 % de capacité indicative</p>
+          <h2 id="workload-title" className="text-sm font-bold text-[#1a1a1a]">{t('Charge par chargé de projet')}</h2>
+          <p className="mt-0.5 text-xs text-[#8a8a8a]">{CAPACITY_THRESHOLD} {t('projets actifs = 100 % de capacité indicative')}</p>
         </div>
-        {overloaded > 0 && <span className="mt-2 self-start rounded-full bg-[#fee3e2] px-2.5 py-1 text-xs font-semibold text-[#b7221b] sm:mt-0">{overloaded} en surcharge</span>}
+        {overloaded > 0 && <span className="mt-2 self-start rounded-full bg-[#fee3e2] px-2.5 py-1 text-xs font-semibold text-[#b7221b] sm:mt-0">{overloaded} {t('en surcharge')}</span>}
       </div>
 
-      {rows.length === 0 ? <div className="p-8 text-center text-sm text-[#696969]">Aucun chargé de projet dans ce périmètre.</div> : (
+      {rows.length === 0 ? <div className="p-8 text-center text-sm text-[#696969]">{t('Aucun chargé de projet dans ce périmètre.')}</div> : (
         <>
           <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[880px] text-sm">
               <thead className="border-b border-[#e2e2e2] bg-[#f7f7f7]">
                 <tr>
-                  {['Personne', 'Actifs', 'Comptes', 'À surveiller', 'Go-lives', 'TTV moyen', 'Satisfaction', 'Charge'].map((heading, index) => (
-                    <th key={heading} className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-[#696969] ${index === 0 ? 'text-left' : 'text-center'}`}>{heading}</th>
+                  {headings.map((heading, index) => (
+                    <th
+                      key={heading}
+                      title={index === headings.length - 1 ? t('Nombre de jours consécutifs au-dessus de 80 % de charge, sur la période sélectionnée.') : undefined}
+                      className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-[#696969] ${index === 0 ? 'text-left' : 'text-center'}`}
+                    >
+                      {heading}
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -653,16 +733,19 @@ function WorkloadSection({ rows, overloaded }: { rows: PersonRow[]; overloaded: 
                     <td className="px-4 py-3 text-center tabular-nums text-[#4a4a4a]">{row.accounts}</td>
                     <td className={`px-4 py-3 text-center font-semibold tabular-nums ${row.attention > 0 ? 'text-[#b7221b]' : 'text-[#878787]'}`}>{row.attention}</td>
                     <td className="px-4 py-3 text-center font-semibold tabular-nums text-[#1c6437]">{row.goLives}</td>
-                    <td className="px-4 py-3 text-center tabular-nums text-[#4a4a4a]">{formatDuration(row.averageTtv)}</td>
+                    <td className="px-4 py-3 text-center tabular-nums text-[#4a4a4a]">{formatDuration(row.averageTtv, locale)}</td>
                     <td className="px-4 py-3 text-center">
                       <span className={row.satisfaction === null ? 'text-[#878787]' : scoreTextColor(row.satisfaction)}>{row.satisfaction === null ? '—' : `${row.satisfaction.toFixed(1)} / 5`}</span>
-                      {row.satisfactionResponses > 0 && <span className="block text-[10px] text-[#8a8a8a]">{row.satisfactionResponses} rép.</span>}
+                      {row.satisfactionResponses > 0 && <span className="block text-[10px] text-[#8a8a8a]">{row.satisfactionResponses} {t('rép.')}</span>}
                     </td>
                     <td className="min-w-[170px] px-4 py-3">
                       <div className="flex items-center gap-2">
                         <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#e2e2e2]"><div className={`h-full rounded-full ${chargeBarColor(row.chargePct)}`} style={{ width: `${Math.min(row.chargePct, 100)}%` }} /></div>
                         <span className={`w-10 text-right text-xs font-bold tabular-nums ${chargeTextColor(row.chargePct)}`}>{row.chargePct}%</span>
                       </div>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <StreakBadge snapshots={history.get(row.owner)} loading={historyLoading} />
                     </td>
                   </tr>
                 ))}
@@ -678,13 +761,17 @@ function WorkloadSection({ rows, overloaded }: { rows: PersonRow[]; overloaded: 
                   <span className={`text-sm font-bold tabular-nums ${chargeTextColor(row.chargePct)}`}>{row.chargePct} %</span>
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-[#e2e2e2]"><div className={`h-full rounded-full ${chargeBarColor(row.chargePct)}`} style={{ width: `${Math.min(row.chargePct, 100)}%` }} /></div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-[#8a8a8a]">{t('Régularité')}</span>
+                  <StreakBadge snapshots={history.get(row.owner)} loading={historyLoading} />
+                </div>
                 <dl className="grid grid-cols-3 gap-3 text-center">
-                  <PersonMetric label="Actifs" value={row.active} />
-                  <PersonMetric label="À surveiller" value={row.attention} alert={row.attention > 0} />
+                  <PersonMetric label={t('Actifs')} value={row.active} />
+                  <PersonMetric label={t('À surveiller')} value={row.attention} alert={row.attention > 0} />
                   <PersonMetric label="Go-lives" value={row.goLives} success />
-                  <PersonMetric label="Comptes" value={row.accounts} />
-                  <PersonMetric label="TTV" value={formatDuration(row.averageTtv)} />
-                  <PersonMetric label="Satisfaction" value={row.satisfaction === null ? '—' : row.satisfaction.toFixed(1)} />
+                  <PersonMetric label={t('Comptes')} value={row.accounts} />
+                  <PersonMetric label="TTV" value={formatDuration(row.averageTtv, locale)} />
+                  <PersonMetric label={t('Satisfaction')} value={row.satisfaction === null ? '—' : row.satisfaction.toFixed(1)} />
                 </dl>
               </article>
             ))}
@@ -692,6 +779,22 @@ function WorkloadSection({ rows, overloaded }: { rows: PersonRow[]; overloaded: 
         </>
       )}
     </section>
+  )
+}
+
+function StreakBadge({ snapshots, loading }: { snapshots?: WorkloadSnapshot[]; loading: boolean }) {
+  const { t } = useLocale()
+  if (loading) return <span className="text-xs text-[#c4c4c4]">…</span>
+  if (!snapshots || snapshots.length === 0) return <span className="text-xs text-[#c4c4c4]" title={t('Suivi de la charge démarré récemment, pas encore assez d’historique.')}>—</span>
+
+  const streak = computeStreakDays(snapshots)
+  if (streak === 0) return <span className="text-xs text-[#8a8a8a]">—</span>
+
+  const tone = streak >= 14 ? 'text-[#b7221b] bg-[#fee3e2]' : streak >= 7 ? 'text-[#84550e] bg-[#fbf1ca]' : 'text-[#8b6a24] bg-[#fff9e8]'
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${tone}`}>
+      {streak} {t(streak === 1 ? 'jour ≥80 %' : 'jours ≥80 %')}
+    </span>
   )
 }
 
@@ -705,12 +808,13 @@ function PersonMetric({ label, value, alert = false, success = false }: { label:
 }
 
 function BreakdownCard({ title, data }: { title: string; data: Array<{ name: string; value: number }> }) {
+  const { t } = useLocale()
   const max = Math.max(...data.map(item => item.value), 1)
   const total = data.reduce((sum, item) => sum + item.value, 0)
   return (
     <article className="rounded-xl border border-[#e2e2e2] bg-white p-4 shadow-[0_4px_10px_rgba(36,25,55,0.05)] sm:p-5">
       <h2 className="text-sm font-bold text-[#1a1a1a]">{title}</h2>
-      {data.length === 0 ? <div className="py-10 text-center text-sm text-[#8a8a8a]">Aucune donnée</div> : (
+      {data.length === 0 ? <div className="py-10 text-center text-sm text-[#8a8a8a]">{t('Aucune donnée')}</div> : (
         <div className="mt-4 space-y-3">
           {data.slice(0, 8).map(item => (
             <div key={item.name} className="grid grid-cols-[minmax(100px,150px)_minmax(0,1fr)_44px] items-center gap-3">
@@ -726,13 +830,14 @@ function BreakdownCard({ title, data }: { title: string; data: Array<{ name: str
 }
 
 function UnavailableDimensionCard({ title, message }: { title: string; message: string }) {
+  const { t } = useLocale()
   return (
     <article className="rounded-xl border border-[#e2e2e2] bg-white p-4 shadow-[0_4px_10px_rgba(36,25,55,0.05)] sm:p-5">
       <h2 className="text-sm font-bold text-[#1a1a1a]">{title}</h2>
       <div className="mt-4 flex items-start gap-3 rounded-lg border border-[#ead7a6] bg-[#fff9e8] p-4">
         <AlertCircle aria-hidden="true" className="mt-0.5 shrink-0 text-[#84550e]" size={18} />
         <div>
-          <p className="text-sm font-semibold text-[#754b08]">Donnée Zoho à configurer</p>
+          <p className="text-sm font-semibold text-[#754b08]">{t('Donnée Zoho à configurer')}</p>
           <p className="mt-1 text-xs leading-5 text-[#8b6a24]">{message}</p>
         </div>
       </div>
@@ -767,14 +872,15 @@ function SatisfactionSection({
   authLoading: boolean
   onSync: () => void
 }) {
+  const { locale, t } = useLocale()
   const [page, setPage] = useState(0)
   const pageSize = 10
   const scores = [
-    { label: 'Global', key: 'score_global' as const },
+    { label: t('Global'), key: 'score_global' as const },
     { label: 'Onboarding', key: 'score_onboarding' as const },
-    { label: 'Simplicité', key: 'score_simplicity' as const },
-    { label: 'Outil', key: 'score_tool' as const },
-    { label: 'Formation', key: 'score_training' as const },
+    { label: t('Simplicité'), key: 'score_simplicity' as const },
+    { label: t('Outil'), key: 'score_tool' as const },
+    { label: t('Formation'), key: 'score_training' as const },
   ]
   const totalPages = Math.max(1, Math.ceil(data.length / pageSize))
   const safePage = Math.min(page, totalPages - 1)
@@ -787,22 +893,22 @@ function SatisfactionSection({
     <section className="overflow-hidden rounded-xl border border-[#e2e2e2] bg-white shadow-[0_4px_10px_rgba(36,25,55,0.05)]" aria-labelledby="satisfaction-title">
       <div className="flex flex-col gap-3 border-b border-[#e2e2e2] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
         <div>
-          <h2 id="satisfaction-title" className="text-sm font-bold text-[#1a1a1a]">Satisfaction client</h2>
+          <h2 id="satisfaction-title" className="text-sm font-bold text-[#1a1a1a]">{t('Satisfaction client')}</h2>
           <p className="mt-0.5 text-xs text-[#8a8a8a]">
             {configured === false
-              ? 'Source Zoho Forms non configurée'
+              ? t('Source Zoho Forms non configurée')
               : tableAvailable === false
-                ? 'Table Supabase non disponible'
-                : <>{filterLabel} · {data.length} réponse{data.length !== 1 ? 's' : ''}{lowScores > 0 ? ` · ${lowScores} score${lowScores !== 1 ? 's' : ''} global${lowScores !== 1 ? 'aux' : ''} sous 3,5` : ''}</>}
+                ? t('Table Supabase non disponible')
+                : <>{filterLabel} · {countLabel(data.length, locale, 'réponse', 'response')}{lowScores > 0 ? (locale === 'en' ? ` · ${lowScores} score${lowScores !== 1 ? 's' : ''} below 3.5 overall` : ` · ${lowScores} score${lowScores !== 1 ? 's' : ''} global${lowScores !== 1 ? 'aux' : ''} sous 3,5`) : ''}</>}
           </p>
         </div>
-        <button type="button" onClick={onSync} disabled={authLoading || !canSync || syncing || configured === false || tableAvailable === false} title={!authLoading && !canSync ? 'La synchronisation est réservée aux administrateurs et onboarders.' : configured === false ? 'Zoho Forms doit être configuré avant la synchronisation.' : tableAvailable === false ? 'La table de satisfaction doit être installée avant la synchronisation.' : undefined} className="inline-flex items-center justify-center gap-2 self-start rounded-lg border border-[#d8d8d8] bg-white px-3 py-2 text-xs font-semibold text-[#4a4a4a] hover:bg-[#f7f7f7] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8064b3] disabled:cursor-not-allowed disabled:opacity-50">
+        <button type="button" onClick={onSync} disabled={authLoading || !canSync || syncing || configured === false || tableAvailable === false} title={!authLoading && !canSync ? t('La synchronisation est réservée aux administrateurs et onboarders.') : configured === false ? t('Zoho Forms doit être configuré avant la synchronisation.') : tableAvailable === false ? t('La table de satisfaction doit être installée avant la synchronisation.') : undefined} className="inline-flex items-center justify-center gap-2 self-start rounded-lg border border-[#d8d8d8] bg-white px-3 py-2 text-xs font-semibold text-[#4a4a4a] hover:bg-[#f7f7f7] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8064b3] disabled:cursor-not-allowed disabled:opacity-50">
           <RefreshCw aria-hidden="true" size={14} className={syncing ? 'animate-spin' : ''} />
-          {syncing ? 'Synchronisation…' : 'Synchroniser Zoho Forms'}
+          {syncing ? t('Synchronisation…') : t('Synchroniser Zoho Forms')}
         </button>
       </div>
 
-      {partialFilters && configured !== false && tableAvailable !== false && <div className="border-b border-[#e8dff2] bg-[#faf8fc] px-4 py-2.5 text-xs text-[#6d5684] sm:px-5">Les réponses peuvent être filtrées par chargé de projet, période et recherche. Produit, statut et signal ne sont pas disponibles dans Zoho Forms.</div>}
+      {partialFilters && configured !== false && tableAvailable !== false && <div className="border-b border-[#e8dff2] bg-[#faf8fc] px-4 py-2.5 text-xs text-[#6d5684] sm:px-5">{t('Les réponses peuvent être filtrées par chargé de projet, période et recherche. Produit, statut et signal ne sont pas disponibles dans Zoho Forms.')}</div>}
       {syncMessage && <p className="border-b border-[#ccebdd] bg-[#f0fbf6] px-4 py-2.5 text-xs font-medium text-[#1c6437] sm:px-5" role="status">{syncMessage}</p>}
       {error && <p className="border-b border-[#f1b4b0] bg-[#fff1f0] px-4 py-2.5 text-xs font-medium text-[#b7221b] sm:px-5" role="alert">{error}</p>}
 
@@ -811,15 +917,15 @@ function SatisfactionSection({
       ) : configured === false ? (
         <div className="flex items-start gap-3 px-5 py-8" role="status">
           <AlertCircle aria-hidden="true" className="mt-0.5 shrink-0 text-[#84550e]" size={18} />
-          <div><p className="text-sm font-semibold text-[#754b08]">Zoho Forms non configuré</p><p className="mt-1 max-w-2xl text-xs leading-5 text-[#8b6a24]">Ajoutez le formulaire et le rapport Satisfaction dans la configuration Zoho pour importer les réponses. Aucune note n’est affichée tant que la source n’est pas disponible.</p></div>
+          <div><p className="text-sm font-semibold text-[#754b08]">{t('Zoho Forms non configuré')}</p><p className="mt-1 max-w-2xl text-xs leading-5 text-[#8b6a24]">{t('Ajoutez le formulaire et le rapport Satisfaction dans la configuration Zoho pour importer les réponses. Aucune note n’est affichée tant que la source n’est pas disponible.')}</p></div>
         </div>
       ) : tableAvailable === false ? (
         <div className="flex items-start gap-3 px-5 py-8" role="status">
           <AlertCircle aria-hidden="true" className="mt-0.5 shrink-0 text-[#84550e]" size={18} />
-          <div><p className="text-sm font-semibold text-[#754b08]">Stockage de satisfaction non initialisé</p><p className="mt-1 max-w-2xl text-xs leading-5 text-[#8b6a24]">La table Supabase dédiée doit être installée avant la première synchronisation.</p></div>
+          <div><p className="text-sm font-semibold text-[#754b08]">{t('Stockage de satisfaction non initialisé')}</p><p className="mt-1 max-w-2xl text-xs leading-5 text-[#8b6a24]">{t('La table Supabase dédiée doit être installée avant la première synchronisation.')}</p></div>
         </div>
       ) : data.length === 0 ? (
-        <div className="px-5 py-10 text-center"><p className="text-sm font-medium text-[#4a4a4a]">Aucune réponse dans ce périmètre</p><p className="mt-1 text-xs text-[#8a8a8a]">Synchronisez Zoho Forms ou élargissez les filtres.</p></div>
+        <div className="px-5 py-10 text-center"><p className="text-sm font-medium text-[#4a4a4a]">{t('Aucune réponse dans ce périmètre')}</p><p className="mt-1 text-xs text-[#8a8a8a]">{t('Synchronisez Zoho Forms ou élargissez les filtres.')}</p></div>
       ) : (
         <div className="space-y-5 p-4 sm:p-5">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
@@ -839,7 +945,10 @@ function SatisfactionSection({
             <table className="w-full min-w-[920px] text-xs">
               <thead className="border-b border-[#e2e2e2] bg-[#f7f7f7]">
                 <tr>
-                  {['Établissement', 'Répondant', 'Owner', 'Global', 'Onboarding', 'Simplicité', 'Outil', 'Formation', 'Commentaire', 'Date'].map(heading => <th key={heading} className="whitespace-nowrap px-3 py-2 text-left font-semibold uppercase tracking-wide text-[#696969]">{heading}</th>)}
+                  {(locale === 'en'
+                    ? ['Property', 'Respondent', 'Owner', 'Global', 'Onboarding', 'Simplicity', 'Tool', 'Training', 'Comment', 'Date']
+                    : ['Établissement', 'Répondant', 'Owner', 'Global', 'Onboarding', 'Simplicité', 'Outil', 'Formation', 'Commentaire', 'Date']
+                  ).map(heading => <th key={heading} className="whitespace-nowrap px-3 py-2 text-left font-semibold uppercase tracking-wide text-[#696969]">{heading}</th>)}
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#e2e2e2]">
@@ -861,22 +970,25 @@ function SatisfactionSection({
             {pageRows.map(row => (
               <article key={row.zoho_id} className="space-y-3 p-4">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0"><h3 className="truncate text-sm font-semibold text-[#1a1a1a]">{row.establishment || 'Établissement non renseigné'}</h3><p className="mt-0.5 text-xs text-[#8a8a8a]">{row.respondent_name || 'Répondant inconnu'} · {row.owner || 'Owner inconnu'}</p></div>
+                  <div className="min-w-0"><h3 className="truncate text-sm font-semibold text-[#1a1a1a]">{row.establishment || t('Établissement non renseigné')}</h3><p className="mt-0.5 text-xs text-[#8a8a8a]">{row.respondent_name || t('Répondant inconnu')} · {row.owner || t('Owner inconnu')}</p></div>
                   <span className={`shrink-0 text-lg font-bold tabular-nums ${row.score_global > 0 ? scoreTextColor(row.score_global) : 'text-[#878787]'}`}>{row.score_global > 0 ? row.score_global.toFixed(1) : '—'}</span>
                 </div>
-                <div className="grid grid-cols-4 gap-1.5 text-center">{[['Onb.', row.score_onboarding], ['Simpl.', row.score_simplicity], ['Outil', row.score_tool], ['Form.', row.score_training]].map(([label, value]) => <div key={String(label)} className="rounded bg-[#f7f7f7] p-1.5"><p className="text-[9px] uppercase text-[#8a8a8a]">{label}</p><p className="mt-0.5 text-xs font-semibold text-[#4a4a4a]">{Number(value) > 0 ? Number(value).toFixed(1) : '—'}</p></div>)}</div>
+                <div className="grid grid-cols-4 gap-1.5 text-center">{(locale === 'en'
+                  ? [['Onb.', row.score_onboarding], ['Simpl.', row.score_simplicity], ['Tool', row.score_tool], ['Train.', row.score_training]]
+                  : [['Onb.', row.score_onboarding], ['Simpl.', row.score_simplicity], ['Outil', row.score_tool], ['Form.', row.score_training]]
+                ).map(([label, value]) => <div key={String(label)} className="rounded bg-[#f7f7f7] p-1.5"><p className="text-[9px] uppercase text-[#8a8a8a]">{label}</p><p className="mt-0.5 text-xs font-semibold text-[#4a4a4a]">{Number(value) > 0 ? Number(value).toFixed(1) : '—'}</p></div>)}</div>
                 {row.comment && <p className="rounded-lg bg-[#faf8fc] p-2.5 text-xs leading-5 text-[#5f5269]">“{row.comment}”</p>}
-                <p className="text-[10px] text-[#9a9a9a]">{row.submitted_at ? formatDate(row.submitted_at.slice(0, 10)) : 'Date inconnue'}</p>
+                <p className="text-[10px] text-[#9a9a9a]">{row.submitted_at ? formatDate(row.submitted_at.slice(0, 10)) : t('Date inconnue')}</p>
               </article>
             ))}
           </div>
 
           {totalPages > 1 && (
             <div className="flex items-center justify-between pt-1">
-              <span className="text-xs text-[#696969]">Page {safePage + 1} / {totalPages}</span>
+              <span className="text-xs text-[#696969]">{t('Page')} {safePage + 1} / {totalPages}</span>
               <div className="flex gap-1">
-                <button type="button" onClick={() => setPage(value => Math.max(0, value - 1))} disabled={safePage === 0} className="rounded-lg border border-[#e2e2e2] px-2.5 py-1.5 text-xs text-[#4a4a4a] hover:bg-[#f7f7f7] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8064b3] disabled:opacity-40">‹ Préc.</button>
-                <button type="button" onClick={() => setPage(value => Math.min(totalPages - 1, value + 1))} disabled={safePage >= totalPages - 1} className="rounded-lg border border-[#e2e2e2] px-2.5 py-1.5 text-xs text-[#4a4a4a] hover:bg-[#f7f7f7] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8064b3] disabled:opacity-40">Suiv. ›</button>
+                <button type="button" onClick={() => setPage(value => Math.max(0, value - 1))} disabled={safePage === 0} className="rounded-lg border border-[#e2e2e2] px-2.5 py-1.5 text-xs text-[#4a4a4a] hover:bg-[#f7f7f7] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8064b3] disabled:opacity-40">‹ {t('Préc.')}</button>
+                <button type="button" onClick={() => setPage(value => Math.min(totalPages - 1, value + 1))} disabled={safePage >= totalPages - 1} className="rounded-lg border border-[#e2e2e2] px-2.5 py-1.5 text-xs text-[#4a4a4a] hover:bg-[#f7f7f7] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8064b3] disabled:opacity-40">{t('Suiv.')} ›</button>
               </div>
             </div>
           )}
@@ -904,30 +1016,34 @@ function FilterLabel({ children }: { children: ReactNode }) {
 }
 
 function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  const { t } = useLocale()
   return (
     <div role="alert" className="flex flex-col gap-3 rounded-xl border border-[#f1b4b0] bg-[#fff1f0] p-5 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex items-start gap-3"><AlertCircle aria-hidden="true" className="mt-0.5 shrink-0 text-[#b7221b]" size={18} /><div><p className="text-sm font-semibold text-[#8f211d]">Données indisponibles</p><p className="mt-0.5 text-sm text-[#a33b36]">{message}</p></div></div>
-      {onRetry && <button type="button" onClick={onRetry} className="self-start rounded-lg border border-[#d98984] bg-white px-3 py-2 text-xs font-semibold text-[#8f211d] hover:bg-[#fff8f7] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#d98984]">Réessayer</button>}
+      <div className="flex items-start gap-3"><AlertCircle aria-hidden="true" className="mt-0.5 shrink-0 text-[#b7221b]" size={18} /><div><p className="text-sm font-semibold text-[#8f211d]">{t('Données indisponibles')}</p><p className="mt-0.5 text-sm text-[#a33b36]">{message}</p></div></div>
+      {onRetry && <button type="button" onClick={onRetry} className="self-start rounded-lg border border-[#d98984] bg-white px-3 py-2 text-xs font-semibold text-[#8f211d] hover:bg-[#fff8f7] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#d98984]">{t('Réessayer')}</button>}
     </div>
   )
 }
 
 function EmptyDashboard({ onReset }: { onReset: () => void }) {
+  const { t } = useLocale()
   return (
     <div className="rounded-xl border border-[#ded8e8] bg-[#f8f5fc] px-5 py-10 text-center">
-      <p className="text-sm font-semibold text-[#59319f]">Aucun projet ne correspond à ces filtres.</p>
-      <button type="button" onClick={onReset} className="mt-3 rounded-lg border border-[#cbbcdf] bg-white px-3 py-2 text-xs font-semibold text-[#59319f] hover:bg-[#fbf9fd] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8064b3]">Réinitialiser les filtres</button>
+      <p className="text-sm font-semibold text-[#59319f]">{t('Aucun projet ne correspond à ces filtres.')}</p>
+      <button type="button" onClick={onReset} className="mt-3 rounded-lg border border-[#cbbcdf] bg-white px-3 py-2 text-xs font-semibold text-[#59319f] hover:bg-[#fbf9fd] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8064b3]">{t('Réinitialiser les filtres')}</button>
     </div>
   )
 }
 
 function EmptyChart() {
-  return <div className="flex h-full items-center justify-center text-sm text-[#8a8a8a]">Aucune donnée pour ce périmètre</div>
+  const { t } = useLocale()
+  return <div className="flex h-full items-center justify-center text-sm text-[#8a8a8a]">{t('Aucune donnée pour ce périmètre')}</div>
 }
 
 function DashboardSkeleton() {
+  const { t } = useLocale()
   return (
-    <div className="space-y-6" aria-label="Chargement du dashboard">
+    <div className="space-y-6" aria-label={t('Chargement du dashboard')}>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">{Array.from({ length: 5 }).map((_, index) => <div key={index} className="h-40 animate-pulse rounded-xl bg-[#ece9ef]" />)}</div>
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2"><div className="h-[390px] animate-pulse rounded-xl bg-[#ece9ef] xl:col-span-2" /><div className="h-[390px] animate-pulse rounded-xl bg-[#ece9ef]" /><div className="h-[390px] animate-pulse rounded-xl bg-[#ece9ef]" /></div>
       <div className="h-72 animate-pulse rounded-xl bg-[#ece9ef]" />
@@ -947,9 +1063,9 @@ function computeDateRange(preset: DatePreset, customFrom: string, customTo: stri
   return { from: isoDay(new Date(year, month - 5, 1)), to: isoDay(today) }
 }
 
-function validateRange(range: DateRange | null, customFrom: string, customTo: string): string | null {
-  if (!customFrom || !customTo) return 'Renseignez une date de début et une date de fin.'
-  if (!range || range.from > range.to) return 'La date de début doit précéder la date de fin.'
+function validateRange(range: DateRange | null, customFrom: string, customTo: string, t: (text: string) => string): string | null {
+  if (!customFrom || !customTo) return t('Renseignez une date de début et une date de fin.')
+  if (!range || range.from > range.to) return t('La date de début doit précéder la date de fin.')
   return null
 }
 
@@ -1011,10 +1127,6 @@ function resolveOwnerFilter(filter: string, availableOwners: string[]): string[]
   if (filter === 'Tous') return availableOwners
   if (filter === 'Implémentation') return [...IMPLEMENTATION_GROUP]
   return [filter]
-}
-
-function isActiveProject(project: OnboardingProject): boolean {
-  return project.status !== 'live' && project.status !== 'other'
 }
 
 function isAttentionProject(project: OnboardingProject): boolean {
@@ -1090,10 +1202,10 @@ function buildBreakdown(values: string[]): Array<{ name: string; value: number }
   return [...counts.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value || a.name.localeCompare(b.name, 'fr'))
 }
 
-function buildMonthlyData(projects: OnboardingProject[], range: DateRange): MonthlyDatum[] {
+function buildMonthlyData(projects: OnboardingProject[], range: DateRange, locale: Locale): MonthlyDatum[] {
   return monthKeys(range).map(month => ({
     month,
-    label: formatMonth(month),
+    label: formatMonth(month, locale),
     starts: projects.filter(project => project.startDate?.startsWith(month) && isWithinRange(project.startDate, range)).length,
     goLives: projects.filter(project => {
       const liveDate = getActualGoLiveDate(project)
@@ -1122,20 +1234,23 @@ function monthKeys(range: DateRange): string[] {
   return result
 }
 
-function compareCount(current: number, previous: number, enabled: boolean): ComparisonDisplay | undefined {
+function compareCount(current: number, previous: number, enabled: boolean, locale: Locale): ComparisonDisplay | undefined {
   if (!enabled) return undefined
-  if (previous === 0) return current === 0 ? { text: 'Aucun sur la période précédente', tone: 'muted' } : { text: `+${current} vs période précédente`, tone: 'positive' }
+  const vsPrevious = translate(locale, 'vs période précédente')
+  if (previous === 0) return current === 0 ? { text: translate(locale, 'Aucun sur la période précédente'), tone: 'muted' } : { text: `+${current} ${vsPrevious}`, tone: 'positive' }
   const delta = Math.round(((current - previous) / previous) * 100)
-  if (delta === 0) return { text: 'Stable vs période précédente', tone: 'neutral' }
-  return { text: `${delta > 0 ? '+' : ''}${delta} % vs période précédente`, tone: delta > 0 ? 'positive' : 'negative' }
+  if (delta === 0) return { text: translate(locale, 'Stable vs période précédente'), tone: 'neutral' }
+  return { text: `${delta > 0 ? '+' : ''}${delta} % ${vsPrevious}`, tone: delta > 0 ? 'positive' : 'negative' }
 }
 
-function compareDuration(current: number | null, previous: number | null, enabled: boolean): ComparisonDisplay | undefined {
+function compareDuration(current: number | null, previous: number | null, enabled: boolean, locale: Locale): ComparisonDisplay | undefined {
   if (!enabled) return undefined
-  if (current === null || previous === null) return { text: 'Base comparable insuffisante', tone: 'muted' }
+  if (current === null || previous === null) return { text: translate(locale, 'Base comparable insuffisante'), tone: 'muted' }
   const delta = Math.round(current - previous)
-  if (delta === 0) return { text: 'Stable vs période précédente', tone: 'neutral' }
-  return { text: `${delta > 0 ? '+' : ''}${delta} j vs période précédente`, tone: delta < 0 ? 'positive' : 'negative' }
+  const vsPrevious = translate(locale, 'vs période précédente')
+  if (delta === 0) return { text: translate(locale, 'Stable vs période précédente'), tone: 'neutral' }
+  const unit = locale === 'en' ? 'd' : 'j'
+  return { text: `${delta > 0 ? '+' : ''}${delta} ${unit} ${vsPrevious}`, tone: delta < 0 ? 'positive' : 'negative' }
 }
 
 function average(values: number[]): number | null {
@@ -1160,22 +1275,23 @@ function parseIsoDay(value: string): Date {
   return new Date(year, month - 1, day)
 }
 
-function formatRange(range: DateRange): string {
-  const formatter = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
+function formatRange(range: DateRange, locale: Locale): string {
+  const formatter = new Intl.DateTimeFormat(locale === 'en' ? 'en-GB' : 'fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
   return `${formatter.format(parseIsoDay(range.from))} – ${formatter.format(parseIsoDay(range.to))}`
 }
 
-function formatMonth(month: string): string {
-  return new Intl.DateTimeFormat('fr-FR', { month: 'short', year: '2-digit' }).format(parseIsoDay(`${month}-01`)).replace('.', '')
+function formatMonth(month: string, locale: Locale): string {
+  return new Intl.DateTimeFormat(locale === 'en' ? 'en-GB' : 'fr-FR', { month: 'short', year: '2-digit' }).format(parseIsoDay(`${month}-01`)).replace('.', '')
 }
 
-function formatNumber(value: number): string {
-  return new Intl.NumberFormat('fr-FR').format(value)
+function formatNumber(value: number, locale: Locale): string {
+  return new Intl.NumberFormat(locale === 'en' ? 'en-GB' : 'fr-FR').format(value)
 }
 
-function formatDuration(value: number | null): string {
+function formatDuration(value: number | null, locale: Locale): string {
   if (value === null) return '—'
   const rounded = Math.round(value)
+  if (locale === 'en') return rounded < 30 ? `${rounded}d` : `${(value / 30.44).toFixed(1)} months`
   return rounded < 30 ? `${rounded} j` : `${(value / 30.44).toFixed(1)} mois`
 }
 
@@ -1205,19 +1321,33 @@ function truncateLabel(value: string, length: number): string {
   return value.length > length ? `${value.slice(0, length - 1)}…` : value
 }
 
-function satisfactionFilterLabel(owner: string, range: DateRange | null, search: string): string {
-  const parts = [owner === 'Tous' ? 'Tous les chargés de projet' : owner]
-  if (range) parts.push(formatRange(range))
-  if (search) parts.push(`recherche « ${search} »`)
+function satisfactionFilterLabel(owner: string, range: DateRange | null, search: string, locale: Locale): string {
+  const parts = [owner === 'Tous' ? translate(locale, 'Tous les chargés de projet') : owner]
+  if (range) parts.push(formatRange(range, locale))
+  if (search) parts.push(locale === 'en' ? `search "${search}"` : `recherche « ${search} »`)
   return parts.join(' · ')
 }
 
-function buildReport(input: { range: DateRange | null; projects: OnboardingProject[]; activeProjects: number; accounts: number; blocked: number; overdue: number; highRisk: number; goLives: number; averageTtv: number | null; perPerson: PersonRow[]; satisfaction: number | null; satisfactionResponses: number }) {
+function buildReport(input: { locale: Locale; range: DateRange | null; projects: OnboardingProject[]; activeProjects: number; accounts: number; blocked: number; overdue: number; highRisk: number; goLives: number; averageTtv: number | null; perPerson: PersonRow[]; satisfaction: number | null; satisfactionResponses: number }) {
+  const { locale } = input
+  if (locale === 'en') {
+    const lines = [
+      `Onboarding pilotage — ${input.range ? formatRange(input.range, locale) : 'all projects'}`,
+      `${input.projects.length} projects · ${input.activeProjects} active · ${input.accounts} accounts`,
+      `${input.blocked} blocked · ${input.overdue} overdue · ${input.highRisk} high risk`,
+      `${input.goLives} go-lives · average TTV ${formatDuration(input.averageTtv, locale)}`,
+      `Overall satisfaction: ${input.satisfaction === null ? 'not available' : `${input.satisfaction.toFixed(1)} / 5`} (${input.satisfactionResponses} responses)`,
+      '',
+      'Workload per project owner:',
+      ...input.perPerson.map(person => `- ${person.owner}: ${person.active} active, ${person.attention} to watch, ${person.chargePct}% workload`),
+    ]
+    return lines.join('\n')
+  }
   const lines = [
-    `Pilotage onboarding — ${input.range ? formatRange(input.range) : 'tous les projets'}`,
+    `Pilotage onboarding — ${input.range ? formatRange(input.range, locale) : 'tous les projets'}`,
     `${input.projects.length} projets · ${input.activeProjects} actifs · ${input.accounts} comptes`,
     `${input.blocked} bloqués · ${input.overdue} en retard · ${input.highRisk} à risque élevé`,
-    `${input.goLives} go-lives · TTV moyen ${formatDuration(input.averageTtv)}`,
+    `${input.goLives} go-lives · TTV moyen ${formatDuration(input.averageTtv, locale)}`,
     `Satisfaction globale : ${input.satisfaction === null ? 'non disponible' : `${input.satisfaction.toFixed(1)} / 5`} (${input.satisfactionResponses} réponses)`,
     '',
     'Charge par chargé de projet :',

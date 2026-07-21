@@ -17,7 +17,7 @@ export default function LoginPage() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, next: new URLSearchParams(window.location.search).get('next') }),
       })
       const data = await res.json()
       if (data.status === 'sent') setState('sent')

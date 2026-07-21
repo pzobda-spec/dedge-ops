@@ -7,6 +7,8 @@ import { getSessionUserEmail } from '@/lib/auth/session'
 import { getOnboardingProjectByIdOrZohoId } from '@/lib/onboarding/projects'
 import { getUserByEmail } from '@/lib/auth/roles'
 import SyncButton from '@/components/todoist/SyncButton'
+import { getServerLocale } from '@/lib/i18n/serverLocale'
+import { translate } from '@/lib/i18n/translate'
 
 const STATUS_LABELS: Record<string, string> = {
   not_started:    'Non démarré',
@@ -40,10 +42,12 @@ export default async function OnboardingProjectDetailPage({
 }: {
   params: { id: string }
 }) {
-  const [project, userEmail] = await Promise.all([
+  const [project, userEmail, locale] = await Promise.all([
     getOnboardingProjectByIdOrZohoId(params.id),
     getSessionUserEmail(),
+    getServerLocale(),
   ])
+  const t = (text: string) => translate(locale, text)
   const appUser = userEmail ? await getUserByEmail(userEmail) : null
   const isAdmin = appUser?.role === 'admin' || (!appUser && isHardcodedAccessEmail(userEmail))
   const readonly = appUser?.role === 'commercial_readonly' || !isAdmin && appUser?.role !== 'onboarder'
@@ -57,26 +61,26 @@ export default async function OnboardingProjectDetailPage({
           <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
             <Link href="/onboarding" className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-[#59319f] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#59319f]">
               <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-              Retour aux onboardings
+              {t('Retour aux onboardings')}
             </Link>
-            <h1 className="text-xl font-semibold text-[#1a1a1a] sm:text-2xl">Projet non synchronisé</h1>
-            <p className="mt-1 break-all text-sm text-[#696969]">Identifiant Zoho : {params.id}</p>
+            <h1 className="text-xl font-semibold text-[#1a1a1a] sm:text-2xl">{t('Projet non synchronisé')}</h1>
+            <p className="mt-1 break-all text-sm text-[#696969]">{t('Identifiant Zoho')} : {params.id}</p>
           </div>
         </header>
         <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
           <div className="max-w-2xl space-y-4 rounded-xl border border-[#e2e2e2] bg-white p-5 shadow-[0_4px_12px_rgba(0,0,0,0.05)] sm:p-6">
             <p className="text-sm text-[#4a4a4a]">
-              Ce projet existe dans Zoho Projects mais n&apos;a pas encore été importé dans la base de données.
+              {t('Ce projet existe dans Zoho Projects mais n\'a pas encore été importé dans la base de données.')}
               {canSync
-                ? ' Lancez la synchronisation pour l\'importer. La fiche se mettra ensuite à jour automatiquement.'
-                : ' Votre profil dispose d\'un accès en lecture seule : un administrateur ou un onboarder doit lancer la synchronisation.'}
+                ? ' ' + t('Lancez la synchronisation pour l\'importer. La fiche se mettra ensuite à jour automatiquement.')
+                : ' ' + t('Votre profil dispose d\'un accès en lecture seule : un administrateur ou un onboarder doit lancer la synchronisation.')}
             </p>
             <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-start">
               {canSync && <ForceSyncButton projectId={params.id} />}
               {zohoUrl && (
                 <a href={zohoUrl} target="_blank" rel="noopener noreferrer"
                   className="inline-flex min-h-10 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-[#59319f] hover:bg-[#f3eeff] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#59319f] focus-visible:ring-offset-2">
-                  Voir dans Zoho
+                  {t('Voir dans Zoho')}
                   <ExternalLink className="h-4 w-4" aria-hidden="true" />
                 </a>
               )}
@@ -96,27 +100,27 @@ export default async function OnboardingProjectDetailPage({
         <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
           <Link href="/onboarding" className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-[#59319f] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#59319f]">
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            Retour aux onboardings
+            {t('Retour aux onboardings')}
           </Link>
 
           <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <span className={`rounded px-2 py-1 text-xs font-medium ${productBadgeClass(row.product)}`}>
-                  {row.product || 'Produit non renseigné'}
+                  {row.product || t('Produit non renseigné')}
                 </span>
                 <span className={`rounded px-2 py-1 text-xs font-medium ${statusBadgeClass(row.zoho_status)}`}>
-                  {row.zoho_status ? STATUS_LABELS[row.zoho_status] ?? row.zoho_status : 'Statut inconnu'}
+                  {row.zoho_status ? t(STATUS_LABELS[row.zoho_status] ?? row.zoho_status) : t('Statut inconnu')}
                 </span>
               </div>
               <h1 className="break-words text-2xl font-semibold leading-tight text-[#1f1f1f] sm:text-3xl">
-                {row.hotel_name || 'Projet onboarding'}
+                {row.hotel_name || t('Projet onboarding')}
               </h1>
               <div className="mt-2 flex items-start gap-2 text-sm text-[#696969]">
                 <UserRound className="mt-0.5 h-4 w-4 flex-none" aria-hidden="true" />
                 <p className="min-w-0 break-words">
-                  <span className="font-medium text-[#4a4a4a]">Responsable :</span>{' '}
-                  {row.owner || 'Non renseigné'}
+                  <span className="font-medium text-[#4a4a4a]">{t('Responsable')} :</span>{' '}
+                  {row.owner || t('Non renseigné')}
                   {row.owner_email && <span className="break-all"> · {row.owner_email}</span>}
                 </p>
               </div>
@@ -130,7 +134,7 @@ export default async function OnboardingProjectDetailPage({
                   rel="noopener noreferrer"
                   className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#d9caef] bg-white px-3 py-2 text-sm font-medium text-[#59319f] transition-colors hover:border-[#59319f] hover:bg-[#f3eeff] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#59319f] focus-visible:ring-offset-2"
                 >
-                  Ouvrir dans Zoho
+                  {t('Ouvrir dans Zoho')}
                   <ExternalLink className="h-4 w-4" aria-hidden="true" />
                 </a>
               )}
