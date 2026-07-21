@@ -517,7 +517,7 @@ export default function OnboardingPilotagePage() {
                             <CartesianGrid stroke="#ece8f0" strokeDasharray="3 3" vertical={false} />
                             <XAxis dataKey="label" tick={{ fontSize: 11, fill: MUTED }} tickLine={false} axisLine={false} />
                             <YAxis domain={[0, 200]} tickFormatter={value => `${value}%`} tick={{ fontSize: 11, fill: MUTED }} tickLine={false} axisLine={false} />
-                            <Tooltip contentStyle={TOOLTIP_STYLE} formatter={value => [`${value}%`, '']} />
+                            <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(value, name) => [`${value}%`, name]} />
                             <Legend wrapperStyle={{ fontSize: 11 }} />
                             <ReferenceLine y={80} stroke="#d58b28" strokeDasharray="4 4" label={{ value: '80%', fontSize: 10, fill: '#84550e', position: 'insideTopRight' }} />
                             <ReferenceLine y={100} stroke="#b7221b" strokeDasharray="4 4" label={{ value: '100%', fontSize: 10, fill: '#b7221b', position: 'insideTopRight' }} />
