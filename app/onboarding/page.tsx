@@ -34,6 +34,7 @@ const STATUS_LABELS: Record<ProjectStatus, string> = {
 type DefinedRiskLevel = Exclude<RiskLevel, null>
 type RiskFilter = 'all' | DefinedRiskLevel | 'high_or_critical'
 type Scope = 'mine' | 'impl' | 'all'
+type ClientTypologyFilter = 'all' | 'group' | 'individual' | 'unlinked'
 
 const RISK_LABELS: Record<DefinedRiskLevel, string> = {
   low: 'Faible',
@@ -255,6 +256,7 @@ export default function MesProjetsPage() {
   const [ownerFilter, setOwnerFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | 'all'>('all')
   const [riskFilter, setRiskFilter] = useState<RiskFilter>('all')
+  const [clientTypologyFilter, setClientTypologyFilter] = useState<ClientTypologyFilter>('all')
   const [overdueOnly, setOverdueOnly] = useState(false)
   const [search, setSearch] = useState('')
 
@@ -333,6 +335,7 @@ export default function MesProjetsPage() {
     const normalizedSearch = search.trim().toLocaleLowerCase('fr')
     return portfolioProjects
       .filter(project => statusFilter === 'all' || project.status === statusFilter)
+      .filter(project => clientTypologyFilter === 'all' || project.clientTypology === clientTypologyFilter)
       .filter(project => {
         if (riskFilter === 'all') return true
         if (riskFilter === 'high_or_critical') {
@@ -349,14 +352,15 @@ export default function MesProjetsPage() {
           project.product,
           project.ownerName,
           project.accountCRMName,
+          project.clientName,
           project.pms,
         ].some(value => value?.toLocaleLowerCase('fr').includes(normalizedSearch))
       })
       .sort(sortProjects)
-  }, [overdueOnly, portfolioProjects, riskFilter, search, statusFilter])
+  }, [clientTypologyFilter, overdueOnly, portfolioProjects, riskFilter, search, statusFilter])
 
   const isLoading = loading || (scope === 'mine' && userLoading)
-  const hasListFilters = ownerFilter !== 'all' || statusFilter !== 'all' || riskFilter !== 'all' || overdueOnly || Boolean(search.trim())
+  const hasListFilters = ownerFilter !== 'all' || statusFilter !== 'all' || riskFilter !== 'all' || clientTypologyFilter !== 'all' || overdueOnly || Boolean(search.trim())
 
   function selectScope(nextScope: Scope) {
     setScope(nextScope)
@@ -367,6 +371,7 @@ export default function MesProjetsPage() {
     setOwnerFilter('all')
     setStatusFilter('all')
     setRiskFilter('all')
+    setClientTypologyFilter('all')
     setOverdueOnly(false)
     setSearch('')
   }
@@ -375,6 +380,7 @@ export default function MesProjetsPage() {
     setSearch('')
     setStatusFilter('all')
     setRiskFilter('all')
+    setClientTypologyFilter('all')
     setOverdueOnly(false)
   }
 
@@ -382,6 +388,7 @@ export default function MesProjetsPage() {
     setSearch('')
     setStatusFilter('blocked')
     setRiskFilter('all')
+    setClientTypologyFilter('all')
     setOverdueOnly(false)
   }
 
@@ -389,6 +396,7 @@ export default function MesProjetsPage() {
     setSearch('')
     setStatusFilter('all')
     setRiskFilter('high_or_critical')
+    setClientTypologyFilter('all')
     setOverdueOnly(false)
   }
 
@@ -396,6 +404,7 @@ export default function MesProjetsPage() {
     setSearch('')
     setStatusFilter('all')
     setRiskFilter('all')
+    setClientTypologyFilter('all')
     setOverdueOnly(true)
   }
 
@@ -403,6 +412,7 @@ export default function MesProjetsPage() {
     setSearch('')
     setStatusFilter('pending_client')
     setRiskFilter('all')
+    setClientTypologyFilter('all')
     setOverdueOnly(false)
   }
 
@@ -425,6 +435,8 @@ export default function MesProjetsPage() {
           <div className="inline-flex self-start rounded-lg border border-[#ded8e8] bg-[#f7f5fa] p-1" aria-label={t('Affichage des projets')}>
             <button type="button" aria-pressed="true" className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-[#59319f] shadow-sm">{t('Liste')}</button>
             <button type="button" onClick={() => router.push('/onboarding/board')} aria-pressed="false" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">Board</button>
+            <button type="button" onClick={() => router.push('/onboarding/pilotage')} aria-pressed="false" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Pilotage')}</button>
+            <button type="button" onClick={() => router.push('/onboarding/clients')} aria-pressed="false" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Clients')}</button>
           </div>
         </div>
       </header>
@@ -541,7 +553,7 @@ export default function MesProjetsPage() {
               )}
             </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[minmax(260px,1.5fr)_repeat(3,minmax(150px,1fr))]">
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[minmax(260px,1.5fr)_repeat(4,minmax(140px,1fr))]">
               <label className="block">
                 <span className="mb-1.5 block text-xs font-medium text-[#4a4a4a]">{t('Recherche')}</span>
                 <div className="relative">
@@ -598,6 +610,20 @@ export default function MesProjetsPage() {
                   <option value="high">{t('Élevé')}</option>
                   <option value="medium">{t('Modéré')}</option>
                   <option value="low">{t('Faible')}</option>
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-[#4a4a4a]">{t('Typologie client')}</span>
+                <select
+                  value={clientTypologyFilter}
+                  onChange={event => setClientTypologyFilter(event.target.value as ClientTypologyFilter)}
+                  className="h-10 w-full rounded-lg border border-[#d8d8d8] bg-white px-3 text-sm text-[#1a1a1a] focus:border-[#8c5bdb] focus:outline-none focus:ring-2 focus:ring-[#e8dbfa]"
+                >
+                  <option value="all">{t('Toutes les typologies')}</option>
+                  <option value="group">{t('Groupe')}</option>
+                  <option value="individual">{t('Individuel')}</option>
+                  <option value="unlinked">{t('Non rattaché')}</option>
                 </select>
               </label>
             </div>

@@ -59,6 +59,7 @@ export type ProjectStatus =
   | 'other'
 
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical' | null
+export type ClientTypology = 'group' | 'individual' | 'unlinked'
 
 export interface OnboardingProject {
   id: string
@@ -78,8 +79,15 @@ export interface OnboardingProject {
   implementationLanguage: string | null
   pms: string | null
   csmName: string | null
+  accountCRMId: string | null
   accountCRMName: string | null
+  clientPropertyId: string | null
+  clientPropertyName: string | null
   clientType: string | null   // e.g. 'Groupe' | 'Individuel' — from custom field 'Type'
+  clientId: string | null
+  clientName: string | null
+  clientIsGroup: boolean
+  clientTypology: ClientTypology
   isOverdue: boolean
   isBlocked: boolean
   projectUrl: string
@@ -106,6 +114,9 @@ interface RawProject {
   project_percent?: number
   group_name?: string
   custom_fields?: RawCustomField[]
+  account?: {
+    record_id?: number | string
+  } | null
 }
 
 interface ProjectsListResponse {
@@ -224,6 +235,9 @@ function mapProject(raw: RawProject): OnboardingProject {
   const clientType = clientTypeRaw
 
   const accountRaw = getCustomField(cf, 'Account')
+  const accountCRMId = raw.account?.record_id != null
+    ? String(raw.account.record_id)
+    : null
   let accountCRMName: string | null = null
   if (accountRaw && accountRaw.includes(' - ')) {
     const candidate = accountRaw.split(' - ').slice(1).join(' - ').trim()
@@ -252,8 +266,15 @@ function mapProject(raw: RawProject): OnboardingProject {
     implementationLanguage,
     pms,
     csmName,
+    accountCRMId,
     accountCRMName,
+    clientPropertyId: null,
+    clientPropertyName: null,
     clientType,
+    clientId: null,
+    clientName: null,
+    clientIsGroup: false,
+    clientTypology: 'unlinked',
     isOverdue,
     isBlocked,
     projectUrl: buildZohoProjectUrl(id),
