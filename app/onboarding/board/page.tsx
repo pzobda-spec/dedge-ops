@@ -10,6 +10,7 @@ import { useLocale } from '@/lib/i18n/LocaleContext'
 
 type AttentionFilter = 'all' | 'blocked' | 'overdue' | 'high_risk'
 type ScopeFilter = 'active' | 'all' | 'live'
+type ClientTypologyFilter = 'all' | 'group' | 'individual' | 'unlinked'
 
 const columns: Array<{ status: ProjectStatus; label: string; empty: string }> = [
   { status: 'not_started', label: 'Non démarré', empty: 'Aucun projet à démarrer' },
@@ -137,6 +138,7 @@ export default function OnboardingBoardPage() {
   const [owner, setOwner] = useState('all')
   const [product, setProduct] = useState('all')
   const [attention, setAttention] = useState<AttentionFilter>('all')
+  const [clientTypology, setClientTypology] = useState<ClientTypologyFilter>('all')
   const [search, setSearch] = useState('')
 
   useEffect(() => {
@@ -187,6 +189,7 @@ export default function OnboardingBoardPage() {
           ? (IMPLEMENTATION_GROUP as readonly string[]).includes(project.ownerShort ?? '')
           : project.ownerShort === owner)
       const productMatches = product === 'all' || project.product === product
+      const typologyMatches = clientTypology === 'all' || project.clientTypology === clientTypology
       const attentionMatches = attention === 'all'
         || (attention === 'blocked' && project.isBlocked)
         || (attention === 'overdue' && project.isOverdue)
@@ -196,18 +199,20 @@ export default function OnboardingBoardPage() {
         project.product,
         project.ownerShort,
         project.accountCRMName ?? '',
+        project.clientName ?? '',
       ].join(' ')).includes(query)
-      return scopeMatches && ownerMatches && productMatches && attentionMatches && searchMatches
+      return scopeMatches && ownerMatches && productMatches && typologyMatches && attentionMatches && searchMatches
     })
-  }, [attention, baseProjects, owner, product, scope, search])
+  }, [attention, baseProjects, clientTypology, owner, product, scope, search])
 
-  const hasFilters = scope !== 'active' || owner !== 'all' || product !== 'all' || attention !== 'all' || Boolean(search.trim())
+  const hasFilters = scope !== 'active' || owner !== 'all' || product !== 'all' || clientTypology !== 'all' || attention !== 'all' || Boolean(search.trim())
 
   function resetFilters() {
     setScope('active')
     setOwner('all')
     setProduct('all')
     setAttention('all')
+    setClientTypology('all')
     setSearch('')
   }
 
@@ -223,6 +228,8 @@ export default function OnboardingBoardPage() {
           <div className="inline-flex self-start rounded-lg border border-[#ded8e8] bg-[#f7f5fa] p-1" aria-label={t('Affichage des projets')}>
             <Link href="/onboarding" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Liste')}</Link>
             <span aria-current="page" className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-[#59319f] shadow-sm">Board</span>
+            <Link href="/onboarding/pilotage" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Pilotage')}</Link>
+            <Link href="/onboarding/clients" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Clients')}</Link>
           </div>
         </div>
       </header>
@@ -257,7 +264,7 @@ export default function OnboardingBoardPage() {
                 )}
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(260px,2fr)_repeat(4,minmax(150px,1fr))]">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(260px,2fr)_repeat(5,minmax(140px,1fr))]">
                 <label className="block min-w-0">
                   <span className="mb-1 block text-xs font-semibold text-[#4a4a4a]">{t('Rechercher')}</span>
                   <span className="relative block">
@@ -295,6 +302,15 @@ export default function OnboardingBoardPage() {
                     <option value="blocked">{t('Bloqués')}</option>
                     <option value="overdue">{t('Go-live dépassé')}</option>
                     <option value="high_risk">{t('Risque élevé ou critique')}</option>
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold text-[#4a4a4a]">{t('Typologie client')}</span>
+                  <select value={clientTypology} onChange={event => setClientTypology(event.target.value as ClientTypologyFilter)} className="w-full rounded-lg border border-[#d8d8d8] bg-white px-3 py-2.5 text-sm outline-none focus:border-[#8064b3] focus:ring-2 focus:ring-[#e6dcf5]">
+                    <option value="all">{t('Toutes les typologies')}</option>
+                    <option value="group">{t('Groupe')}</option>
+                    <option value="individual">{t('Individuel')}</option>
+                    <option value="unlinked">{t('Non rattaché')}</option>
                   </select>
                 </label>
               </div>

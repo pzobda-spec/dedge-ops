@@ -9,7 +9,8 @@ function normalizeAccountName(name: string): string {
 
 async function loadCache(): Promise<CRMAccount[]> {
   if (!cache || Date.now() > cacheExpiresAt) {
-    cache = await fetchAllCRMAccounts()
+    // Client hierarchy roots can be holding accounts with no direct MRR.
+    cache = await fetchAllCRMAccounts({ includeZeroMrr: true })
     cacheExpiresAt = Date.now() + 60 * 60 * 1000
   }
   return cache
