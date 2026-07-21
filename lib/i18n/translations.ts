@@ -464,10 +464,8 @@ export const translations: Record<string, string> = {
   'Aucun sur la période précédente': 'None in the previous period',
   'Stable vs période précédente': 'Stable vs previous period',
   'Base comparable insuffisante': 'Not enough comparable data',
-  'Régularité': 'Regularity',
-  'Suivi de la charge démarré récemment, pas encore assez d’historique.': 'Workload tracking just started, not enough history yet.',
-  'jour ≥80 %': 'day ≥80%',
-  'jours ≥80 %': 'days ≥80%',
-  'Nombre de jours consécutifs au-dessus de 80 % de charge, sur la période sélectionnée.':
-    'Number of consecutive days above 80% workload, over the selected period.',
+  'Évolution de la charge': 'Workload trend',
+  'Estimation à partir des dates Zoho (démarrage / mise en ligne), pas un relevé quotidien exact.':
+    'Estimated from Zoho dates (start / go-live), not an exact daily record.',
+  'Évolution de la charge par chargé de projet': 'Workload trend per project owner',
 }

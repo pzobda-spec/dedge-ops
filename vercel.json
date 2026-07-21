@@ -23,10 +23,6 @@
     {
       "path": "/api/cron/detect-acuity-events",
       "schedule": "0 9 * * *"
-    },
-    {
-      "path": "/api/cron/sync-onboarding-workload",
-      "schedule": "5 8 * * *"
     }
   ]
 }
