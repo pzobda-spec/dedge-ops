@@ -21,7 +21,7 @@ import {
 } from 'recharts'
 import type { OnboardingProject, ProjectStatus } from '@/lib/zoho/projectsClient'
 import { formatDate } from '@/lib/utils/dates'
-import { IMPLEMENTATION_GROUP, isExcludedOnboardingOwner } from '@/lib/onboarding/constants'
+import { IMPLEMENTATION_GROUP, isExcludedOnboardingOwner, resolveOwnerName } from '@/lib/onboarding/constants'
 import { CAPACITY_THRESHOLD, isActiveProject } from '@/lib/onboarding/workload'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
 import { useLocale } from '@/lib/i18n/LocaleContext'
@@ -1108,15 +1108,18 @@ function buildPerPerson(
   planningRange: DateRange | null,
   eventRange: DateRange | null,
 ): PersonRow[] {
+  const implementationTeam: readonly string[] = IMPLEMENTATION_GROUP
   const grouped = new Map<string, { planning: OnboardingProject[]; events: OnboardingProject[] }>()
   for (const project of planningProjects) {
-    const owner = project.ownerShort || project.ownerName || 'Non assigné'
+    const owner = resolveOwnerName(project.ownerShort || project.ownerName)
+    if (!implementationTeam.includes(owner)) continue
     const current = grouped.get(owner) ?? { planning: [], events: [] }
     current.planning.push(project)
     grouped.set(owner, current)
   }
   for (const project of eventProjects) {
-    const owner = project.ownerShort || project.ownerName || 'Non assigné'
+    const owner = resolveOwnerName(project.ownerShort || project.ownerName)
+    if (!implementationTeam.includes(owner)) continue
     const current = grouped.get(owner) ?? { planning: [], events: [] }
     current.events.push(project)
     grouped.set(owner, current)
@@ -1124,7 +1127,7 @@ function buildPerPerson(
   return [...grouped.entries()].map(([owner, ownerProjects]) => {
     const active = ownerProjects.planning.filter(isActiveProject).length
     const liveCohort = planningRange && !eventRange ? [] : getLiveCohort(ownerProjects.events, eventRange)
-    const ownerSatisfaction = satisfaction.filter(row => row.owner === owner)
+    const ownerSatisfaction = satisfaction.filter(row => resolveOwnerName(row.owner) === owner)
     return {
       owner,
       active,
@@ -1176,8 +1179,11 @@ interface WorkloadTrend {
 // and until it went live). This is an estimate, not an exact daily snapshot:
 // there is no historical record of when a project's status actually changed.
 function buildWorkloadTrend(projects: OnboardingProject[], range: DateRange, locale: Locale): WorkloadTrend {
-  const scoped = projects.filter(project => !isExcludedOnboardingOwner(project.ownerShort) && project.status !== 'other')
-  const owners = [...new Set(scoped.map(project => project.ownerShort || project.ownerName || 'Non assigné'))].sort((a, b) => a.localeCompare(b, 'fr'))
+  const implementationTeam: readonly string[] = IMPLEMENTATION_GROUP
+  const scoped = projects
+    .filter(project => !isExcludedOnboardingOwner(project.ownerShort) && project.status !== 'other')
+    .filter(project => implementationTeam.includes(resolveOwnerName(project.ownerShort || project.ownerName)))
+  const owners = [...new Set(scoped.map(project => resolveOwnerName(project.ownerShort || project.ownerName)))].sort((a, b) => a.localeCompare(b, 'fr'))
   const data = monthKeys(range).map(month => {
     const [year, monthNumber] = month.split('-').map(Number)
     const monthStart = `${month}-01`
@@ -1185,7 +1191,7 @@ function buildWorkloadTrend(projects: OnboardingProject[], range: DateRange, loc
     const row: Record<string, string | number> = { month, label: formatMonth(month, locale) }
     for (const owner of owners) {
       const active = scoped.filter(project => {
-        if ((project.ownerShort || project.ownerName || 'Non assigné') !== owner) return false
+        if (resolveOwnerName(project.ownerShort || project.ownerName) !== owner) return false
         if (!project.startDate || project.startDate > monthEnd) return false
         const liveDate = getActualGoLiveDate(project)
         if (liveDate && liveDate < monthStart) return false
