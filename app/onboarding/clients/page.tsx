@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { AlertTriangle, ChevronRight, RotateCcw, Search } from 'lucide-react'
 import type { ClientTypology, OnboardingProject } from '@/lib/zoho/projectsClient'
 import { aggregateOnboardingClients, clientPropertyKey } from '@/lib/onboarding/clientAggregation'
-import { isExcludedOnboardingOwner } from '@/lib/onboarding/constants'
+import { isExcludedOnboardingOwner, normalizeOnboardingProjectOwner } from '@/lib/onboarding/constants'
 import { useLocale } from '@/lib/i18n/LocaleContext'
 
 type Scope = 'active' | 'all' | 'live'
@@ -60,7 +60,7 @@ export default function OnboardingClientsPage() {
         if (!Array.isArray(body.projects)) throw new Error(t('Réponse projets invalide'))
         return body.projects as OnboardingProject[]
       })
-      .then(setProjects)
+      .then(data => setProjects(data.map(normalizeOnboardingProjectOwner)))
       .catch(fetchError => {
         if (fetchError instanceof Error && fetchError.name === 'AbortError') return
         setError(fetchError instanceof Error ? fetchError.message : t('Impossible de charger les clients.'))

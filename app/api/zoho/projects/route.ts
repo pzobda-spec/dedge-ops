@@ -4,6 +4,7 @@ import { fetchProjects } from '@/lib/zoho/projectsClient'
 import { ZOHO_PROJECTS_CACHE_SECONDS } from '@/lib/zoho/constants'
 import { getCRMAccountsMap } from '@/lib/zoho/accountCache'
 import { enrichProjectsWithClients } from '@/lib/onboarding/clientResolver'
+import { normalizeOnboardingProjectOwner } from '@/lib/onboarding/constants'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -28,7 +29,11 @@ export async function GET(req: NextRequest) {
         return new Map()
       }),
     ])
-    const enriched = enrichProjectsWithClients(projects, crmAccounts)
+    // Normalize after the cached read as well as inside the Zoho mapper. This
+    // prevents legacy cached payloads containing "W" or "Wilini" from leaking
+    // into owner dropdowns or labels after a deployment.
+    const normalizedProjects = projects.map(normalizeOnboardingProjectOwner)
+    const enriched = enrichProjectsWithClients(normalizedProjects, crmAccounts)
     return NextResponse.json({
       projects: enriched.projects,
       meta: { clientLinkage: enriched.meta },

@@ -107,20 +107,22 @@ membres. Aucun contenu d'issue ni secret n'est consigné dans cette vérificatio
 Le build couvre également la compilation des routes et pages Onboarding ; les
 fichiers de ce module ne sont pas modifiés par cette refonte.
 
-Le temps de première réponse reste à `—` lorsque le listing Zoho ne fournit pas
-`responseTime`. La FCR porte explicitement la mention « estim. » car le listing
-ne fournit pas un historique exhaustif des réouvertures.
+Le temps de première réponse provient de l’endpoint métrique de chaque ticket
+Zoho. Sa valeur `HH:MM hrs` est conservée comme durée officielle, calculée selon
+les horaires et règles SLA Zoho ; elle reste à `—` uniquement lorsque Zoho ne
+renvoie aucune première réponse. La FCR porte explicitement la mention
+« estim. » lorsque la métrique ne fournit pas le nombre de réouvertures.
 
-Pour une période historique, le nombre de résolutions Zoho est reconstruit à
-partir des tickets dont `modifiedTime` tombe dans cette période. Zoho ne
-permettant pas ici de filtrer le listing par `closedTime`, un ticket clôturé dans
-la période puis remodifié ultérieurement peut ne plus être compté. Une précision
-historique absolue nécessiterait des snapshots persistés par jour.
+Le backfill Supabase conserve les dates de création et de clôture exposées par
+Zoho sur toute la couverture certifiée. Depuis le 20 juillet 2026, un snapshot
+quotidien par ticket conserve également son statut et ses dates analytiques du
+jour. Ces snapshots utilisent le jour métier `Europe/Paris`, y compris autour
+de minuit UTC.
 
-Les jours analytiques sont actuellement bornés en UTC par les routes serveur.
-Autour de minuit en Europe/Paris, une création peut donc apparaître sur le jour
-UTC adjacent ; un passage à des snapshots métier Europe/Paris permettra de
-lever cette limite sans ambiguïté lors d'une évolution ultérieure.
+Les états quotidiens antérieurs au 20 juillet 2026 ne sont pas inventés : pour
+cette période, seule la dernière valeur connue du ticket et ses dates Zoho sont
+disponibles. La FCR reste une estimation lorsque Zoho n’expose pas le nombre de
+réouvertures.
 
 Les caches de 15 minutes accélèrent les appels suivants. Le premier appel après
 expiration dépend encore du nombre de pages et de la latence des API amont ;
@@ -129,8 +131,7 @@ l'environnement déployé.
 
 Les sparklines du dashboard global représentent l’activité récente, en fenêtre
 glissante de sept jours, des objets composant actuellement chaque KPI. Elles ne
-prétendent pas reconstruire un historique de statut lorsque l’API source ne
-fournit pas de snapshots quotidiens.
+reconstruisent pas rétroactivement les états antérieurs au premier snapshot.
 
 ## Recette manuelle
 
