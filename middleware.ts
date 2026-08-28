@@ -51,13 +51,29 @@ interface MiddlewareUser {
   active: boolean
 }
 
-const MIDDLEWARE_FETCH_TIMEOUT_MS = 4_000
+const AUTH_FETCH_TIMEOUT_MS = 10_000
+const AUTH_VERIFICATION_TIMEOUT_MS = 12_000
+const ROLE_LOOKUP_TIMEOUT_MS = 4_000
 
 function middlewareFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   return fetch(input, {
     ...init,
-    signal: AbortSignal.timeout(MIDDLEWARE_FETCH_TIMEOUT_MS),
+    signal: AbortSignal.timeout(AUTH_FETCH_TIMEOUT_MS),
   })
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(`Timed out after ${timeoutMs}ms`)), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
+  }
 }
 
 function getAllowedRoles(path: string): Role[] | null {
@@ -72,12 +88,13 @@ async function getMiddlewareUser(email: string): Promise<MiddlewareUser | null> 
   const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/users?select=email,role,active&email=eq.${encodeURIComponent(normalized)}&limit=1`
   const startedAt = Date.now()
   try {
-    const res = await middlewareFetch(url, {
+    const res = await fetch(url, {
       headers: {
         apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!,
         authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
       },
       cache: 'no-store',
+      signal: AbortSignal.timeout(ROLE_LOOKUP_TIMEOUT_MS),
     })
 
     if (!res.ok) return null
@@ -103,6 +120,19 @@ function homePathForRole(role: Role | null): string {
 
 export async function middleware(request: NextRequest) {
   const startedAt = Date.now()
+  const path = request.nextUrl.pathname
+  const bypassAuthentication =
+    path.startsWith('/auth') ||
+    path.startsWith('/api/auth') ||
+    path.startsWith('/api/mcp') ||
+    path.startsWith('/.well-known/oauth-protected-resource') ||
+    path.startsWith('/oauth/consent') ||
+    path.startsWith('/api/cron') ||
+    path.startsWith('/api/webhooks/zoho-forms') ||
+    path.startsWith('/forbidden')
+
+  if (bypassAuthentication) return NextResponse.next()
+
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(
@@ -125,9 +155,12 @@ export async function middleware(request: NextRequest) {
 
   let userEmail: string | null = null
   try {
-    const { data, error } = await supabase.auth.getClaims()
-    const email = data?.claims?.email
-    if (!error && typeof email === 'string') userEmail = email.trim().toLowerCase()
+    const { data, error } = await withTimeout(
+      supabase.auth.getUser(),
+      AUTH_VERIFICATION_TIMEOUT_MS,
+    )
+    const email = data.user?.email
+    if (!error && email) userEmail = email.trim().toLowerCase()
   } catch (error) {
     console.error(JSON.stringify({
       level: 'error',
@@ -138,17 +171,7 @@ export async function middleware(request: NextRequest) {
     }))
   }
 
-  const path = request.nextUrl.pathname
-  const isPublic =
-    path.startsWith('/login') ||
-    path.startsWith('/auth') ||
-    path.startsWith('/api/auth') ||
-    path.startsWith('/api/mcp') ||
-    path.startsWith('/.well-known/oauth-protected-resource') ||
-    path.startsWith('/oauth/consent') ||
-    path.startsWith('/api/cron') ||
-    path.startsWith('/api/webhooks/zoho-forms') ||
-    path.startsWith('/forbidden')
+  const isPublic = path.startsWith('/login')
 
   // Not authenticated → redirect to login
   if (!userEmail && !isPublic) {
