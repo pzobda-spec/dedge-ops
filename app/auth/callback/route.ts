@@ -29,9 +29,8 @@ export async function GET(request: NextRequest) {
       }
     )
 
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code)
     if (!error) {
-      const { data } = await supabase.auth.getUser()
       const email = data.user?.email?.trim().toLowerCase()
       if (email) {
         const { supabaseAdmin } = await import('@/lib/supabase/server')
