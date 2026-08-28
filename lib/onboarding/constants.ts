@@ -11,6 +11,6 @@ export function isExcludedOnboardingOwner(owner: string | null | undefined): boo
 export function resolveOwnerName(owner: string | null | undefined): string {
   const trimmed = (owner ?? '').trim()
   const normalized = trimmed.toLocaleLowerCase('fr-FR')
-  if (normalized === 'w' || normalized === 'winli') return 'Winli'
+  if (normalized === 'w' || normalized === 'wilini' || normalized === 'winli') return 'Winli'
   return trimmed || 'Non assigné'
 }
