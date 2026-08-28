@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase/server'
+import { resolveOwnerName } from './constants'
 
 export interface OnboardingProjectDetail {
   id: string
@@ -50,5 +51,11 @@ export async function getOnboardingProjectByIdOrZohoId(id: string): Promise<Onbo
     .maybeSingle()
 
   if (error) throw new Error(error.message)
-  return (project as OnboardingProjectDetail | null) ?? null
+  if (!project) return null
+
+  const result = project as OnboardingProjectDetail
+  return {
+    ...result,
+    owner: result.owner ? resolveOwnerName(result.owner) : result.owner,
+  }
 }

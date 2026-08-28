@@ -1,5 +1,6 @@
 import { unstable_cache } from 'next/cache'
 import { NextResponse } from 'next/server'
+import { resolveOwnerName } from '@/lib/onboarding/constants'
 import { supabaseAdmin } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
@@ -17,7 +18,15 @@ const getSatisfaction = unstable_cache(
       }
       throw new Error(error.message)
     }
-    return { data: data ?? [], tableAvailable: true }
+    return {
+      data: (data ?? []).map(row => ({
+        ...row,
+        owner: typeof row.owner === 'string' && row.owner.trim()
+          ? resolveOwnerName(row.owner)
+          : row.owner,
+      })),
+      tableAvailable: true,
+    }
   },
   ['onboarding-satisfaction'],
   { tags: ['onboarding-satisfaction'], revalidate: 3600 },

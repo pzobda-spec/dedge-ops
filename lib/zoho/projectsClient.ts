@@ -1,5 +1,6 @@
 import { ZOHO_PROJECTS_API_BASE_URL } from './constants'
 import { createZohoTokenProvider } from './oauth'
+import { resolveOwnerName } from '@/lib/onboarding/constants'
 
 const PORTAL_ID = process.env.ZOHO_PROJECTS_PORTAL_ID!
 const BASE = `${ZOHO_PROJECTS_API_BASE_URL}/portal/${PORTAL_ID}`
@@ -209,7 +210,7 @@ function mapProject(raw: RawProject): OnboardingProject {
     ? raw.name.split(' : ')[0]
     : raw.name
 
-  const ownerShort = raw.owner_name?.split(' ')[0] ?? raw.owner_name ?? ''
+  const ownerShort = resolveOwnerName(raw.owner_name?.split(' ')[0] ?? raw.owner_name ?? '')
 
   const startDate = convertDate(raw.start_date)
   const endDate = convertDate(raw.end_date)

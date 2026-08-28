@@ -10,7 +10,7 @@ export function isExcludedOnboardingOwner(owner: string | null | undefined): boo
 // first name — normalize so her projects group correctly everywhere.
 export function resolveOwnerName(owner: string | null | undefined): string {
   const trimmed = (owner ?? '').trim()
-  if (trimmed === 'W') return 'Winli'
+  const normalized = trimmed.toLocaleLowerCase('fr-FR')
+  if (normalized === 'w' || normalized === 'winli') return 'Winli'
   return trimmed || 'Non assigné'
 }
-

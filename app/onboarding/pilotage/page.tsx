@@ -207,7 +207,7 @@ export default function OnboardingPilotagePage() {
     [projects],
   )
   const availableOwners = useMemo(
-    () => [...new Set(baseProjects.map(project => project.ownerShort).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr')),
+    () => [...new Set(baseProjects.map(project => resolveOwnerName(project.ownerShort)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'fr')),
     [baseProjects],
   )
   const availableProducts = useMemo(
@@ -1089,7 +1089,7 @@ function buildClientTypologyBreakdown(projects: OnboardingProject[]): Array<{ na
 }
 
 function projectMatchesFilters(project: OnboardingProject, filters: { activeOwner: string; resolvedOwners: string[]; productFilter: string; statusFilter: string; attentionFilter: AttentionFilter; clientTypologyFilter: ClientTypologyFilter; search: string }): boolean {
-  if (filters.activeOwner !== 'Tous' && !filters.resolvedOwners.includes(project.ownerShort)) return false
+  if (filters.activeOwner !== 'Tous' && !filters.resolvedOwners.includes(resolveOwnerName(project.ownerShort))) return false
   if (filters.productFilter && (project.product || 'Autre') !== filters.productFilter) return false
   if (filters.statusFilter && project.status !== filters.statusFilter) return false
   if (filters.clientTypologyFilter !== 'all' && project.clientTypology !== filters.clientTypologyFilter) return false
@@ -1106,7 +1106,7 @@ function projectMatchesFilters(project: OnboardingProject, filters: { activeOwne
 
 function filterSatisfaction(rows: SatisfactionRow[], filters: { activeOwner: string; resolvedOwners: string[]; dateRange: DateRange | null; search: string }): SatisfactionRow[] {
   return rows.filter(row => {
-    if (filters.activeOwner !== 'Tous' && !filters.resolvedOwners.includes(row.owner)) return false
+    if (filters.activeOwner !== 'Tous' && !filters.resolvedOwners.includes(resolveOwnerName(row.owner))) return false
     const submittedDay = row.submitted_at?.slice(0, 10)
     if (filters.dateRange && (!submittedDay || submittedDay < filters.dateRange.from || submittedDay > filters.dateRange.to)) return false
     if (filters.search) {
