@@ -43,8 +43,12 @@ Magic link, no password. `middleware.ts` blocks everything except `/login`,
 - Server source: Zoho Support department, paginated and aggregated server-side
 - Cache: each ticket page 15 minutes; Desk accounts 1 hour
 - Limit: 10,000 source tickets, with a visible truncation warning
-- FCR is explicitly an estimate; first-response time is `—` when Zoho omits
-  `responseTime`
+- FCR is explicitly an estimate when ticket metrics omit `reopenCount`.
+  First-response time comes from Zoho's per-ticket metrics endpoint and remains
+  `—` only when that endpoint has no `firstResponseTime`.
+- Supabase stores the full ticket history from the Zoho Support department.
+  Daily per-ticket snapshots use the `Europe/Paris` business date and preserve
+  status/resolution changes from 2026-07-20 onward.
 
 Current provisional product roll-up:
 
@@ -132,6 +136,5 @@ Release history: `CHANGELOG.md`.
 
 - Rework the Zoho category model with the business team; many values are stale,
   missing or inconsistently used
-- Add persisted daily snapshots for exact historical status/resolution metrics
 - RAG webhook: `app/api/webhooks/zoho-desk`, table `ticket_chunks` (pgvector),
   `lib/rag/ingest.ts`; enable pgvector first

@@ -73,6 +73,7 @@ export default function TicketsAnalyticsDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [openFilter, setOpenFilter] = useState<string | null>(null)
+  const [viewMessage, setViewMessage] = useState('')
 
   const apiQuery = useMemo(() => {
     const params = new URLSearchParams({ from, to })
@@ -106,6 +107,23 @@ export default function TicketsAnalyticsDashboard() {
       })
     return () => controller.abort()
   }, [apiQuery])
+
+  useEffect(() => {
+    if (searchParams.toString()) return
+    fetch('/api/settings/me/ticket-filters', { cache: 'no-store' })
+      .then(async response => response.ok ? response.json() : null)
+      .then(payload => {
+        const saved = payload?.filters as Record<string, string | string[]> | undefined
+        if (!saved || Object.keys(saved).length === 0) return
+        const next = new URLSearchParams()
+        for (const [key, value] of Object.entries(saved)) {
+          if (Array.isArray(value)) value.forEach(item => next.append(key, item))
+          else if (value) next.set(key, value)
+        }
+        startTransition(() => router.replace(`${pathname}?${next.toString()}`, { scroll: false }))
+      })
+      .catch(() => undefined)
+  }, [pathname, router, searchParams, startTransition])
 
   function updateQuery(updates: Record<string, QueryUpdate>) {
     const next = new URLSearchParams(searchParams.toString())
@@ -145,10 +163,29 @@ export default function TicketsAnalyticsDashboard() {
     ))
   }
 
+  async function savePersonalView() {
+    setViewMessage('')
+    const filters: Record<string, string | string[]> = { range, from, to }
+    if (products.length) filters.product = products
+    if (categories.length) filters.category = categories
+    if (classifications.length) filters.classification = classifications
+    if (statuses.length) filters.status = statuses
+    if (priorities.length) filters.priority = priorities
+    if (client) filters.client = client
+    const response = await fetch('/api/settings/me/ticket-filters', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filters }) })
+    setViewMessage(response.ok ? 'Vue personnelle enregistrée.' : 'Impossible d’enregistrer votre vue.')
+  }
+
   const hasActiveFilters = range !== '30d'
     || from !== defaultRange.from
     || to !== defaultRange.to
     || products.length > 0
+    || categories.length > 0
+    || classifications.length > 0
+    || statuses.length > 0
+    || priorities.length > 0
+    || Boolean(client)
+  const hasFacetFilters = products.length > 0
     || categories.length > 0
     || classifications.length > 0
     || statuses.length > 0
@@ -270,11 +307,11 @@ export default function TicketsAnalyticsDashboard() {
                 </button>
               )}
             </div>
-            {hasActiveFilters && (
-              <button type="button" onClick={resetFilters} className="text-xs font-semibold text-[#59319f] hover:underline">
-                Réinitialiser les filtres
-              </button>
-            )}
+            <div className="flex items-center gap-3">
+              {viewMessage && <span className="text-xs text-[#696969]">{viewMessage}</span>}
+              <button type="button" onClick={() => void savePersonalView()} className="text-xs font-semibold text-[#59319f] hover:underline">Enregistrer ma vue</button>
+              {hasActiveFilters && <button type="button" onClick={resetFilters} className="text-xs font-semibold text-[#59319f] hover:underline">Réinitialiser les filtres</button>}
+            </div>
           </div>
         </div>
       </section>
@@ -297,7 +334,13 @@ export default function TicketsAnalyticsDashboard() {
           <>
             <section aria-label="Indicateurs clés" className="grid grid-cols-2 gap-3 lg:grid-cols-5">
               <KpiCard label="Tickets ouverts" value={formatNumber(data.open)} subtitle="Open + Pending" />
-              <KpiCard label="Volume période" value={formatNumber(data.total)} subtitle={`${formatDate(from)} – ${formatDate(to)}`} />
+              <KpiCard
+                label={hasFacetFilters ? 'Volume filtré' : 'Volume période'}
+                value={formatNumber(data.total)}
+                subtitle={hasFacetFilters
+                  ? `${formatNumber(data.total)} sur ${formatNumber(data.meta.unfiltered_total)} tickets · ${formatDate(from)} – ${formatDate(to)}`
+                  : `${formatDate(from)} – ${formatDate(to)}`}
+              />
               <KpiCard label="Première réponse moyenne" value={formatDuration(data.avg_first_response_hours)} subtitle="Sur les tickets renseignés" />
               <KpiCard
                 label={`Résolution au 1er contact${data.meta.fcr_is_estimate ? ' (estim.)' : ''}`}

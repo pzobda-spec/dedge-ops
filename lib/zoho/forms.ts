@@ -42,16 +42,16 @@ function pick(record: Record<string, unknown>, ...keys: string[]): string {
 function mapRecord(raw: Record<string, unknown>, id: string): SatisfactionResponse {
   return {
     id,
-    establishment: pick(raw, 'Etablissement', 'Establishment', 'Hotel', 'Hôtel', 'Nom_etablissement'),
-    respondent_name: pick(raw, 'Prenom_Nom', 'Prénom_Nom', 'Nom_complet', 'Respondent', 'Name', 'Prénom et Nom'),
+    establishment: pick(raw, 'Your establishment', 'Etablissement', 'Establishment', 'Hotel', 'Hôtel', 'Nom_etablissement'),
+    respondent_name: pick(raw, 'Name', 'Prenom_Nom', 'Prénom_Nom', 'Nom_complet', 'Respondent', 'Prénom et Nom'),
     owner: pick(raw, 'Onboarder', 'Owner', 'Chargé_de_projet', 'CSM', 'Responsable'),
-    score_global: parseScore(raw['Note_globale'] ?? raw['Score_global'] ?? raw['Note globale'] ?? raw['Global']),
-    score_onboarding: parseScore(raw['Note_onboarding'] ?? raw['Score_onboarding'] ?? raw['Onboarding']),
-    score_simplicity: parseScore(raw['Note_simplicite'] ?? raw['Note_simplicité'] ?? raw['Simplicite'] ?? raw['Simplicité']),
-    score_tool: parseScore(raw['Note_outil'] ?? raw['Score_outil'] ?? raw['Outil']),
-    score_training: parseScore(raw['Note_formation'] ?? raw['Score_formation'] ?? raw['Formation']),
-    comment: pick(raw, 'Commentaire', 'Comment', 'Remarques', 'Avis') || null,
-    submitted_at: pick(raw, 'Submitted_On', 'submitted_at', 'Date', 'Created_Time') || new Date().toISOString(),
+    score_global: parseScore(raw['Global satisfaction'] ?? raw['Note_globale'] ?? raw['Score_global'] ?? raw['Note globale'] ?? raw['Global']),
+    score_onboarding: parseScore(raw['Onboarding'] ?? raw['Note_onboarding'] ?? raw['Score_onboarding']),
+    score_simplicity: parseScore(raw['Simplicity of implementation'] ?? raw['Note_simplicite'] ?? raw['Note_simplicité'] ?? raw['Simplicite'] ?? raw['Simplicité']),
+    score_tool: parseScore(raw['Tool performance'] ?? raw['Note_outil'] ?? raw['Score_outil'] ?? raw['Outil']),
+    score_training: parseScore(raw['Trainings'] ?? raw['Note_formation'] ?? raw['Score_formation'] ?? raw['Formation']),
+    comment: pick(raw, 'Please help us to improve !', 'Commentaire', 'Comment', 'Remarques', 'Avis') || null,
+    submitted_at: pick(raw, 'Added Time', 'Submitted_On', 'submitted_at', 'Date', 'Created_Time') || new Date().toISOString(),
   }
 }
 
