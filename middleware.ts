@@ -51,6 +51,15 @@ interface MiddlewareUser {
   active: boolean
 }
 
+const MIDDLEWARE_FETCH_TIMEOUT_MS = 4_000
+
+function middlewareFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  return fetch(input, {
+    ...init,
+    signal: AbortSignal.timeout(MIDDLEWARE_FETCH_TIMEOUT_MS),
+  })
+}
+
 function getAllowedRoles(path: string): Role[] | null {
   const match = RESTRICTED_ROUTES.find(route =>
     route.prefixes.some(prefix => path === prefix || path.startsWith(prefix + '/'))
@@ -61,17 +70,28 @@ function getAllowedRoles(path: string): Role[] | null {
 async function getMiddlewareUser(email: string): Promise<MiddlewareUser | null> {
   const normalized = email.trim().toLowerCase()
   const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/users?select=email,role,active&email=eq.${encodeURIComponent(normalized)}&limit=1`
-  const res = await fetch(url, {
-    headers: {
-      apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-    },
-    cache: 'no-store',
-  })
+  const startedAt = Date.now()
+  try {
+    const res = await middlewareFetch(url, {
+      headers: {
+        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+      cache: 'no-store',
+    })
 
-  if (!res.ok) return null
-  const rows = await res.json().catch(() => []) as MiddlewareUser[]
-  return rows[0] ?? null
+    if (!res.ok) return null
+    const rows = await res.json().catch(() => []) as MiddlewareUser[]
+    return rows[0] ?? null
+  } catch (error) {
+    console.error(JSON.stringify({
+      level: 'error',
+      msg: 'middleware user lookup failed',
+      ms: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : String(error),
+    }))
+    return null
+  }
 }
 
 function homePathForRole(role: Role | null): string {
@@ -82,12 +102,14 @@ function homePathForRole(role: Role | null): string {
 // ─── Middleware ────────────────────────────────────────────────────────────────
 
 export async function middleware(request: NextRequest) {
+  const startedAt = Date.now()
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      global: { fetch: middlewareFetch },
       cookies: {
         getAll() { return request.cookies.getAll() },
         setAll(cookiesToSet) {
@@ -101,7 +123,20 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  let userEmail: string | null = null
+  try {
+    const { data, error } = await supabase.auth.getClaims()
+    const email = data?.claims?.email
+    if (!error && typeof email === 'string') userEmail = email.trim().toLowerCase()
+  } catch (error) {
+    console.error(JSON.stringify({
+      level: 'error',
+      msg: 'middleware auth verification failed',
+      path: request.nextUrl.pathname,
+      ms: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : String(error),
+    }))
+  }
 
   const path = request.nextUrl.pathname
   const isPublic =
@@ -116,27 +151,27 @@ export async function middleware(request: NextRequest) {
     path.startsWith('/forbidden')
 
   // Not authenticated → redirect to login
-  if (!user && !isPublic) {
+  if (!userEmail && !isPublic) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
   // Authenticated on root or login → redirect to role-appropriate home
-  if (user && (path === '/' || path === '/login')) {
-    const appUser = user.email ? await getMiddlewareUser(user.email) : null
-    const role = appUser?.role ?? null
+  if (userEmail && (path === '/' || path === '/login')) {
+    const appUser = isHardcodedAccessEmail(userEmail) ? null : await getMiddlewareUser(userEmail)
+    const role = appUser?.role ?? (isHardcodedAccessEmail(userEmail) ? 'admin' : null)
     const url = request.nextUrl.clone()
     url.pathname = homePathForRole(role)
     return NextResponse.redirect(url)
   }
 
   // Role-based access control on restricted routes
-  if (user) {
+  if (userEmail) {
     const allowedRoles = getAllowedRoles(path)
     if (allowedRoles) {
-      const appUser = user.email ? await getMiddlewareUser(user.email) : null
-      const fallbackAllowed = !appUser && isHardcodedAccessEmail(user.email)
+      const fallbackAllowed = isHardcodedAccessEmail(userEmail)
+      const appUser = fallbackAllowed ? null : await getMiddlewareUser(userEmail)
 
       if (!appUser && !fallbackAllowed) {
         if (path.startsWith('/api/')) {
