@@ -9,7 +9,7 @@ import type { AcuitySession } from '@/lib/acuity/client'
 import type { OnboardingProject } from '@/lib/zoho/projectsClient'
 import type { AppUser } from '@/lib/auth/roles'
 import { formatDate } from '@/lib/utils/dates'
-import { isExcludedOnboardingOwner } from '@/lib/onboarding/constants'
+import { isExcludedOnboardingOwner, normalizeOnboardingProjectOwner } from '@/lib/onboarding/constants'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -138,7 +138,7 @@ export default function DashboardPage() {
     setLoadingTickets(false)
     if (escalationsRes.status === 'fulfilled') setEscalations(escalationsRes.value.issues ?? [])
     if (sessionsRes.status === 'fulfilled') setSessions(sessionsRes.value.sessions ?? [])
-    if (projectsRes.status === 'fulfilled') setProjects(projectsRes.value.projects ?? [])
+    if (projectsRes.status === 'fulfilled') setProjects((projectsRes.value.projects ?? []).map(normalizeOnboardingProjectOwner))
     setLoadingOther(false)
   }, [])
 

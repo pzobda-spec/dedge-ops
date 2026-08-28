@@ -22,7 +22,7 @@ import {
 } from 'recharts'
 import type { OnboardingProject, ProjectStatus } from '@/lib/zoho/projectsClient'
 import { formatDate } from '@/lib/utils/dates'
-import { IMPLEMENTATION_GROUP, isExcludedOnboardingOwner, resolveOwnerName } from '@/lib/onboarding/constants'
+import { IMPLEMENTATION_GROUP, isExcludedOnboardingOwner, normalizeOnboardingProjectOwner, resolveOwnerName } from '@/lib/onboarding/constants'
 import { CAPACITY_THRESHOLD, isActiveProject } from '@/lib/onboarding/workload'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
 import { useLocale } from '@/lib/i18n/LocaleContext'
@@ -161,7 +161,7 @@ export default function OnboardingPilotagePage() {
         return response.json() as Promise<{ projects?: OnboardingProject[]; meta?: { clientLinkage?: ClientLinkageMeta } }>
       })
       .then(data => {
-        setProjects(data.projects ?? [])
+        setProjects((data.projects ?? []).map(normalizeOnboardingProjectOwner))
         setClientLinkage(data.meta?.clientLinkage ?? null)
       })
       .catch(fetchError => {

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { AlertTriangle, ExternalLink, RotateCcw, Search } from 'lucide-react'
 import type { OnboardingProject, ProjectStatus } from '@/lib/zoho/projectsClient'
 import { formatDate } from '@/lib/utils/dates'
-import { IMPLEMENTATION_GROUP, isExcludedOnboardingOwner } from '@/lib/onboarding/constants'
+import { IMPLEMENTATION_GROUP, isExcludedOnboardingOwner, normalizeOnboardingProjectOwner } from '@/lib/onboarding/constants'
 import { useLocale } from '@/lib/i18n/LocaleContext'
 
 type AttentionFilter = 'all' | 'blocked' | 'overdue' | 'high_risk'
@@ -153,7 +153,7 @@ export default function OnboardingBoardPage() {
         if (!Array.isArray(body.projects)) throw new Error(t('Réponse projets invalide'))
         return body.projects as OnboardingProject[]
       })
-      .then(data => setProjects(data))
+      .then(data => setProjects(data.map(normalizeOnboardingProjectOwner)))
       .catch(fetchError => {
         if (fetchError instanceof Error && fetchError.name === 'AbortError') return
         setError(fetchError instanceof Error ? fetchError.message : t('Impossible de charger les projets.'))

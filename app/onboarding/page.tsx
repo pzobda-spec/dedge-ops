@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { OnboardingProject, ProjectStatus, RiskLevel } from '@/lib/zoho/projectsClient'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
-import { IMPLEMENTATION_GROUP, isExcludedOnboardingOwner } from '@/lib/onboarding/constants'
+import { IMPLEMENTATION_GROUP, isExcludedOnboardingOwner, normalizeOnboardingProjectOwner } from '@/lib/onboarding/constants'
 import { formatDate } from '@/lib/utils/dates'
 import { useLocale } from '@/lib/i18n/LocaleContext'
 import type { Locale } from '@/lib/i18n/locale'
@@ -271,7 +271,7 @@ export default function MesProjetsPage() {
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
         const data = await response.json() as { projects?: OnboardingProject[] }
         if (!Array.isArray(data.projects)) throw new Error(t('Réponse invalide'))
-        setProjects(data.projects)
+        setProjects(data.projects.map(normalizeOnboardingProjectOwner))
       } catch (loadError) {
         if (controller.signal.aborted) return
         console.error(loadError)

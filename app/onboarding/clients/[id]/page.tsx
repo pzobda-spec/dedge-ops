@@ -6,7 +6,7 @@ import { ArrowLeft, ExternalLink } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import type { ClientTypology, OnboardingProject, ProjectStatus } from '@/lib/zoho/projectsClient'
 import { aggregateOnboardingClients } from '@/lib/onboarding/clientAggregation'
-import { isExcludedOnboardingOwner } from '@/lib/onboarding/constants'
+import { isExcludedOnboardingOwner, normalizeOnboardingProjectOwner } from '@/lib/onboarding/constants'
 import { useLocale } from '@/lib/i18n/LocaleContext'
 
 const typologyStyles: Record<ClientTypology, string> = {
@@ -62,7 +62,7 @@ export default function OnboardingClientDetailPage() {
         if (!Array.isArray(body.projects)) throw new Error(t('Réponse projets invalide'))
         return body.projects as OnboardingProject[]
       })
-      .then(setProjects)
+      .then(data => setProjects(data.map(normalizeOnboardingProjectOwner)))
       .catch(fetchError => {
         if (fetchError instanceof Error && fetchError.name === 'AbortError') return
         setError(fetchError instanceof Error ? fetchError.message : t('Impossible de charger ce client.'))

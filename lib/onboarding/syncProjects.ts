@@ -3,6 +3,7 @@ import { fetchAllZohoProjects, type OnboardingProject } from '@/lib/zoho/project
 import { fetchAllCRMAccounts, type CRMAccount } from '@/lib/zoho/crmClient'
 import type { CommercialPlan } from './workspace'
 import type { ProjectEventType } from './events'
+import { resolveOwnerName } from './constants'
 
 export interface OnboardingProjectsSyncResult {
   synced: number
@@ -230,7 +231,7 @@ export async function syncOnboardingProjects(options?: {
       customer_type: existing?.customer_type ?? project.clientType,
       dmbook_only: existing?.dmbook_only ?? isDmbookOnly(account, project),
       enabled_options: existing?.enabled_options && Object.keys(existing.enabled_options).length > 0 ? existing.enabled_options : detectedOptions,
-      owner: project.ownerShort || project.ownerName || '',
+      owner: resolveOwnerName(project.ownerShort || project.ownerName, project.ownerEmail),
       owner_email: project.ownerEmail,
       status: legacyStatusFromZoho(project.status),
       start_date: project.startDate,

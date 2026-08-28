@@ -56,6 +56,6 @@ export async function getOnboardingProjectByIdOrZohoId(id: string): Promise<Onbo
   const result = project as OnboardingProjectDetail
   return {
     ...result,
-    owner: result.owner ? resolveOwnerName(result.owner) : result.owner,
+    owner: result.owner ? resolveOwnerName(result.owner, result.owner_email) : result.owner,
   }
 }

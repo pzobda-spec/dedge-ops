@@ -210,7 +210,7 @@ function mapProject(raw: RawProject): OnboardingProject {
     ? raw.name.split(' : ')[0]
     : raw.name
 
-  const ownerShort = resolveOwnerName(raw.owner_name?.split(' ')[0] ?? raw.owner_name ?? '')
+  const ownerShort = resolveOwnerName(raw.owner_name?.split(' ')[0] ?? raw.owner_name ?? '', raw.owner_email)
 
   const startDate = convertDate(raw.start_date)
   const endDate = convertDate(raw.end_date)
@@ -256,7 +256,7 @@ function mapProject(raw: RawProject): OnboardingProject {
     product: raw.group_name ?? '',
     status,
     statusLabel,
-    ownerName: raw.owner_name,
+    ownerName: ownerShort === 'Winli' ? 'Winli' : raw.owner_name,
     ownerEmail: raw.owner_email ?? null,
     ownerShort,
     startDate,
