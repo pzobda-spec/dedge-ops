@@ -1,34 +1,27 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { authErrorResponse, requireRole } from '@/lib/auth/roles'
+import { parseZohoDeskWebhook } from '@/lib/support/zohoWebhook'
 
 export const dynamic = 'force-dynamic'
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
-    const secret = process.env.ZOHO_WEBHOOK_SECRET
-
-    if (!secret) {
-      return NextResponse.json({ ok: false, error: 'ZOHO_WEBHOOK_SECRET non configuré' })
-    }
-
-    const res = await fetch(`${appUrl}/api/webhooks/zoho-desk`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-zoho-webhook-token': secret,
-      },
-      body: JSON.stringify({
-        eventType: 'ticket.test',
-        ticketId: null,
-      }),
+    await requireRole(request, ['admin'])
+    const fixture = [{
+      eventType: 'Ticket_Update',
+      eventTime: Date.now(),
+      orgId: process.env.ZOHO_ORG_ID ?? 'test-org',
+      payload: { id: 'shadow-parser-test', subject: 'Test sans écriture' },
+    }]
+    const parsed = parseZohoDeskWebhook(fixture)
+    return NextResponse.json({
+      ok: parsed.length === 1 && parsed[0].ticketId === 'shadow-parser-test',
+      mode: 'parser_only',
+      persisted: false,
+      external_writes: { zoho: false, linear: false, slack: false },
     })
-
-    if (!res.ok) {
-      return NextResponse.json({ ok: false, error: `HTTP ${res.status}` })
-    }
-
-    return NextResponse.json({ ok: true })
-  } catch (err) {
-    return NextResponse.json({ ok: false, error: String(err) })
+  } catch (error) {
+    return authErrorResponse(error)
+      ?? NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 })
   }
 }

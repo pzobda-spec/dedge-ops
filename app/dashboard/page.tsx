@@ -10,6 +10,7 @@ import type { OnboardingProject } from '@/lib/zoho/projectsClient'
 import type { AppUser } from '@/lib/auth/roles'
 import { formatDate } from '@/lib/utils/dates'
 import { isExcludedOnboardingOwner, normalizeOnboardingProjectOwner } from '@/lib/onboarding/constants'
+import type { SupportCockpitResponse } from '@/lib/support/cockpitTypes'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -18,10 +19,6 @@ function formatTodayFR(): string {
   const days = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi']
   const months = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
   return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`
-}
-
-function hoursAgo(dateStr: string): number {
-  return (Date.now() - new Date(dateStr).getTime()) / 3_600_000
 }
 
 function daysUntil(dateStr: string): number {
@@ -112,6 +109,8 @@ export default function DashboardPage() {
   const [projects, setProjects] = useState<OnboardingProject[]>([])
   const [loadingTickets, setLoadingTickets] = useState(true)
   const [loadingOther, setLoadingOther] = useState(true)
+  const [cockpit, setCockpit] = useState<SupportCockpitResponse | null>(null)
+  const [loadingCockpit, setLoadingCockpit] = useState(true)
   const [canAccessRestricted, setCanAccessRestricted] = useState(false)
   const [normalizing, setNormalizing] = useState(false)
   const [normalizeMsg, setNormalizeMsg] = useState<string | null>(null)
@@ -121,6 +120,7 @@ export default function DashboardPage() {
   const loadAll = useCallback(async () => {
     setLoadingTickets(true)
     setLoadingOther(true)
+    setLoadingCockpit(true)
     const me = await fetch('/api/auth/me', { cache: 'no-store' }).then(r => r.ok ? r.json() : Promise.resolve({ user: null }))
     const currentUser = me.user as AppUser | null
     const allowedRestricted = !!currentUser && ['admin', 'onboarder', 'support'].includes(currentUser.role)
@@ -131,14 +131,17 @@ export default function DashboardPage() {
       fetch('/api/linear/issues').then(r => r.json()),
       allowedRestricted ? fetch('/api/acuity/sessions?period=upcoming').then(r => r.json()) : Promise.resolve({ sessions: [] }),
       allowedRestricted ? fetch('/api/zoho/projects').then(r => r.json()) : Promise.resolve({ projects: [] }),
+      fetch('/api/support/cockpit', { cache: 'no-store' }).then(r => r.ok ? r.json() : null),
     ] as const
 
-    const [ticketsRes, escalationsRes, sessionsRes, projectsRes] = await Promise.allSettled(requests)
+    const [ticketsRes, escalationsRes, sessionsRes, projectsRes, cockpitRes] = await Promise.allSettled(requests)
     if (ticketsRes.status === 'fulfilled') setTickets(ticketsRes.value.tickets ?? [])
     setLoadingTickets(false)
     if (escalationsRes.status === 'fulfilled') setEscalations(escalationsRes.value.issues ?? [])
     if (sessionsRes.status === 'fulfilled') setSessions(sessionsRes.value.sessions ?? [])
     if (projectsRes.status === 'fulfilled') setProjects((projectsRes.value.projects ?? []).map(normalizeOnboardingProjectOwner))
+    if (cockpitRes.status === 'fulfilled') setCockpit(cockpitRes.value)
+    setLoadingCockpit(false)
     setLoadingOther(false)
   }, [])
 
@@ -183,12 +186,6 @@ export default function DashboardPage() {
     setFixingUndefined(false)
   }, [])
 
-  const noFirstReply = useMemo(() =>
-    tickets
-      .filter(t => (t.zohoStatus === 'Open' || t.zohoStatus === 'Escalated') && t.threadCount <= 1 && hoursAgo(t.createdAt) > 2)
-      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
-    [tickets])
-
   const highRisk = useMemo(() => tickets.filter(t => (t.riskScore ?? 0) >= 60), [tickets])
   const openBugs = useMemo(() => escalations.filter(e => e.status !== 'resolved'), [escalations])
   const toQualify = useMemo(() => escalations.filter(e => e.status === 'to_qualify'), [escalations])
@@ -206,9 +203,12 @@ export default function DashboardPage() {
   const baseProjects = useMemo(() => projects.filter(p => !isExcludedOnboardingOwner(p.ownerShort)), [projects])
   const blockedProjects = useMemo(() => baseProjects.filter(p => p.status === 'blocked'), [baseProjects])
 
-  const noFirstReplyTrend = useMemo(
-    () => buildRecentActivityTrend(noFirstReply, ticket => ticket.createdAt),
-    [noFirstReply],
+  const overdueTrend = useMemo(
+    () => buildRecentActivityTrend(
+      cockpit?.tickets.filter(ticket => ticket.first_response_status === 'overdue') ?? [],
+      ticket => ticket.updated_at,
+    ),
+    [cockpit],
   )
   const highRiskTrend = useMemo(
     () => buildRecentActivityTrend(highRisk, ticket => ticket.createdAt),
@@ -256,11 +256,11 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {[
             {
-              label: 'Sans 1ère réponse', value: noFirstReply.length,
-              sub: '> 2h · tickets ouverts',
-              href: 'https://support.loungeup.com/agent/loungeup/loungeup-support-team/tickets/list/just-open-tickets-not-escalated?view=table',
-              loading: loadingTickets, severity: 'critical' as const,
-              trend: noFirstReplyTrend, trendColor: '#b7221b',
+              label: 'Délai de 1ère réponse dépassé', value: cockpit?.overdue_count ?? 0,
+              sub: 'seuil individuel · 6h / 24h / 24h / 48h ouvrées',
+              href: '/tickets',
+              loading: loadingCockpit, severity: 'critical' as const,
+              trend: overdueTrend, trendColor: '#b7221b',
             },
             {
               label: 'Tickets à risque', value: highRisk.length,
@@ -277,7 +277,7 @@ export default function DashboardPage() {
             {
               label: 'Onboarding bloqués', value: blockedProjects.length,
               sub: 'projets en attente déblocage', href: '/onboarding/board',
-              loading: loadingOther, severity: 'critical' as const,
+              loading: loadingOther, severity: 'warning' as const,
               trend: blockedProjectsTrend, trendColor: '#2b5bb7',
             },
           ].map(({ label, value, sub, href, loading, severity, trend, trendColor }) => {
