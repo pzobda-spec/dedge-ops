@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto'
 import { supabaseAdmin } from '@/lib/supabase/server'
 import { fetchTicket, fetchTickets, type ZohoTicket } from '@/lib/zoho/client'
 import { ZOHO_SUPPORT_DEPARTMENT_ID, ZOHO_TICKET_PAGE_SIZE } from '@/lib/zoho/constants'
-import { ingestSingleTicket } from '@/lib/rag/ingest'
 import { addBusinessMinutes, firstResponseStatus } from './urgency/businessHours'
 import { classifyUrgency } from './urgency/classifier'
 import { loadActiveBusinessHours, loadActiveRuleset } from './urgency/config'
@@ -156,11 +155,6 @@ async function processJob(
   })
   if (eventError) throw new Error(`Assessment event insert failed: ${eventError.message}`)
 
-  if (shouldRefreshRag(job, ticket)) {
-    await ingestSingleTicket(ticket.id).catch(error => {
-      console.warn(`[shadow-worker] RAG refresh failed for ${ticket.id}:`, error)
-    })
-  }
 }
 
 async function maybeSyncBusinessHours(): Promise<boolean> {
@@ -229,10 +223,4 @@ async function fetchModifiedSince(cutoff: Date): Promise<ZohoTicket[]> {
 function finiteNumber(value: unknown): number | null {
   const number = Number(value)
   return Number.isFinite(number) && number >= 0 ? number : null
-}
-
-function shouldRefreshRag(job: ShadowJob, ticket: ZohoTicket): boolean {
-  const eventType = typeof job.payload.eventType === 'string' ? job.payload.eventType : ''
-  return eventType === 'Ticket_Add'
-    || ['closed', 'solved', 'fermé'].includes(ticket.status.toLocaleLowerCase('fr-FR'))
 }
