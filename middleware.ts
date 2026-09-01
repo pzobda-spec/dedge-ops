@@ -24,6 +24,7 @@ const RESTRICTED_ROUTES: Array<{ prefixes: string[]; roles: Role[] }> = [
       '/knowledge', '/reporting', '/assistant',
       '/api/tickets', '/api/escalations', '/api/trainings',
       '/api/analytics', '/api/reporting',
+      '/api/support',
       '/api/zoho/tickets', '/api/linear/issues',
       '/api/knowledge', '/api/google',
     ],
@@ -128,6 +129,7 @@ export async function middleware(request: NextRequest) {
     path.startsWith('/.well-known/oauth-protected-resource') ||
     path.startsWith('/oauth/consent') ||
     path.startsWith('/api/cron') ||
+    path === '/api/webhooks/zoho-desk' ||
     path.startsWith('/api/webhooks/zoho-forms') ||
     path.startsWith('/forbidden')
 

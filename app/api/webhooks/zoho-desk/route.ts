@@ -1,61 +1,58 @@
+import { waitUntil } from '@vercel/functions'
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase/server'
-import { ingestSingleTicket } from '@/lib/rag/ingest'
+import { enqueueWebhookBatch } from '@/lib/support/shadowQueue'
+import { runShadowWorker } from '@/lib/support/shadowWorker'
+import { parseZohoDeskWebhook, verifyZohoDeskJwt } from '@/lib/support/zohoWebhook'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+export const maxDuration = 60
 
-// Zoho validates the URL with a GET before saving
+// Zoho validates the URL before saving the webhook.
 export async function GET() {
-  return NextResponse.json({ ok: true })
+  return NextResponse.json({ ok: true, mode: 'shadow' })
 }
 
-const CLOSED_STATUSES = new Set(['Closed', 'Solved', 'Fermé'])
+export async function POST(request: NextRequest) {
+  const token = request.headers.get('x-zdesk-jwt')
+  if (!token) return NextResponse.json({ error: 'Missing X-ZDesk-JWT' }, { status: 401 })
 
-export async function POST(req: NextRequest) {
-  // Verify webhook token (query param — Zoho doesn't support custom headers)
-  const token = req.headers.get('x-zoho-webhook-token') ?? req.nextUrl.searchParams.get('token')
-  if (!token || token !== process.env.ZOHO_WEBHOOK_SECRET) {
+  try {
+    await verifyZohoDeskJwt(token)
+  } catch (error) {
+    console.warn('[zoho-webhook] JWT rejected:', errorMessage(error))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  let payload: Record<string, unknown>
+  let events
   try {
-    payload = await req.json()
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+    events = parseZohoDeskWebhook(await request.json())
+  } catch (error) {
+    return NextResponse.json({ error: errorMessage(error) }, { status: 400 })
   }
 
-  // Zoho sends eventType as "Ticket_Add" or "Ticket_Update"
-  const eventType = payload.eventType as string | undefined
-  const ticketId = (
-    payload.ticketId ??
-    (payload.ticket as Record<string, unknown>)?.id
-  ) as string | undefined
-
-  // Log event (fire-and-forget)
-  void supabaseAdmin.from('webhook_events').insert({
-    event_type: eventType ?? 'unknown',
-    ticket_id: ticketId ?? null,
-    payload,
-  })
-
-  if (!ticketId) {
-    return NextResponse.json({ ok: true, skipped: 'no ticketId' })
+  try {
+    const queued = await enqueueWebhookBatch(events)
+    if (queued.queued > 0) {
+      waitUntil(runShadowWorker({ reconcile: false, limit: 20 }).catch(error => {
+        console.error('[zoho-webhook] background shadow worker failed:', errorMessage(error))
+      }))
+    }
+    return NextResponse.json({
+      ok: true,
+      mode: 'shadow',
+      received: events.length,
+      inserted: queued.inserted,
+      queued: queued.queued,
+      external_writes: { zoho: false, linear: false, slack: false },
+    })
+  } catch (error) {
+    // A non-2xx response asks Zoho to retry; nothing is acknowledged before durable enqueue.
+    console.error('[zoho-webhook] durable enqueue failed:', errorMessage(error))
+    return NextResponse.json({ error: 'Durable queue unavailable' }, { status: 503 })
   }
+}
 
-  const newStatus = payload.newStatus as string | undefined
-  const shouldIngest =
-    eventType === 'Ticket_Add' ||
-    (eventType === 'Ticket_Update' && newStatus && CLOSED_STATUSES.has(newStatus))
-
-  if (!shouldIngest) {
-    return NextResponse.json({ ok: true, skipped: 'event not handled' })
-  }
-
-  // Fire-and-forget — must respond within 5s
-  ingestSingleTicket(ticketId).catch(err =>
-    console.error(`[webhook] ingest failed for ticket ${ticketId}:`, err)
-  )
-
-  return NextResponse.json({ ok: true, ticketId, eventType })
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }

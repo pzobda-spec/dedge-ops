@@ -25,6 +25,7 @@ import type {
   TicketAggregateRow,
   TicketAnalyticsResponse,
 } from '@/lib/zoho/ticketAnalyticsTypes'
+import type { SupportCockpitResponse } from '@/lib/support/cockpitTypes'
 
 const PRIMARY = '#59319f'
 const SUCCESS = '#1D9E75'
@@ -70,6 +71,8 @@ export default function TicketsAnalyticsDashboard() {
   const client = searchParams.get('client')?.trim() ?? ''
 
   const [data, setData] = useState<TicketAnalyticsResponse | null>(null)
+  const [cockpit, setCockpit] = useState<SupportCockpitResponse | null>(null)
+  const [cockpitRefreshKey, setCockpitRefreshKey] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [openFilter, setOpenFilter] = useState<string | null>(null)
@@ -107,6 +110,17 @@ export default function TicketsAnalyticsDashboard() {
       })
     return () => controller.abort()
   }, [apiQuery])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    fetch(`/api/support/cockpit?from=${from}&to=${to}`, { cache: 'no-store', signal: controller.signal })
+      .then(async response => response.ok ? response.json() : null)
+      .then(payload => setCockpit(payload as SupportCockpitResponse | null))
+      .catch(error => {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) setCockpit(null)
+      })
+    return () => controller.abort()
+  }, [cockpitRefreshKey, from, to])
 
   useEffect(() => {
     if (searchParams.toString()) return
@@ -341,7 +355,11 @@ export default function TicketsAnalyticsDashboard() {
                   ? `${formatNumber(data.total)} sur ${formatNumber(data.meta.unfiltered_total)} tickets · ${formatDate(from)} – ${formatDate(to)}`
                   : `${formatDate(from)} – ${formatDate(to)}`}
               />
-              <KpiCard label="Première réponse moyenne" value={formatDuration(data.avg_first_response_hours)} subtitle="Sur les tickets renseignés" />
+              <KpiCard
+                label="Réponses dans le délai"
+                value={cockpit?.first_response_within_target_pct == null ? '—' : `${formatNumber(cockpit.first_response_within_target_pct, 1)} %`}
+                subtitle="SLA interne · heures ouvrées Zoho"
+              />
               <KpiCard
                 label={`Résolution au 1er contact${data.meta.fcr_is_estimate ? ' (estim.)' : ''}`}
                 value={`${formatNumber(data.fcr_rate, 1)} %`}
@@ -354,6 +372,8 @@ export default function TicketsAnalyticsDashboard() {
                 delta={data.volume_change_pct}
               />
             </section>
+
+            <ShadowUrgencyPanel cockpit={cockpit} onRefresh={() => setCockpitRefreshKey(value => value + 1)} />
 
             {data.meta.source_truncated && (
               <p className="mt-3 rounded-lg bg-[#fff8e8] px-3 py-2 text-xs text-[#84550e]">
@@ -442,6 +462,153 @@ export default function TicketsAnalyticsDashboard() {
         )}
       </div>
     </main>
+  )
+}
+
+function ShadowUrgencyPanel({ cockpit, onRefresh }: { cockpit: SupportCockpitResponse | null; onRefresh: () => void }) {
+  const stateLabels = {
+    probable: 'Urgence probable',
+    confirmed: 'Urgence confirmée',
+    non_urgent: 'Non urgente',
+    to_qualify: 'À qualifier',
+  } as const
+  const levelLabels = { urgent: 'Urgence', high: 'High', medium: 'Medium', low: 'Low' } as const
+
+  return (
+    <section className="mt-4 rounded-xl border border-[#ded8e8] bg-white p-4 shadow-[0_4px_10px_rgba(36,25,55,0.05)] sm:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-bold text-[#1a1a1a]">Préqualification urgence</h2>
+            <span className="rounded-full bg-[#eee7f8] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#59319f]">Shadow mode</span>
+          </div>
+          <p className="mt-1 text-xs text-[#696969]">Lecture et mesure uniquement — aucune écriture Zoho, Linear ou Slack.</p>
+        </div>
+        <p className="text-[11px] text-[#696969]">Urgence 6h · High 24h · Medium 24h · Low 48h · heures ouvrées</p>
+      </div>
+
+      {!cockpit ? (
+        <div className="mt-5 h-36 animate-pulse rounded-lg bg-[#f3f1f5]" />
+      ) : (
+        <>
+          <div className="mt-5 grid grid-cols-2 gap-2 lg:grid-cols-5">
+            {cockpit.by_state.map(item => (
+              <div key={item.state} className={`rounded-lg border p-3 ${item.state === 'confirmed' ? 'border-[#efc5c2] bg-[#fff8f8]' : item.state === 'probable' ? 'border-[#f4d6a8] bg-[#fffaf1]' : 'border-[#e2e2e2] bg-[#fafafa]'}`}>
+                <p className="text-[11px] font-medium text-[#696969]">{stateLabels[item.state]}</p>
+                <p className={`mt-1 text-xl font-bold tabular-nums ${item.state === 'confirmed' ? 'text-[#b7221b]' : item.state === 'probable' ? 'text-[#9a5b08]' : 'text-[#1a1a1a]'}`}>{item.count}</p>
+              </div>
+            ))}
+            <div className="rounded-lg border border-[#e2e2e2] bg-[#fafafa] p-3">
+              <p className="text-[11px] font-medium text-[#696969]">Faux positifs validés</p>
+              <p className="mt-1 text-xl font-bold tabular-nums text-[#1a1a1a]">
+                {cockpit.false_positives.false_positive_rate_pct == null ? '—' : `${cockpit.false_positives.false_positive_rate_pct} %`}
+              </p>
+              <p className="mt-0.5 text-[10px] text-[#8a8a8a]">{cockpit.false_positives.validated_probable_total} cas jugés</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wide text-[#696969]">Respect du délai par niveau</h3>
+              <div className="mt-3 space-y-3">
+                {cockpit.by_level.map(bucket => {
+                  const total = bucket.within_target + bucket.outside_target + bucket.no_data
+                  return (
+                    <div key={bucket.level} className="grid grid-cols-[80px_minmax(0,1fr)_38px] items-center gap-2 text-xs">
+                      <span className={bucket.level === 'urgent' ? 'font-bold text-[#b7221b]' : 'font-semibold text-[#4a4a4a]'}>{levelLabels[bucket.level]} · {bucket.target_business_hours}h</span>
+                      <div className="flex h-3 overflow-hidden rounded-full bg-[#eeeeee]" aria-label={`${levelLabels[bucket.level]} : ${bucket.within_target} dans le délai, ${bucket.outside_target} hors délai, ${bucket.no_data} sans donnée`}>
+                        {total > 0 && <>
+                          <span className="bg-[#1D9E75]" style={{ width: `${(bucket.within_target / total) * 100}%` }} />
+                          <span className="bg-[#b7221b]" style={{ width: `${(bucket.outside_target / total) * 100}%` }} />
+                          <span className="bg-[#c9c9c9]" style={{ width: `${(bucket.no_data / total) * 100}%` }} />
+                        </>}
+                      </div>
+                      <span className="text-right tabular-nums text-[#696969]">{total}</span>
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-3 text-[10px] text-[#696969]">
+                <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-[#1D9E75]" />Dans le délai</span>
+                <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-[#b7221b]" />Hors délai</span>
+                <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-[#c9c9c9]" />Sans donnée</span>
+              </div>
+            </div>
+
+            <div className="min-w-0">
+              <h3 className="text-xs font-bold uppercase tracking-wide text-[#696969]">Séparation des priorités</h3>
+              <div className="mt-3 overflow-x-auto rounded-lg border border-[#ececec]">
+                <table className="w-full min-w-[960px] text-left text-[11px]">
+                  <thead className="bg-[#f7f7f7] text-[#696969]"><tr><th className="px-3 py-2">Ticket</th><th className="px-3 py-2">Urgence préqualifiée</th><th className="px-3 py-2">Niveau Zoho</th><th className="px-3 py-2">Priorité Linear</th><th className="px-3 py-2">Validation humaine</th></tr></thead>
+                  <tbody className="divide-y divide-[#eeeeee]">
+                    {cockpit.tickets.slice(0, 8).map(ticket => (
+                      <tr key={ticket.ticket_id}>
+                        <td className="max-w-[230px] truncate px-3 py-2.5 font-medium text-[#1a1a1a]">#{ticket.zoho_ticket_number ?? ticket.ticket_id} · {ticket.subject ?? 'Sans objet'}</td>
+                        <td className="px-3 py-2.5"><span className={`rounded-full px-2 py-1 font-semibold ${ticket.state === 'confirmed' ? 'bg-[#fee3e2] text-[#b7221b]' : ticket.state === 'probable' ? 'bg-[#fff0d6] text-[#8a560a]' : 'bg-[#eeeeee] text-[#4a4a4a]'}`}>{stateLabels[ticket.state]}</span></td>
+                        <td className="px-3 py-2.5 text-[#4a4a4a]">{ticket.zoho_priority || 'À qualifier'}</td>
+                        <td className="px-3 py-2.5 text-[#4a4a4a]">{ticket.linear_priority_label || 'Non liée / sans donnée'}</td>
+                        <td className="px-3 py-2.5"><UrgencyValidationControls ticketId={ticket.ticket_id} state={ticket.state} onValidated={onRefresh} /></td>
+                      </tr>
+                    ))}
+                    {cockpit.tickets.length === 0 && <tr><td colSpan={5} className="px-3 py-6 text-center text-[#8a8a8a]">Le shadow worker n’a pas encore produit d’évaluation.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </section>
+  )
+}
+
+function UrgencyValidationControls({
+  ticketId,
+  state,
+  onValidated,
+}: {
+  ticketId: string
+  state: 'probable' | 'confirmed' | 'non_urgent' | 'to_qualify'
+  onValidated: () => void
+}) {
+  const [level, setLevel] = useState('')
+  const [pending, setPending] = useState(false)
+  const [message, setMessage] = useState('')
+  if (state === 'confirmed' || state === 'non_urgent') return <span className="text-[#8a8a8a]">Validée</span>
+
+  async function validate(nextState: 'confirmed' | 'non_urgent') {
+    setPending(true)
+    setMessage('')
+    try {
+      const response = await fetch(`/api/support/urgency/${encodeURIComponent(ticketId)}/validate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state: nextState, ...(nextState === 'non_urgent' ? { level } : {}) }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload.error || 'Validation impossible')
+      onValidated()
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Validation impossible')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <div className="min-w-[260px]">
+      <div className="flex items-center gap-1.5">
+        <button type="button" disabled={pending} onClick={() => void validate('confirmed')} className="rounded-md bg-[#b7221b] px-2 py-1 font-semibold text-white disabled:opacity-50">Confirmer urgence</button>
+        <select aria-label="Niveau interne non urgent" disabled={pending} value={level} onChange={event => setLevel(event.target.value)} className="rounded-md border border-[#d8d8d8] bg-white px-1.5 py-1 text-[#4a4a4a]">
+          <option value="">Niveau…</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+        </select>
+        <button type="button" disabled={pending || !level} onClick={() => void validate('non_urgent')} className="rounded-md border border-[#c8c8c8] px-2 py-1 font-semibold text-[#4a4a4a] disabled:opacity-40">Écarter</button>
+      </div>
+      {message && <p role="alert" className="mt-1 text-[10px] text-[#b7221b]">{message}</p>}
+    </div>
   )
 }
 

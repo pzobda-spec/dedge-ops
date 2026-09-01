@@ -42,6 +42,7 @@ export interface ZohoTicket {
   ticketNumber: string
   email?: string | null
   subject: string
+  description?: string | null
   status: string
   priority: string
   channel: string
@@ -83,7 +84,7 @@ export async function fetchTickets(params: {
     ...(params.status && { status: params.status }),
     ...(params.departmentId && { departmentId: params.departmentId }),
     sortBy: params.sortBy ?? 'createdTime',
-    fields: 'id,ticketNumber,email,subject,status,priority,channel,category,classification,createdTime,modifiedTime,closedTime,responseTime,reopenCount,customerResponseTime,threadCount,contact,account,accountId,assignee,sentiment,cf',
+    fields: 'id,ticketNumber,email,subject,description,status,priority,channel,category,classification,createdTime,modifiedTime,closedTime,responseTime,reopenCount,customerResponseTime,threadCount,contact,account,accountId,assignee,sentiment,cf',
   })
 
   return zohoFetch<ZohoTicketsResponse>(`/tickets?${query}`)
@@ -179,4 +180,38 @@ export async function fetchAccounts(params: { limit?: number; from?: number } = 
     sortBy: 'accountName',
   })
   return zohoFetch<{ data: ZohoDeskAccount[] }>(`/accounts?${query}`)
+}
+
+export interface ZohoBusinessTime {
+  day: string
+  startTime: string
+  endTime: string
+}
+
+export interface ZohoBusinessHours {
+  id: string
+  name: string
+  status: string
+  type: string
+  businessTimes: ZohoBusinessTime[]
+  timeZone?: { id?: string; name?: string } | null
+  holidayLists?: Array<{ id: string; name?: string; status?: string }>
+}
+
+export interface ZohoHolidayList {
+  id: string
+  name: string
+  status: string
+  holidayListType: 'RECURRING' | 'YEAR_SPECIFIC'
+  year?: string | number | null
+  holidays?: Array<{ from: string; to: string; holidayName?: string }>
+}
+
+export async function fetchActiveBusinessHours(): Promise<ZohoBusinessHours[]> {
+  const response = await zohoFetch<{ data?: ZohoBusinessHours[] }>('/businessHours?status=ACTIVE&limit=50')
+  return response.data ?? []
+}
+
+export async function fetchHolidayList(holidayListId: string): Promise<ZohoHolidayList> {
+  return zohoFetch<ZohoHolidayList>(`/holidayList/${holidayListId}`)
 }
