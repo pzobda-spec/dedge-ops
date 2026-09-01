@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
   Area,
@@ -74,6 +74,7 @@ export default function TicketsAnalyticsDashboard() {
   const [data, setData] = useState<TicketAnalyticsResponse | null>(null)
   const [cockpit, setCockpit] = useState<SupportCockpitResponse | null>(null)
   const [cockpitRefreshKey, setCockpitRefreshKey] = useState(0)
+  const seenNotificationTickets = useRef<Set<string> | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [openFilter, setOpenFilter] = useState<string | null>(null)
@@ -113,14 +114,33 @@ export default function TicketsAnalyticsDashboard() {
   }, [apiQuery])
 
   useEffect(() => {
-    const controller = new AbortController()
-    fetch(`/api/support/cockpit?from=${from}&to=${to}`, { cache: 'no-store', signal: controller.signal })
-      .then(async response => response.ok ? response.json() : null)
-      .then(payload => setCockpit(payload as SupportCockpitResponse | null))
-      .catch(error => {
-        if (!(error instanceof DOMException && error.name === 'AbortError')) setCockpit(null)
-      })
-    return () => controller.abort()
+    let stopped = false
+    const loadCockpit = async () => {
+      try {
+        const response = await fetch(`/api/support/cockpit?from=${from}&to=${to}`, { cache: 'no-store' })
+        if (!response.ok) return
+        const payload = await response.json() as SupportCockpitResponse
+        if (stopped) return
+        setCockpit(payload)
+        const candidates = payload.tickets.filter(ticket => ticket.state === 'probable' || isHighZohoPriority(ticket.zoho_priority))
+        const currentIds = new Set(candidates.map(ticket => ticket.ticket_id))
+        const previousIds = seenNotificationTickets.current
+        seenNotificationTickets.current = currentIds
+        if (!previousIds || typeof Notification === 'undefined' || Notification.permission !== 'granted') return
+        candidates.filter(ticket => !previousIds.has(ticket.ticket_id)).forEach(ticket => {
+          const label = ticket.state === 'probable' ? 'urgence douteuse' : 'niveau High'
+          new Notification(`Nouveau ticket — ${label}`, {
+            body: `#${ticket.zoho_ticket_number ?? ticket.ticket_id} · ${ticket.subject ?? 'Sans objet'}`,
+            tag: `support-urgency-${ticket.ticket_id}`,
+          })
+        })
+      } catch {
+        if (!stopped) setCockpit(null)
+      }
+    }
+    void loadCockpit()
+    const interval = window.setInterval(loadCockpit, 60_000)
+    return () => { stopped = true; window.clearInterval(interval) }
   }, [cockpitRefreshKey, from, to])
 
   useEffect(() => {
@@ -467,6 +487,7 @@ export default function TicketsAnalyticsDashboard() {
 }
 
 function ShadowUrgencyPanel({ cockpit, onRefresh }: { cockpit: SupportCockpitResponse | null; onRefresh: () => void }) {
+  const [notifications, setNotifications] = useState<NotificationPermission | 'unsupported'>('default')
   const stateLabels = {
     probable: 'Urgence probable',
     confirmed: 'Urgence confirmée',
@@ -474,6 +495,15 @@ function ShadowUrgencyPanel({ cockpit, onRefresh }: { cockpit: SupportCockpitRes
     to_qualify: 'À qualifier',
   } as const
   const levelLabels = { urgent: 'Urgence', high: 'High', medium: 'Medium', low: 'Low' } as const
+
+  useEffect(() => {
+    setNotifications(typeof Notification === 'undefined' ? 'unsupported' : Notification.permission)
+  }, [])
+
+  async function enableNotifications() {
+    if (typeof Notification === 'undefined') return
+    setNotifications(await Notification.requestPermission())
+  }
 
   return (
     <section className="mt-4 rounded-xl border border-[#ded8e8] bg-white p-4 shadow-[0_4px_10px_rgba(36,25,55,0.05)] sm:p-5">
@@ -483,9 +513,13 @@ function ShadowUrgencyPanel({ cockpit, onRefresh }: { cockpit: SupportCockpitRes
             <h2 className="text-sm font-bold text-[#1a1a1a]">Préqualification urgence</h2>
             <span className="rounded-full bg-[#eee7f8] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#59319f]">Shadow mode</span>
           </div>
-          <p className="mt-1 text-xs text-[#696969]">Lecture et mesure uniquement — aucune écriture Zoho, Linear ou Slack.</p>
+            <p className="mt-1 text-xs text-[#696969]">Lecture et mesure uniquement — aucune écriture Zoho, Linear ou Slack.</p>
         </div>
-        <p className="text-[11px] text-[#696969]">Urgence 6h · High 24h · Medium 24h · Low 48h · heures ouvrées</p>
+        <div className="flex items-center gap-3">
+          {notifications === 'default' && <button type="button" onClick={enableNotifications} className="rounded-md border border-[#cfc2e5] px-2.5 py-1.5 text-[11px] font-semibold text-[#59319f] hover:bg-[#f7f2fc]">Activer les notifications</button>}
+          {notifications === 'granted' && <span className="text-[11px] font-semibold text-[#1D9E75]">Notifications activées</span>}
+          <p className="text-[11px] text-[#696969]">Urgence 6h · High 24h · Medium 24h · Low 48h · heures ouvrées</p>
+        </div>
       </div>
 
       {!cockpit ? (
@@ -571,6 +605,11 @@ function ShadowUrgencyPanel({ cockpit, onRefresh }: { cockpit: SupportCockpitRes
       )}
     </section>
   )
+}
+
+function isHighZohoPriority(priority: string | null): boolean {
+  return priority?.trim().toLocaleLowerCase('fr-FR') === 'high'
+    || priority?.trim().toLocaleLowerCase('fr-FR') === 'haute'
 }
 
 function UrgencyValidationControls({
