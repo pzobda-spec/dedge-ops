@@ -26,6 +26,7 @@ import type {
   TicketAnalyticsResponse,
 } from '@/lib/zoho/ticketAnalyticsTypes'
 import type { SupportCockpitResponse } from '@/lib/support/cockpitTypes'
+import { ZOHO_DESK_AGENT_TICKET_BASE_URL } from '@/lib/zoho/constants'
 
 const PRIMARY = '#59319f'
 const SUCCESS = '#1D9E75'
@@ -543,7 +544,17 @@ function ShadowUrgencyPanel({ cockpit, onRefresh }: { cockpit: SupportCockpitRes
                   <tbody className="divide-y divide-[#eeeeee]">
                     {cockpit.tickets.slice(0, 8).map(ticket => (
                       <tr key={ticket.ticket_id}>
-                        <td className="max-w-[230px] truncate px-3 py-2.5 font-medium text-[#1a1a1a]">#{ticket.zoho_ticket_number ?? ticket.ticket_id} · {ticket.subject ?? 'Sans objet'}</td>
+                        <td className="max-w-[230px] truncate px-3 py-2.5 font-medium text-[#1a1a1a]">
+                          <a
+                            href={`${ZOHO_DESK_AGENT_TICKET_BASE_URL}/details/${encodeURIComponent(ticket.ticket_id)}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[#59319f] underline decoration-[#cfc2e5] underline-offset-2 hover:text-[#3f2178]"
+                            title="Ouvrir dans Zoho Desk"
+                          >
+                            #{ticket.zoho_ticket_number ?? ticket.ticket_id} · {ticket.subject ?? 'Sans objet'}
+                          </a>
+                        </td>
                         <td className="px-3 py-2.5"><span className={`rounded-full px-2 py-1 font-semibold ${ticket.state === 'confirmed' ? 'bg-[#fee3e2] text-[#b7221b]' : ticket.state === 'probable' ? 'bg-[#fff0d6] text-[#8a560a]' : 'bg-[#eeeeee] text-[#4a4a4a]'}`}>{stateLabels[ticket.state]}</span></td>
                         <td className="px-3 py-2.5 text-[#4a4a4a]">{ticket.zoho_priority || 'À qualifier'}</td>
                         <td className="px-3 py-2.5 text-[#4a4a4a]">{ticket.linear_priority_label || 'Non liée / sans donnée'}</td>
