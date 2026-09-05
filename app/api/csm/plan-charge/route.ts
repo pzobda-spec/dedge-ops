@@ -90,7 +90,7 @@ export async function GET(req: NextRequest) {
       dealsTruncated: plan.dealsTruncated,
       warnings: plan.warnings,
       csmPortfolios: plan.csmPortfolios.rows,
-      csmDashboard: plan.csmDashboard,
+      csmAccounts: plan.csmAccounts,
     })
   } catch (error) {
     return authErrorResponse(error) ?? NextResponse.json(

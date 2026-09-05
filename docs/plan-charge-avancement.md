@@ -212,6 +212,45 @@ Aucun seuil de bonne ou mauvaise santé n'est défini, aucun score composite : l
 page expose les compteurs bruts et un classement. La qualification viendra du
 métier une fois les ordres de grandeur observés.
 
+### Étape 7, dashboard CSM filtrable — FAIT
+
+**Bug majeur corrigé.** Un compte churné passe en `Account_Type = 'Former client'`
+dans Zoho. Le calcul ne retenait que les `Client` : les comptes churnés étaient
+exclus, et le dashboard affichait donc ZÉRO churn par construction. Découvert en
+cherchant comment calculer un taux plutôt qu'un volume. Test de non-régression
+sur le cas perdu, un `Former client` taggé `churn26`.
+
+Valeurs réelles d'`Account_Type` : `Client`, `Former client`, `Prospect`,
+`Prescriber`, `Other`. Seuls les deux premiers entrent dans le dashboard.
+
+**Churn constaté et churn annoncé.** Un compte peut porter un tag de millésime
+tout en restant `Client` : c'est un churn annoncé, pas encore constaté. Vérifié
+sur FLORELLA RESIDENCES, tag `churn26`, statut `Client`. Les deux sont comptés
+séparément, jamais agrégés.
+
+**Taux de churn**, formule retenue faute d'historique de portefeuille :
+`constatés du millésime / (clients actifs + constatés du millésime)`, sur le
+périmètre filtré. Dénominateur nul, on affiche `—`. La reconstitution du
+dénominateur est signalée dans l'interface, ce n'est pas un taux comptable.
+
+**Architecture.** Le serveur envoyait des agrégats déjà calculés, donc rien
+n'était filtrable. Il envoie désormais une ligne par compte
+(`buildCsmAccountRows`) et la page agrège selon les filtres, comme
+`/onboarding/pilotage` le fait avec les projets.
+
+**Filtres synchronisés à l'URL**, sur le patron de
+`components/analytics/TicketsAnalyticsDashboard.tsx` : CSM (dont « Non
+attribué »), statut, typologie, tier, millésime de churn, recherche de compte,
+et bascule « à réattribuer ». Barre sticky, pastilles retirables,
+réinitialisation.
+
+Deux corrections après le worker : le MRR par CSM agrégeait clients ET anciens
+clients, ce qui gonflait le portefeuille et contredisait l'indicateur MRR ; et
+« Non attribué » n'était pas filtrable, seulement visible en indicateur.
+
+Toujours aucun seuil de santé ni score composite : compteurs bruts et
+classements, la qualification viendra du métier.
+
 ## Décisions tranchées
 
 - Priorité d'attribution : `override manuel` > `continuité de groupe` >

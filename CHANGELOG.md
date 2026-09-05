@@ -6,6 +6,31 @@ Les entrées antérieures au 15 juillet 2026 ont été reconstituées à partir 
 l’historique Git ; elles synthétisent les changements fonctionnels encore
 pertinents plutôt que chaque correction intermédiaire.
 
+## 2026-09-05 — Tableau de bord CSM filtrable
+
+### Corrigé
+
+- Le churn était systématiquement affiché à zéro : les comptes résiliés passent
+  au statut « ancien client » dans le CRM et étaient exclus du calcul. Ils sont
+  désormais pris en compte.
+- Le revenu récurrent par chargé de succès client additionnait les clients
+  actifs et les anciens clients, ce qui gonflait le portefeuille. Seuls les
+  clients actifs l’alimentent.
+
+### Ajouté
+
+- Filtres synchronisés avec l’adresse de la page : chargé de succès client, dont
+  les comptes non attribués, statut, typologie, segment, millésime de
+  résiliation, recherche par compte, et un filtre dédié aux comptes à
+  réattribuer.
+- Taux de résiliation, global et par chargé de succès client, en plus des
+  volumes. Le dénominateur étant reconstitué faute d’historique de
+  portefeuille, la limite est affichée.
+- Distinction entre résiliation constatée et résiliation annoncée : un compte
+  peut porter une étiquette de millésime tout en restant client.
+- Quatre visualisations et deux tableaux triables et paginés, sur le modèle des
+  tableaux de bord Tickets et Bugs.
+
 ## 2026-09-05 — Section CSM et tableau de bord de portefeuille
 
 ### Ajouté

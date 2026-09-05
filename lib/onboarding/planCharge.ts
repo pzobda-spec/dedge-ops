@@ -26,7 +26,7 @@ import {
 import { countActiveProjectsByOwner } from '@/lib/onboarding/workload'
 import { computeCsmPortfolios, type CsmPortfolioResult } from '@/lib/onboarding/csmAnalytics'
 import type { PlanChargeSources } from '@/lib/onboarding/planChargeSources'
-import { computeCsmDashboard, type CsmDashboardResult } from '@/lib/csm/dashboard'
+import { buildCsmAccountRows, type CsmAccountRowsResult } from '@/lib/csm/dashboard'
 
 /** Options de calcul du plan de charge. */
 export interface ComputePlanChargeOptions {
@@ -52,7 +52,7 @@ export interface PlanChargeComputation {
   dealsTruncated: boolean
   warnings: string[]
   csmPortfolios: CsmPortfolioResult
-  csmDashboard: CsmDashboardResult
+  csmAccounts: CsmAccountRowsResult
 }
 
 /** Enchaîne pipeline, points de départ et moteur à partir des sources chargées. */
@@ -140,7 +140,7 @@ export function computePlanCharge(
     )
   }
 
-  const csmDashboard = computeCsmDashboard({
+  const csmAccounts = buildCsmAccountRows({
     accounts: sources.accounts,
     projects: sources.projects,
     csmDirectory: sources.csmDirectory,
@@ -148,9 +148,11 @@ export function computePlanCharge(
     ticketsByAccountName: sources.ticketsByAccountName,
   })
 
-  if (csmDashboard.unmanaged.accounts > 0) {
+  const unmanagedRows = csmAccounts.rows.filter(row => row.unmanagedOwner)
+  if (unmanagedRows.length > 0) {
+    const unmanagedMrr = unmanagedRows.reduce((sum, row) => sum + row.mrr, 0)
     warnings.push(
-      `${csmDashboard.unmanaged.accounts} compte(s) portés par un ancien CSM sont à réattribuer, pour un MRR de ${csmDashboard.unmanaged.mrr}.`,
+      `${unmanagedRows.length} compte(s) portés par un ancien CSM sont à réattribuer, pour un MRR de ${unmanagedMrr}.`,
     )
   }
 
@@ -166,6 +168,6 @@ export function computePlanCharge(
     dealsTruncated: sources.dealsTruncated,
     warnings,
     csmPortfolios,
-    csmDashboard,
+    csmAccounts,
   }
 }

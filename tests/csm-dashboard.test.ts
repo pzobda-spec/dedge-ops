@@ -4,7 +4,7 @@ import type { CRMAccount } from '@/lib/zoho/crmClient'
 import type { OnboardingProject } from '@/lib/zoho/projectsClient'
 import type { CsmDirectoryEntry } from '@/lib/onboarding/csmDirectory'
 import {
-  computeCsmDashboard,
+  buildCsmAccountRows,
   UNMANAGED_OWNER_IDS,
   type CsmDashboardInput,
 } from '@/lib/csm/dashboard'
@@ -85,65 +85,69 @@ function baseInput(overrides: Partial<CsmDashboardInput> = {}): CsmDashboardInpu
   }
 }
 
-test('un compte prospect est ignoré, un compte client est compté', () => {
+test('prospect et prescriber ignorés, client et former client produisent chacun une ligne', () => {
   const accounts = [
     makeAccount({ id: 'prospect-1', accountType: 'Prospect', csmUserId: 'u-ghislaine' }),
+    makeAccount({ id: 'prescriber-1', accountType: 'Prescriber', csmUserId: 'u-ghislaine' }),
     makeAccount({ id: 'client-1', accountType: 'Client', csmUserId: 'u-ghislaine' }),
+    makeAccount({ id: 'former-1', accountType: 'Former client', csmUserId: 'u-ghislaine' }),
   ]
-  const result = computeCsmDashboard(baseInput({ accounts }))
-  assert.equal(result.global.accounts, 1)
+  const result = buildCsmAccountRows(baseInput({ accounts }))
+  assert.equal(result.rows.length, 2)
+  assert.equal(result.diagnostics.ignoredAccounts, 2)
+  assert.ok(result.rows.some(row => row.accountId === 'client-1'))
+  assert.ok(result.rows.some(row => row.accountId === 'former-1'))
 })
 
-test('MRR, comptes groupe et individuel agrégés correctement, global et par CSM', () => {
+test('non-régression : former client taggé churn26 produit bien une ligne former_client avec le churn', () => {
   const accounts = [
-    makeAccount({ id: 'parent-1', mrr: 1000, csmUserId: 'u-ghislaine' }),
-    makeAccount({ id: 'child-1', parentId: 'parent-1', mrr: 200, csmUserId: 'u-ghislaine' }),
-    makeAccount({ id: 'solo-1', mrr: 300, csmUserId: 'u-laurane' }),
+    makeAccount({
+      id: 'former-churn',
+      name: 'FLORELLA RESIDENCES',
+      accountType: 'Former client',
+      tags: ['churn26'],
+      csmUserId: 'u-ghislaine',
+    }),
   ]
-  const result = computeCsmDashboard(baseInput({ accounts }))
-  assert.equal(result.global.mrr, 1500)
-  assert.equal(result.global.groupAccounts, 2) // parent + child
-  assert.equal(result.global.individualAccounts, 1) // solo
-
-  const ghislaine = result.byCsm.find(row => row.csmName === 'Ghislaine')!
-  assert.equal(ghislaine.mrr, 1200)
-  assert.equal(ghislaine.groupAccounts, 2)
-
-  const laurane = result.byCsm.find(row => row.csmName === 'Laurane')!
-  assert.equal(laurane.mrr, 300)
-  assert.equal(laurane.individualAccounts, 1)
+  const result = buildCsmAccountRows(baseInput({ accounts }))
+  assert.equal(result.rows.length, 1)
+  assert.equal(result.rows[0].status, 'former_client')
+  assert.deepEqual(result.rows[0].churnVintages, ['churn26'])
 })
 
-test('churn : millésimes, tag générique, double millésime, tag sans rapport ignoré', () => {
+test('un compte Client taggé churn26 reste status client : churn annoncé, pas constaté', () => {
   const accounts = [
-    makeAccount({ id: 'a1', mrr: 100, tags: ['churn25'], csmUserId: 'u-ghislaine' }),
-    makeAccount({ id: 'a2', mrr: 200, tags: ['churn26'], csmUserId: 'u-ghislaine' }),
-    makeAccount({ id: 'a3', mrr: 50, tags: ['churn'], csmUserId: 'u-ghislaine' }),
-    makeAccount({ id: 'a4', mrr: 300, tags: ['churn25', 'churn26'], csmUserId: 'u-ghislaine' }),
-    makeAccount({ id: 'a5', mrr: 400, tags: ['vip'], csmUserId: 'u-ghislaine' }),
+    makeAccount({ id: 'a1', accountType: 'Client', tags: ['churn26'], csmUserId: 'u-ghislaine' }),
   ]
-  const result = computeCsmDashboard(baseInput({ accounts }))
-  assert.equal(result.global.churnByVintage['churn25'], 2) // a1, a4
-  assert.equal(result.global.churnByVintage['churn26'], 2) // a2, a4
-  assert.equal(result.global.churnByVintage['churn'], 1) // a3
-  assert.equal(result.global.churnMrrByVintage['churn25'], 400) // a1 + a4
-  assert.equal(result.global.churnMrrByVintage['churn26'], 500) // a2 + a4
-  assert.equal(result.global.churnByVintage['vip'], undefined)
+  const result = buildCsmAccountRows(baseInput({ accounts }))
+  assert.equal(result.rows[0].status, 'client')
+  assert.deepEqual(result.rows[0].churnVintages, ['churn26'])
 })
 
-test('un compte porté par un ancien CSM va dans unmanaged, pas dans byCsm, mais reste dans global', () => {
+test('churn : tag générique seul retenu, tag sans rapport ignoré, deux millésimes portés ensemble', () => {
+  const accounts = [
+    makeAccount({ id: 'a1', tags: ['churn'], csmUserId: 'u-ghislaine' }),
+    makeAccount({ id: 'a2', tags: ['vip'], csmUserId: 'u-ghislaine' }),
+    makeAccount({ id: 'a3', tags: ['churn25', 'churn26'], csmUserId: 'u-ghislaine' }),
+  ]
+  const result = buildCsmAccountRows(baseInput({ accounts }))
+  const a1 = result.rows.find(row => row.accountId === 'a1')!
+  const a2 = result.rows.find(row => row.accountId === 'a2')!
+  const a3 = result.rows.find(row => row.accountId === 'a3')!
+  assert.deepEqual(a1.churnVintages, ['churn'])
+  assert.deepEqual(a2.churnVintages, [])
+  assert.deepEqual(a3.churnVintages, ['churn25', 'churn26'])
+})
+
+test('un compte porté par un ancien CSM a unmanagedOwner vrai et csmName null', () => {
   const oldOwnerId = UNMANAGED_OWNER_IDS[0]
   const accounts = [
-    makeAccount({ id: 'a1', mrr: 100, csm: 'Grégoire Tiers', csmUserId: oldOwnerId }),
+    makeAccount({ id: 'a1', csm: 'Grégoire Tiers', csmUserId: oldOwnerId }),
   ]
-  const result = computeCsmDashboard(baseInput({ accounts }))
-  assert.equal(result.global.accounts, 1)
-  assert.equal(result.unmanaged.accounts, 1)
-  assert.equal(result.unmanaged.mrr, 100)
-  assert.deepEqual(result.unmanaged.ownerLabels, ['Grégoire Tiers'])
-  for (const row of result.byCsm) {
-    assert.equal(row.accounts, 0)
-  }
+  const result = buildCsmAccountRows(baseInput({ accounts }))
+  assert.equal(result.rows[0].unmanagedOwner, true)
+  assert.equal(result.rows[0].csmName, null)
+  assert.equal(result.rows[0].rawCsm, 'Grégoire Tiers')
 })
 
 test('tickets : correspondance stricte par nom normalisé, un nom partiel ne se rattache pas', () => {
@@ -152,30 +156,40 @@ test('tickets : correspondance stricte par nom normalisé, un nom partiel ne se 
     makeAccount({ id: 'a2', name: 'Hotel Paris Annexe', csmUserId: 'u-ghislaine' }),
   ]
   const ticketsByAccountName = new Map([['HOTEL PARIS', { open: 3, last6m: 10 }]])
-  const result = computeCsmDashboard(baseInput({ accounts, ticketsByAccountName }))
-  assert.equal(result.global.openTickets, 3) // seul a1 matché
-  assert.equal(result.global.tickets6m, 10)
-  assert.equal(result.diagnostics.accountsWithoutTicketMatch, 1) // a2 non matché
+  const result = buildCsmAccountRows(baseInput({ accounts, ticketsByAccountName }))
+  const a1 = result.rows.find(row => row.accountId === 'a1')!
+  const a2 = result.rows.find(row => row.accountId === 'a2')!
+  assert.equal(a1.openTickets, 3)
+  assert.equal(a1.tickets6m, 10)
+  assert.equal(a1.ticketMatched, true)
+  assert.equal(a2.openTickets, 0)
+  assert.equal(a2.tickets6m, 0)
+  assert.equal(a2.ticketMatched, false)
+  assert.equal(result.diagnostics.accountsWithoutTicketMatch, 1)
 })
 
-test('accountHealth trié par tickets ouverts décroissants, exclut les comptes à zéro', () => {
+test('live vrai si au moins un projet du compte est en statut live', () => {
   const accounts = [
-    makeAccount({ id: 'a1', name: 'Low', mrr: 500, csmUserId: 'u-ghislaine' }),
-    makeAccount({ id: 'a2', name: 'High', mrr: 100, csmUserId: 'u-ghislaine' }),
-    makeAccount({ id: 'a3', name: 'Zero', mrr: 900, csmUserId: 'u-ghislaine' }),
+    makeAccount({ id: 'a1', name: 'Hotel Live', csmUserId: 'u-ghislaine' }),
+    makeAccount({ id: 'a2', name: 'Hotel Not Live', csmUserId: 'u-ghislaine' }),
   ]
-  const ticketsByAccountName = new Map([
-    ['LOW', { open: 2, last6m: 2 }],
-    ['HIGH', { open: 5, last6m: 5 }],
-    ['ZERO', { open: 0, last6m: 0 }],
-  ])
-  const result = computeCsmDashboard(baseInput({ accounts, ticketsByAccountName }))
-  assert.deepEqual(result.accountHealth.map(row => row.accountName), ['High', 'Low'])
+  const projects = [
+    makeProject({ id: 'p1', accountCRMId: 'a1', status: 'live' }),
+    makeProject({ id: 'p2', accountCRMId: 'a2', status: 'in_progress' }),
+  ]
+  const result = buildCsmAccountRows(baseInput({ accounts, projects }))
+  const a1 = result.rows.find(row => row.accountId === 'a1')!
+  const a2 = result.rows.find(row => row.accountId === 'a2')!
+  assert.equal(a1.live, true)
+  assert.equal(a2.live, false)
 })
 
-test('un CSM du roster sans compte a bien une ligne à zéro', () => {
-  const result = computeCsmDashboard(baseInput({ accounts: [] }))
-  const laurane = result.byCsm.find(row => row.csmName === 'Laurane')!
-  assert.equal(laurane.accounts, 0)
-  assert.equal(laurane.mrr, 0)
+test('tri par MRR décroissant', () => {
+  const accounts = [
+    makeAccount({ id: 'a1', name: 'Low', mrr: 100, csmUserId: 'u-ghislaine' }),
+    makeAccount({ id: 'a2', name: 'High', mrr: 900, csmUserId: 'u-ghislaine' }),
+    makeAccount({ id: 'a3', name: 'Mid', mrr: 500, csmUserId: 'u-ghislaine' }),
+  ]
+  const result = buildCsmAccountRows(baseInput({ accounts }))
+  assert.deepEqual(result.rows.map(row => row.accountName), ['High', 'Mid', 'Low'])
 })
