@@ -6,6 +6,38 @@ Les entrées antérieures au 15 juillet 2026 ont été reconstituées à partir 
 l’historique Git ; elles synthétisent les changements fonctionnels encore
 pertinents plutôt que chaque correction intermédiaire.
 
+## 2026-09-05 — Moteur d’attribution et anticipation de charge OB / CSM
+
+Première étape, scaffolding. Le moteur existe et est testé, mais il n’est pas
+encore alimenté par Zoho ni exposé dans l’interface. Voir
+`docs/plan-charge-avancement.md` pour l’état d’avancement et la suite.
+
+### Ajouté
+
+- Roster des implémenteurs onboarding en base (`ob_capacity_rules`), avec rôle,
+  plafond de projets simultanés et état de disponibilité.
+- États de disponibilité communs aux implémenteurs et aux CSM : Dispo, Relâche
+  (capacité divisée par deux), Absent et STOP (capacité nulle). L’ancien
+  booléen `active` des CSM est migré vers ces états et conservé en lecture pour
+  compatibilité.
+- Table des pré-attributions et des overrides manuels par compte
+  (`account_assignments`), avec verrous distincts côté implémenteur et côté
+  CSM.
+- Moteur d’attribution et de projection de charge : pré-attribution d’un
+  implémenteur à la signature et d’un CSM au mois de go-live, répartition sur
+  la capacité restante, éligibilité par séniorité, continuité de groupe et
+  détection des dépassements de plafond. Priorité retenue, override manuel puis
+  continuité de groupe puis répartition automatique.
+- Barème de poids commun aux deux capacités, lu depuis les règles existantes en
+  base plutôt que redéfini dans le code.
+- Suite de tests unitaires du moteur, dont la redistribution sur un
+  implémenteur absent, la continuité vers un CSM à l’arrêt et le déterminisme
+  des attributions.
+
+### Modifié
+
+- Le groupe implémentation ne contient plus que Thuy-Tien, Dalia et Winli.
+
 ## 2026-07-21 — Traduction anglaise de l’onboarding et suivi de la charge
 
 ### Ajouté
