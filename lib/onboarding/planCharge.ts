@@ -23,6 +23,8 @@ import {
   type CsmMember,
   type ObMember,
 } from '@/lib/onboarding/assignmentEngine'
+import { countActiveProjectsByOwner } from '@/lib/onboarding/workload'
+import { computeCsmPortfolios, type CsmPortfolioResult } from '@/lib/onboarding/csmAnalytics'
 import type { PlanChargeSources } from '@/lib/onboarding/planChargeSources'
 
 /** Options de calcul du plan de charge. */
@@ -44,8 +46,11 @@ export interface PlanChargeComputation {
   obRoster: ObMember[]
   /** Roster CSM enrichi des points déjà attribués sur le mois courant. */
   csmRoster: CsmMember[]
+  /** Projets actifs par implémenteur, tels que comptés par /onboarding/pilotage. */
+  activeProjectsByOwner: Record<string, number>
   dealsTruncated: boolean
   warnings: string[]
+  csmPortfolios: CsmPortfolioResult
 }
 
 /** Enchaîne pipeline, points de départ et moteur à partir des sources chargées. */
@@ -90,9 +95,27 @@ export function computePlanCharge(
     currentMonthBasePoints: basePoints.pointsByCsm[member.name] ?? 0,
   }))
 
+  // Charge OB de départ : les projets actifs réels. Sans cet amorçage le
+  // moteur partirait de zéro, afficherait un implémenteur en surcharge comme
+  // vide, et lui attribuerait encore des comptes.
+  const activeProjectsByOwner = countActiveProjectsByOwner(sources.projects)
+  const obRoster: ObMember[] = sources.obRoster.map(member => ({
+    ...member,
+    currentActiveProjects: activeProjectsByOwner[member.name] ?? 0,
+  }))
+
+  const orphanOwners = Object.keys(activeProjectsByOwner).filter(
+    owner => !sources.obRoster.some(member => member.name === owner),
+  )
+  if (orphanOwners.length > 0) {
+    warnings.push(
+      `Projets actifs portés par des personnes absentes du roster OB, non comptés dans la capacité : ${orphanOwners.join(', ')}.`,
+    )
+  }
+
   const engine = runAssignmentEngine({
     pipeline: pipeline.pipeline,
-    obRoster: sources.obRoster,
+    obRoster,
     csmRoster,
     groupContinuity: pipeline.groupContinuity,
     weightRules: sources.weightRules,
@@ -101,15 +124,31 @@ export function computePlanCharge(
     balanceMode: options.balanceMode,
   })
 
+  const csmPortfolios = computeCsmPortfolios({
+    accounts: sources.accounts,
+    projects: sources.projects,
+    csmDirectory: sources.csmDirectory,
+    csmNames: sources.csmRoster.map(member => member.name),
+    currentMonth,
+  })
+
+  if (csmPortfolios.unresolvedAccounts.length > 0) {
+    warnings.push(
+      `${csmPortfolios.unresolvedAccounts.length} compte(s) ne sont rattachés à aucun portefeuille CSM faute de résolution du nom.`,
+    )
+  }
+
   return {
     referenceDate: options.referenceDate,
     currentMonth,
     pipeline,
     basePoints,
     engine,
-    obRoster: sources.obRoster,
+    obRoster,
     csmRoster,
+    activeProjectsByOwner,
     dealsTruncated: sources.dealsTruncated,
     warnings,
+    csmPortfolios,
   }
 }

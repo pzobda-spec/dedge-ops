@@ -12,7 +12,7 @@ function normalize(value: string): string {
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
-    await requireRole(req, ['admin', 'onboarder', 'support', 'commercial_readonly'])
+    await requireRole(req, ['admin', 'onboarder', 'support', 'commercial_readonly', 'csm_lead'])
     const project = await getOnboardingProjectByIdOrZohoId(params.id)
     if (!project) return NextResponse.json({ error: 'Projet introuvable' }, { status: 404 })
     if (!project.start_date) return NextResponse.json({ sessions_count: 0, participants: [], warning: 'Date de début du projet non renseignée.' })

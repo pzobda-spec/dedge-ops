@@ -18,6 +18,7 @@ const roleLabels: Record<Role, string> = {
   onboarder: 'Onboarder',
   support: 'Support',
   commercial_readonly: 'Commercial',
+  csm_lead: 'Team lead CSM',
 }
 
 const roleClasses: Record<Role, string> = {
@@ -25,6 +26,7 @@ const roleClasses: Record<Role, string> = {
   onboarder:           'bg-[#e8dbfa] text-[#59319f] border-[#c0a4f0]',
   support:             'bg-[#d4e4f8] text-[#2b5bb7] border-[#93c5fd]',
   commercial_readonly: 'bg-[#e2e2e2] text-[#4a4a4a] border-[#d1d5db]',
+  csm_lead:            'bg-[#d8f2ec] text-[#0f6b58] border-[#7fd3c1]',
 }
 
 function initials(email: string, fullName: string | null): string {

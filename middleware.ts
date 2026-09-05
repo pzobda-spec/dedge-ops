@@ -30,7 +30,9 @@ const RESTRICTED_ROUTES: Array<{ prefixes: string[]; roles: Role[] }> = [
     ],
     roles: ['admin', 'support'],
   },
-  // Onboarding scope: admin + onboarder + commercial_readonly
+  // Onboarding scope: admin + onboarder + commercial_readonly + csm_lead.
+  // csm_lead voit toute la section onboarding, mais rien du reste du cockpit :
+  // il n'est listé dans aucun des groupes ci-dessus.
   {
     prefixes: [
       '/onboarding',
@@ -40,7 +42,7 @@ const RESTRICTED_ROUTES: Array<{ prefixes: string[]; roles: Role[] }> = [
       '/api/ai/onboarding-summary',
       '/api/integrations/zoho',
     ],
-    roles: ['admin', 'onboarder', 'commercial_readonly'],
+    roles: ['admin', 'onboarder', 'commercial_readonly', 'csm_lead'],
   },
 ]
 
@@ -113,6 +115,7 @@ async function getMiddlewareUser(email: string): Promise<MiddlewareUser | null> 
 }
 
 function homePathForRole(role: Role | null): string {
+  if (role === 'csm_lead') return '/onboarding/csm'
   if (role === 'onboarder' || role === 'commercial_readonly') return '/onboarding'
   return '/dashboard'
 }

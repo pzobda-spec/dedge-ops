@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   try {
-    await requireRole(req, ['admin', 'onboarder'])
+    await requireRole(req, ['admin', 'onboarder', 'csm_lead'])
 
     const body = await req.json().catch(() => ({})) as Record<string, unknown>
 

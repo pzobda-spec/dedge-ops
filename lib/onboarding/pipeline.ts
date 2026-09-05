@@ -127,6 +127,80 @@ function isPositiveInteger(value: number | null): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0
 }
 
+/** Résultat de l'appariement des projets Zoho aux comptes CRM. */
+export interface ProjectsByAccountIndex {
+  /** id de compte CRM -> projets rattachés. */
+  byAccountId: Map<string, OnboardingProject[]>
+  /** Projets qu'aucun compte n'a pu absorber. */
+  unlinkedCount: number
+}
+
+/**
+ * Apparie chaque projet à un compte : par `accountCRMId` en priorité, sinon par
+ * égalité STRICTE de nom normalisé, et seulement si un seul compte porte ce nom.
+ * N'utilise surtout pas `matchAccountByName` de `clientResolver`, dont
+ * l'appariement partiel par `includes` produirait des faux positifs silencieux.
+ */
+export function indexProjectsByAccount(
+  accounts: readonly CRMAccount[],
+  projects: readonly OnboardingProject[],
+): ProjectsByAccountIndex {
+  const accountsById = new Map<string, CRMAccount>()
+  for (const account of accounts) accountsById.set(account.id, account)
+
+  const accountsByNormalizedName = new Map<string, CRMAccount[]>()
+  for (const account of accounts) {
+    const key = normalizeAccountName(account.name)
+    const list = accountsByNormalizedName.get(key) ?? []
+    list.push(account)
+    accountsByNormalizedName.set(key, list)
+  }
+
+  const byAccountId = new Map<string, OnboardingProject[]>()
+  let unlinkedCount = 0
+
+  for (const project of projects) {
+    let matchedAccountId: string | null = null
+    if (project.accountCRMId && accountsById.has(project.accountCRMId)) {
+      matchedAccountId = project.accountCRMId
+    } else if (project.accountCRMName) {
+      const candidates = accountsByNormalizedName.get(normalizeAccountName(project.accountCRMName)) ?? []
+      if (candidates.length === 1) matchedAccountId = candidates[0].id
+    }
+
+    if (matchedAccountId === null) {
+      unlinkedCount += 1
+      continue
+    }
+
+    const list = byAccountId.get(matchedAccountId) ?? []
+    list.push(project)
+    byAccountId.set(matchedAccountId, list)
+  }
+
+  return { byAccountId, unlinkedCount }
+}
+
+/**
+ * Plus ancien `actualGoLiveDate` parmi les projets rattachés à un compte, par
+ * appariement `indexProjectsByAccount`. `undefined` si aucun projet rattaché
+ * n'a de go-live effectif.
+ */
+export function oldestGoLiveByAccount(
+  index: ProjectsByAccountIndex,
+): Map<string, string> {
+  const goLiveByAccountId = new Map<string, string>()
+  for (const [accountId, projects] of index.byAccountId) {
+    let oldest: string | null = null
+    for (const project of projects) {
+      if (!project.actualGoLiveDate) continue
+      if (oldest === null || project.actualGoLiveDate < oldest) oldest = project.actualGoLiveDate
+    }
+    if (oldest !== null) goLiveByAccountId.set(accountId, oldest)
+  }
+  return goLiveByAccountId
+}
+
 /** Forme de compte dérivée, réutilisée par le pipeline et par `computeCurrentMonthBasePoints`. */
 interface DerivedAccountShape {
   tier: AccountTier
@@ -207,31 +281,10 @@ export function buildPlanChargePipeline(input: PlanChargePipelineInput): PlanCha
   for (const override of overrides) overridesByAccountId.set(override.accountId, override)
 
   // --- 2. Comptes déjà live. ---
-  const liveAccountIds = new Set<string>()
-  let liveProjectsUnlinked = 0
-  const accountsByNormalizedName = new Map<string, CRMAccount[]>()
-  for (const account of accounts) {
-    const key = normalizeAccountName(account.name)
-    const list = accountsByNormalizedName.get(key) ?? []
-    list.push(account)
-    accountsByNormalizedName.set(key, list)
-  }
-
-  for (const project of projects) {
-    if (project.status !== 'live') continue
-    let matched = false
-    if (project.accountCRMId && accountsById.has(project.accountCRMId)) {
-      liveAccountIds.add(project.accountCRMId)
-      matched = true
-    } else if (project.accountCRMName) {
-      const candidates = accountsByNormalizedName.get(normalizeAccountName(project.accountCRMName)) ?? []
-      if (candidates.length === 1) {
-        liveAccountIds.add(candidates[0].id)
-        matched = true
-      }
-    }
-    if (!matched) liveProjectsUnlinked += 1
-  }
+  const liveProjects = projects.filter(project => project.status === 'live')
+  const liveProjectsIndex = indexProjectsByAccount(accounts, liveProjects)
+  const liveAccountIds = new Set<string>(liveProjectsIndex.byAccountId.keys())
+  const liveProjectsUnlinked = liveProjectsIndex.unlinkedCount
 
   // --- 3. Sélection du pipeline. ---
   let clientAccounts = 0
@@ -530,6 +583,26 @@ export interface CurrentMonthBasePointsResult {
  * Fonction pure : aucun appel réseau, aucune horloge, aucune mutation des
  * entrées.
  */
+/**
+ * Mois de rattachement d'un compte (spec §9.2) : `Date_de_passation`, à défaut
+ * le go-live réel du projet, à défaut `Sub_Start_date`. `null` si rien n'est
+ * connu, on ne devine pas.
+ *
+ * Partagée entre les points de départ du mois et le portefeuille CSM : deux
+ * copies de cette cascade finiraient par diverger et les deux chiffres ne
+ * diraient plus la même chose.
+ */
+export function effectiveMonthForAccount(
+  account: CRMAccount,
+  goLiveByAccountId: ReadonlyMap<string, string>,
+): string | null {
+  if (account.handoverDate) return account.handoverDate.slice(0, 7)
+  const goLive = goLiveByAccountId.get(account.id)
+  if (goLive) return goLive.slice(0, 7)
+  if (account.subStartDate) return account.subStartDate.slice(0, 7)
+  return null
+}
+
 export function computeCurrentMonthBasePoints(
   input: CurrentMonthBasePointsInput,
 ): CurrentMonthBasePointsResult {
@@ -549,32 +622,7 @@ export function computeCurrentMonthBasePoints(
   // égalité stricte de nom normalisé (jamais matchAccountByName de
   // clientResolver, trop permissif pour cet usage). Garde le go-live le plus
   // ancien en cas de projets multiples.
-  const accountsByNormalizedName = new Map<string, CRMAccount[]>()
-  for (const account of accounts) {
-    const key = normalizeAccountName(account.name)
-    const list = accountsByNormalizedName.get(key) ?? []
-    list.push(account)
-    accountsByNormalizedName.set(key, list)
-  }
-
-  const goLiveByAccountId = new Map<string, string>()
-  const registerGoLive = (accountId: string, goLive: string) => {
-    const existing = goLiveByAccountId.get(accountId)
-    if (!existing || goLive < existing) goLiveByAccountId.set(accountId, goLive)
-  }
-
-  for (const project of projects) {
-    if (!project.actualGoLiveDate) continue
-    if (project.accountCRMId) {
-      registerGoLive(project.accountCRMId, project.actualGoLiveDate)
-      continue
-    }
-    if (!project.accountCRMName) continue
-    const candidates = accountsByNormalizedName.get(normalizeAccountName(project.accountCRMName)) ?? []
-    if (candidates.length === 1) {
-      registerGoLive(candidates[0].id, project.actualGoLiveDate)
-    }
-  }
+  const goLiveByAccountId = oldestGoLiveByAccount(indexProjectsByAccount(accounts, projects))
 
   const pointsByCsm: Record<string, number> = {}
   const unresolvedCsm: CurrentMonthBasePointsResult['unresolvedCsm'] = []
@@ -583,13 +631,7 @@ export function computeCurrentMonthBasePoints(
   for (const account of accounts) {
     if (excluded.has(account.id)) continue
 
-    const effectiveMonth = account.handoverDate
-      ? account.handoverDate.slice(0, 7)
-      : goLiveByAccountId.has(account.id)
-        ? goLiveByAccountId.get(account.id)!.slice(0, 7)
-        : account.subStartDate
-          ? account.subStartDate.slice(0, 7)
-          : null
+    const effectiveMonth = effectiveMonthForAccount(account, goLiveByAccountId)
 
     if (effectiveMonth === null || effectiveMonth !== currentMonth) continue
 

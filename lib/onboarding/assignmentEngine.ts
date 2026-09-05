@@ -48,6 +48,12 @@ export interface ObMember {
   role: ObRole
   maxProjects: number
   availability: Availability
+  /**
+   * Projets actifs déjà portés aujourd'hui, point de départ de la charge.
+   * Sans lui le moteur croirait l'implémenteur libre et continuerait de lui
+   * attribuer des comptes alors qu'il est déjà au-dessus de son plafond.
+   */
+  currentActiveProjects?: number
 }
 
 /** Membre du roster CSM. */
@@ -160,10 +166,12 @@ export function runAssignmentEngine(input: AssignmentEngineInput): AssignmentEng
     input.pipeline.map(account => account.expectedGoLiveMonth),
   )
 
-  // Initialisation des charges.
+  // Initialisation des charges. La charge OB démarre aux projets actifs réels,
+  // pas à zéro : c'est ce stock qui décide si un implémenteur a encore de la
+  // marge, et donc vers qui le greedy oriente les nouvelles signatures.
   const obLoad: Record<string, number> = {}
   for (const member of input.obRoster) {
-    obLoad[member.name] = 0
+    obLoad[member.name] = Math.max(0, member.currentActiveProjects ?? 0)
   }
 
   const csmLoadByMonth: Record<string, Record<string, number>> = {}
@@ -293,11 +301,16 @@ export function runAssignmentEngine(input: AssignmentEngineInput): AssignmentEng
   }
 
   // --- Projection OB : charge simultanée par owner et par mois, de la signature au go-live inclus. ---
+  // Les projets actifs pèsent sur tous les mois de l'horizon : leur date de
+  // go-live n'est pas modélisée ici, on ne sait donc pas quand ils libèrent
+  // leur slot. Approximation volontairement prudente, elle surestime plutôt
+  // qu'elle ne masque une surcharge.
   const obLoadByMonth: Record<string, Record<string, number>> = {}
   for (const member of input.obRoster) {
+    const base = Math.max(0, member.currentActiveProjects ?? 0)
     obLoadByMonth[member.name] = {}
     for (const month of months) {
-      obLoadByMonth[member.name][month] = 0
+      obLoadByMonth[member.name][month] = base
     }
   }
   ordered.forEach((account, index) => {

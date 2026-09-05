@@ -432,12 +432,13 @@ export default function MesProjetsPage() {
                 ? t('Le portefeuille est momentanément indisponible.')
                 : `${countLabel(baseProjects.length, locale, 'projet', 'project')} · ${countLabel(new Set(baseProjects.map(project => project.hotelName)).size, locale, 'compte', 'account')}`}
           </p></div>
-          <div className="inline-flex self-start rounded-lg border border-[#ded8e8] bg-[#f7f5fa] p-1" aria-label={t('Affichage des projets')}>
-            <button type="button" aria-pressed="true" className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-[#59319f] shadow-sm">{t('Liste')}</button>
-            <button type="button" onClick={() => router.push('/onboarding/board')} aria-pressed="false" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">Board</button>
-            <button type="button" onClick={() => router.push('/onboarding/pilotage')} aria-pressed="false" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Pilotage')}</button>
-            <button type="button" onClick={() => router.push('/onboarding/clients')} aria-pressed="false" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Clients')}</button>
-            <button type="button" onClick={() => router.push('/onboarding/plan-charge')} aria-pressed="false" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Plan de charge')}</button>
+          <div className="inline-flex max-w-full self-start overflow-x-auto rounded-lg border border-[#ded8e8] bg-[#f7f5fa] p-1" aria-label={t('Affichage des projets')}>
+            <button type="button" aria-pressed="true" className="flex-none shrink-0 whitespace-nowrap rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-[#59319f] shadow-sm">{t('Liste')}</button>
+            <button type="button" onClick={() => router.push('/onboarding/board')} aria-pressed="false" className="flex-none shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">Board</button>
+            <button type="button" onClick={() => router.push('/onboarding/pilotage')} aria-pressed="false" className="flex-none shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Pilotage')}</button>
+            <button type="button" onClick={() => router.push('/onboarding/clients')} aria-pressed="false" className="flex-none shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Clients')}</button>
+            <button type="button" onClick={() => router.push('/onboarding/plan-charge')} aria-pressed="false" className="flex-none shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Plan de charge')}</button>
+            <button type="button" onClick={() => router.push('/onboarding/csm')} aria-pressed="false" className="flex-none shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">CSM</button>
           </div>
         </div>
       </header>

@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
   try {
-    await requireRole(req, ['admin', 'onboarder', 'support', 'commercial_readonly'])
+    await requireRole(req, ['admin', 'onboarder', 'support', 'commercial_readonly', 'csm_lead'])
 
     const sources = await loadPlanChargeSources()
     const referenceDate = planChargeReferenceDate()
@@ -57,6 +57,8 @@ export async function GET(req: NextRequest) {
       availability: member.availability,
       effectiveCapacity: effectiveCapacity(member.maxProjects, member.availability),
       load: plan.engine.obLoad[member.name] ?? 0,
+      // Part de la charge déjà portée avant toute pré-attribution du pipeline.
+      currentActiveProjects: member.currentActiveProjects ?? 0,
     }))
 
     const csmRoster = plan.csmRoster.map(member => ({
@@ -87,6 +89,7 @@ export async function GET(req: NextRequest) {
       diagnostics: plan.pipeline.diagnostics,
       dealsTruncated: plan.dealsTruncated,
       warnings: plan.warnings,
+      csmPortfolios: plan.csmPortfolios.rows,
     })
   } catch (error) {
     return authErrorResponse(error) ?? NextResponse.json(

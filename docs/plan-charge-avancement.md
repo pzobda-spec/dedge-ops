@@ -111,6 +111,70 @@ ne sont pas mises en cache et la route GET est `force-dynamic`, donc une
 écriture est visible immédiatement. Invalider le tag Zoho forcerait un
 rechargement complet du CRM à chaque édition de roster.
 
+### Étape 4, rôle team lead CSM et page dédiée — FAIT
+
+Rôle applicatif `csm_lead`, pour donner un accès restreint à la team lead CSM
+sans lui ouvrir tout le cockpit.
+
+- `supabase/migrations/20260905180000_csm_lead_role.sql` : remplace la
+  contrainte CHECK sur `users.role`. Elle est REMPLACÉE et non doublée, deux
+  CHECK cumulatifs auraient rejeté tous les rôles.
+- `lib/auth/roles.ts` : type `Role`, `ROLE_LABELS`, `isRole`.
+- `middleware.ts` : `csm_lead` ajouté au seul groupe onboarding, absent des
+  groupes `/dashboard`, `/tickets`, `/escalations`, `/trainings`, `/reporting`
+  et `/admin`. `homePathForRole` le renvoie vers `/onboarding/csm`.
+- Sept routes API : le rôle est ajouté aux lectures onboarding et aux deux
+  écritures du plan de charge. Le middleware seul n'aurait PAS suffi, chaque
+  route rappelle `requireRole` avec sa propre liste et aurait renvoyé 403.
+- Sur `workspace` et `implementation`, seul le `GET` s'ouvre, pas le `PATCH`.
+  Les écritures sensibles (fiche projet, produits, passation CSM,
+  synchronisations Zoho) restent en `admin` / `onboarder`.
+- `app/onboarding/csm/page.tsx` : page de travail, équipe CSM éditable,
+  reprises à venir avec attribution CSM éditable et implémenteur en lecture
+  seule, projection CSM, barème. Entrée « CSM » ajoutée à la barre d'onglets
+  des cinq pages onboarding et à la barre latérale.
+
+Périmètre du rôle, tranché avec Pablo : il voit TOUTE la section Onboarding
+sans restriction, et rien du reste du cockpit. Il écrit uniquement sur le
+roster CSM et les attributions CSM du plan de charge.
+
+### Étape 5, charge OB réelle et pilotage CSM — FAIT
+
+**Correctif de charge OB.** Le moteur partait d'une charge nulle et ne comptait
+que le pipeline. Un implémenteur déjà à 51 projets actifs apparaissait vide, et
+le greedy continuait de lui attribuer des comptes. `countActiveProjectsByOwner`
+(`lib/onboarding/workload.ts`) compte désormais les projets actifs réels, avec
+exactement les règles de `/onboarding/pilotage` : `isActiveProject`, exclusion
+des owners hors périmètre, normalisation du nom dont les alias de Winli, un
+projet Zoho par hôtel. `computePlanCharge` amorce `obLoad` avec ce comptage.
+
+Deux choix assumés :
+- Les projets actifs pèsent sur TOUS les mois de l'horizon. Leur date de sortie
+  du stock n'est pas modélisée, l'approximation surestime plutôt qu'elle ne
+  masque une surcharge. Piste d'amélioration, utiliser l'`endDate` des projets
+  Zoho comme date de libération du slot.
+- Les projets actifs portés par une personne absente du roster OB ne sont
+  comptés dans aucune capacité, et un avertissement les nomme.
+
+**Analytique CSM.** `lib/onboarding/csmAnalytics.ts`, `computeCsmPortfolios`,
+produit une ligne par CSM : portefeuille live, comptes totaux, projets à
+surveiller, reprises du mois. Exposé par la route sous `csmPortfolios`.
+
+Deux factorisations au passage, pour éviter des divergences silencieuses :
+`indexProjectsByAccount` (l'appariement projet vers compte était écrit trois
+fois) et `effectiveMonthForAccount` (la cascade passation, go-live,
+`Sub_Start_date` de la spec §9.2 était écrite deux fois).
+
+**Page CSM** refondue sur le modèle de `/onboarding/pilotage` : KPI, charge par
+CSM, montée en charge, puis édition du roster et attributions en secondaire.
+Satisfaction et TTV restent à `—` avec la limitation affichée : la satisfaction
+n'est pas rattachée au CSM dans la source, et le TTV mesure l'implémentation et
+non la reprise.
+
+**Barre d'onglets** : libellés en `whitespace-nowrap`, conteneur en
+`max-w-full overflow-x-auto`. Sans la contrainte de largeur, un `inline-flex` se
+dimensionne sur son contenu et ne défile jamais.
+
 ## Décisions tranchées
 
 - Priorité d'attribution : `override manuel` > `continuité de groupe` >
