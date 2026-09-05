@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan de charge OB &amp; CSM, prototype moteur d'attribution</title>
+<style>
+  :root{
+    --purple:#5B2D8E;--purple2:#7344c1;--teal:#00B5AD;--ink:#1f1f1f;
+    --soft:#F5F0FA;--softteal:#F0FAFA;--grey:#7a7a88;--line:#ece9f2;
+    --ok:#1c6437;--okbg:#e6f7f6;--warn:#b7221b;--warnbg:#fdecea;
+    --amber:#b5771a;--amberbg:#fff4e2;--card:#ffffff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink);background:#faf9fc;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1240px;margin:0 auto;padding:28px 22px 90px}
+  header h1{color:var(--purple);font-size:24px;margin:0 0 4px}
+  header p{color:var(--grey);margin:0;font-size:13.5px;max-width:90ch}
+  .caveat{border-left:4px solid var(--purple);background:var(--soft);padding:11px 15px;border-radius:6px;margin:16px 0;font-size:12.5px}
+  .caveat b{color:var(--purple)}
+  h2{color:var(--purple);font-size:17px;margin:34px 0 6px;padding-bottom:7px;border-bottom:2px solid var(--line)}
+  .sub{font-size:12.5px;color:var(--grey);margin:0 0 12px}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin:18px 0 4px}
+  .tab{border:1px solid var(--line);background:#fff;color:var(--grey);font:inherit;font-size:13px;font-weight:600;
+    padding:8px 15px;border-radius:8px;cursor:pointer}
+  .tab.on{background:var(--purple);color:#fff;border-color:var(--purple)}
+  .panel{display:none}.panel.on{display:block}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-top:14px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{background:var(--purple);color:#fff;text-align:left;padding:8px 10px;font-weight:600;white-space:nowrap}
+  th.num,td.num{text-align:right}
+  td{padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+  tr:nth-child(even) td{background:#faf8fc}
+  select,input[type=number],input[type=text]{font:inherit;font-size:12px;padding:4px 6px;border:1px solid #d6d0e0;
+    border-radius:6px;background:#fff;color:var(--ink)}
+  input[type=number]{width:64px;text-align:right}
+  .barwrap{background:#eee;border-radius:5px;height:16px;position:relative;overflow:hidden;min-width:120px}
+  .bar{height:100%;border-radius:5px 0 0 5px}
+  .bar.ok{background:var(--teal)}.bar.limit{background:var(--amber)}.bar.over{background:var(--warn)}
+  .barlbl{position:absolute;right:6px;top:0;font-size:10.5px;line-height:16px;color:#222;font-weight:700}
+  .pill{display:inline-block;font-size:10.5px;padding:2px 8px;border-radius:20px;font-weight:700}
+  .pill.ok{background:var(--okbg);color:var(--ok)}
+  .pill.limit{background:var(--amberbg);color:var(--amber)}
+  .pill.over{background:var(--warnbg);color:var(--warn)}
+  .pill.abs{background:#ececec;color:#666}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:6px}
+  .kpi{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .kpi .v{font-size:24px;font-weight:800;color:var(--purple);line-height:1.1}
+  .kpi .v.teal{color:var(--teal)}.kpi .v.warn{color:var(--warn)}
+  .kpi .l{font-size:11.5px;color:var(--grey);margin-top:5px}
+  .flag{border-left:4px solid var(--warn);background:var(--warnbg);padding:11px 15px;border-radius:6px;font-size:13px;margin-top:12px}
+  .flag b{color:var(--warn)}
+  .info{border-left:4px solid var(--teal);background:var(--softteal);padding:11px 15px;border-radius:6px;font-size:13px;margin-top:12px}
+  .info b{color:#028079}
+  .note{font-size:11.5px;color:var(--grey);margin-top:8px}
+  .row-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0 2px}
+  button.act{border:1px solid var(--teal);background:#fff;color:#028079;font:inherit;font-size:12.5px;font-weight:700;
+    padding:7px 13px;border-radius:8px;cursor:pointer}
+  button.act:hover{background:var(--softteal)}
+  .locked{color:var(--purple);font-weight:700}
+  .miss{color:var(--warn);font-weight:700}
+  .legend{font-size:11.5px;color:var(--grey);display:flex;flex-wrap:wrap;gap:14px;margin-top:8px}
+  .sw{width:11px;height:11px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:middle}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:900px){.grid2{grid-template-columns:1fr}}
+  .addform{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;align-items:end;margin-top:6px}
+  .addform label{font-size:11px;color:var(--grey);display:block;font-weight:600;margin-bottom:3px}
+  .addform select,.addform input{width:100%}
+  small.hint{color:var(--grey);font-size:11px}
+  .foot{font-size:11.5px;color:var(--grey);margin-top:34px;border-top:1px solid var(--line);padding-top:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Plan de charge OB &amp; CSM</h1>
+  <p>Prototype du moteur d'attribution et d'anticipation. Objectif, supprimer la saisie manuelle et projeter la montée en charge (surcharge OB au regard des ventes, montée en charge CSM) à partir d'un barème unique. Tout est éditable ici pour valider le modèle avant intégration dans dedge-ops.</p>
+</header>
+
+<div class="caveat">
+  <b>Ce qui est simulé.</b> Les comptes, tiers et dates viendront de Zoho CRM et Zoho Projects (tier déduit du MRR). Ici ils sont seedés à la main pour tester la logique. La pré-attribution est stockée en mémoire (elle sera dans Supabase dans l'app). Les rôles et plafonds OB sont des valeurs par défaut, à ajuster.
+</div>
+
+<div class="tabs" id="tabs">
+  <button class="tab on" data-t="attrib">1. Attribution (le moteur)</button>
+  <button class="tab" data-t="equipes">2. Équipes &amp; dispo</button>
+  <button class="tab" data-t="proj">3. Projection</button>
+  <button class="tab" data-t="bareme">4. Barème</button>
+</div>
+
+<!-- ======== TAB ATTRIBUTION ======== -->
+<div class="panel on" id="p_attrib">
+  <div class="kpis" id="attribKpis"></div>
+
+  <h2>Pipeline des signatures et pré-attribution</h2>
+  <p class="sub">Le moteur assigne un implémenteur OB dès la signature, et un CSM à la date de go-live prévue. La colonne verrouillée indique un choix manuel qui prime sur l'auto. Modifie un rôle, une dispo ou le barème et tout se recalcule.</p>
+
+  <div class="card" style="overflow-x:auto">
+    <table id="pipeTbl">
+      <thead><tr>
+        <th>Signature</th><th>Compte</th><th>Tier</th><th>Type</th><th class="num">Hôtels</th>
+        <th class="num">Poids</th><th>Go-live prévu</th><th>OB (implé)</th><th>CSM</th><th></th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="row-actions">
+    <button class="act" id="btnReset">Réinitialiser les données seed</button>
+    <small class="hint">Astuce, passe un CSM en Absent dans l'onglet Équipes, ou ajoute un gros groupe ci-dessous, et regarde la redistribution.</small>
+  </div>
+
+  <h2>Ajouter une signature (test de scénario)</h2>
+  <div class="card">
+    <div class="addform">
+      <div><label>Compte</label><input type="text" id="a_name" placeholder="Nom de l'hôtel ou groupe"></div>
+      <div><label>Tier</label><select id="a_tier"><option value="bronze">Bronze</option><option value="silver" selected>Silver</option><option value="gold">Gold</option><option value="key">Key / Strategic</option></select></div>
+      <div><label>Type</label><select id="a_type"><option value="indiv" selected>Individuel</option><option value="groupe">Groupe</option></select></div>
+      <div><label>Hôtels</label><input type="number" id="a_hotels" value="1" min="1" max="30"></div>
+      <div><label>Dmbook seul</label><select id="a_dmb"><option value="no" selected>Non</option><option value="yes">Oui</option></select></div>
+      <div><label>Go-live (mois)</label><input type="text" id="a_go" value="2026-11" placeholder="AAAA-MM"></div>
+      <div><label>CSM du groupe (continuité)</label><select id="a_group"><option value="">(nouveau groupe)</option></select></div>
+      <div><button class="act" id="btnAdd">Ajouter au pipeline</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ======== TAB EQUIPES ======== -->
+<div class="panel" id="p_equipes">
+  <h2>Équipe onboarding (implémentation)</h2>
+  <p class="sub">Plafond en projets simultanés (hôtels). Un groupe de N hôtels consomme N projets. Éligibilité par rôle. Relâche divise le plafond, Absent le met à zéro et redistribue.</p>
+  <div class="card" style="overflow-x:auto">
+    <table id="obTbl">
+      <thead><tr><th>Implémenteur</th><th>Rôle</th><th class="num">Plafond projets</th><th>Dispo</th>
+        <th class="num">Charge (projets)</th><th>Utilisation</th><th>Éligibilité</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="note">Rôles, senior (tout) · junior (indiv + groupes &lt;5) · alternant (indiv, pas de groupe) · stagiaire (indiv seul). Valeurs par défaut, à confirmer par toi.</p>
+  </div>
+
+  <h2>Équipe CSM (reprise post-live)</h2>
+  <p class="sub">Plafond en points par mois (barème de passation). Points de départ = charge déjà attribuée ce mois (snapshot du 04/09). STOP se modélise avec un plafond à 0.</p>
+  <div class="card" style="overflow-x:auto">
+    <table id="csmTbl">
+      <thead><tr><th>CSM</th><th class="num">Plafond pts/mois</th><th>Dispo</th>
+        <th class="num">Points ce mois</th><th>Utilisation</th><th>Statut</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ======== TAB PROJECTION ======== -->
+<div class="panel" id="p_proj">
+  <h2>Projection de charge OB</h2>
+  <p class="sub">Projets simultanés par implémenteur, mois par mois, jusqu'au go-live de chaque projet. La ligne pointillée est le plafond le plus bas de l'équipe active.</p>
+  <div class="card"><div id="obChart"></div>
+    <div class="legend" id="obLegend"></div>
+  </div>
+  <div id="obFlags"></div>
+
+  <h2>Montée en charge CSM</h2>
+  <p class="sub">Points repris par mois et par CSM (intake à la date de go-live). Le plafond de référence est 15 pts/mois.</p>
+  <div class="card"><div id="csmChart"></div>
+    <div class="legend" id="csmLegend"></div>
+  </div>
+  <div id="csmFlags"></div>
+</div>
+
+<!-- ======== TAB BAREME ======== -->
+<div class="panel" id="p_bareme">
+  <h2>Barème de poids unique</h2>
+  <p class="sub">Un seul barème, appliqué partout. Côté CSM il donne les points/mois. Côté OB il sert à départager les implémenteurs éligibles à charge égale (la contrainte dure OB reste le nombre de projets).</p>
+  <div class="card grid2">
+    <div>
+      <table id="wTbl">
+        <thead><tr><th>Compte</th><th class="num">Poids (points)</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p class="note">Repris du fichier SUIVI Passation OB &gt; CSM. Modifiable, tout se recalcule.</p>
+    </div>
+    <div>
+      <div class="info">
+        <b>Pourquoi deux plafonds et un seul barème.</b> L'OB est limité par le nombre de projets menés en parallèle (un stock). Le CSM est limité par le rythme de reprises par mois (un flux). Forcer une unité unique masquerait la vraie contrainte. Le barème commun assure la cohérence, les plafonds restent dans l'unité naturelle de chaque équipe.
+      </div>
+      <div class="row-actions"><button class="act" id="btnResetW">Réinitialiser le barème</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="foot">
+  Prototype interne D-EDGE CRM. Étape suivante après validation, intégration dans dedge-ops (page Next.js, flux Zoho live, stockage Supabase des pré-attributions).
+</div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   MODELE
+   ============================================================ */
+const DEFAULT_WEIGHTS = {
+  bronzeDmbook:1, bronze:2, silverIndiv:3, silverGroupe:4,
+  goldIndiv:5, goldGroupe:8, key:10
+};
+const WEIGHT_LABELS = [
+  ["bronzeDmbook","Bronze Dmbook seul"],["bronze","Bronze"],
+  ["silverIndiv","Silver individuel"],["silverGroupe","Silver groupe"],
+  ["goldIndiv","Gold individuel"],["goldGroupe","Gold groupe"],["key","Key / Strategic"]
+];
+const ROLE_CAP = { senior:50, junior:50, alternant:30, stagiaire:5 };
+const RELACHE = 0.5;
+const MONTHS = ["2026-09","2026-10","2026-11","2026-12","2027-01","2027-02"];
+const CUR_MONTH = "2026-09";
+
+function poids(deal){
+  if(deal.dmbookOnly && deal.tier==="bronze") return WEIGHTS.bronzeDmbook;
+  const grp = deal.type==="groupe" || deal.hotels>1;
+  if(deal.tier==="bronze") return WEIGHTS.bronze;
+  if(deal.tier==="silver") return grp?WEIGHTS.silverGroupe:WEIGHTS.silverIndiv;
+  if(deal.tier==="gold")   return grp?WEIGHTS.goldGroupe:WEIGHTS.goldIndiv;
+  if(deal.tier==="key")    return WEIGHTS.key;
+  return WEIGHTS.silverIndiv;
+}
+function isGroup(deal){ return deal.type==="groupe" || deal.hotels>1; }
+function obEligible(role, deal){
+  const grp=isGroup(deal), size=deal.hotels;
+  if(role==="senior")    return true;
+  if(role==="junior")    return !grp || size<5;
+  if(role==="alternant") return !grp;
+  if(role==="stagiaire") return !grp;
+  return false;
+}
+function effCapOB(m){ if(m.avail==="absent"||m.avail==="stop") return 0; return m.cap*(m.avail==="relache"?RELACHE:1); }
+function effCapCSM(m){ if(m.avail==="absent"||m.avail==="stop") return 0; return m.plafond*(m.avail==="relache"?RELACHE:1); }
+
+/* ============================================================
+   DONNEES SEED
+   ============================================================ */
+function seedOB(){ return [
+  {name:"Thuy-Tien", role:"senior",    cap:ROLE_CAP.senior,    avail:"full"},
+  {name:"Dalia",     role:"junior",    cap:ROLE_CAP.junior,    avail:"full"},
+  {name:"Winli",     role:"junior",    cap:ROLE_CAP.junior,    avail:"full"},
+  {name:"Alternant", role:"alternant", cap:ROLE_CAP.alternant, avail:"absent"},
+  {name:"Stagiaire", role:"stagiaire", cap:ROLE_CAP.stagiaire, avail:"absent"},
+  {name:"CDI",       role:"junior",    cap:ROLE_CAP.junior,    avail:"absent"}
+];}
+/* CSM, snapshot du 04/09 (points ce mois + etat). Aika STOP => plafond 0. */
+function seedCSM(){ return [
+  {name:"Laurane",        plafond:15, avail:"full",   base:12},
+  {name:"Deydra",         plafond:15, avail:"full",   base:0},
+  {name:"Sherazade",      plafond:15, avail:"full",   base:5},
+  {name:"Ghislaine",      plafond:15, avail:"full",   base:2},
+  {name:"Anne-Charlotte", plafond:15, avail:"absent", base:13},
+  {name:"Tara",           plafond:15, avail:"absent", base:0},
+  {name:"Aika",           plafond:15, avail:"stop",   base:1},
+  {name:"Harmony",        plafond:15, avail:"full",   base:0},
+  {name:"Astrid",         plafond:8,  avail:"full",   base:0}
+];}
+/* Groupes déjà suivis par un CSM (continuité). Un nouvel hôtel du groupe revient au même CSM. */
+const EXISTING_GROUPS = { "Kopster":"Aika", "Pinelli":"Deydra" };
+/* Pipeline exemple de futures signatures. group = rattachement à un groupe existant (continuité). */
+function seedPipe(){ return [
+  {id:1, sign:"2026-08-25", name:"Kopster Paris (nouvel hôtel)", group:"Kopster", tier:"gold",   type:"groupe", hotels:1, dmbookOnly:false, go:"2026-09", obLock:null, csmLock:null},
+  {id:2, sign:"2026-08-28", name:"Hôtel Astoria Vevey",          group:"",        tier:"silver", type:"indiv",  hotels:1, dmbookOnly:false, go:"2026-09", obLock:null, csmLock:null},
+  {id:3, sign:"2026-09-01", name:"Pinelli (nouvel hôtel)",       group:"Pinelli", tier:"silver", type:"groupe", hotels:2, dmbookOnly:false, go:"2026-10", obLock:null, csmLock:null},
+  {id:4, sign:"2026-09-02", name:"Château de Berne",             group:"",        tier:"bronze", type:"indiv",  hotels:1, dmbookOnly:false, go:"2026-10", obLock:null, csmLock:null},
+  {id:5, sign:"2026-09-04", name:"Nordic Collection",            group:"",        tier:"key",    type:"groupe", hotels:8, dmbookOnly:false, go:"2026-11", obLock:null, csmLock:null},
+  {id:6, sign:"2026-09-05", name:"Boutique Le Marais",           group:"",        tier:"silver", type:"indiv",  hotels:1, dmbookOnly:false, go:"2026-11", obLock:null, csmLock:null},
+  {id:7, sign:"2026-09-08", name:"DMB Mercure Lyon",             group:"",        tier:"bronze", type:"indiv",  hotels:1, dmbookOnly:true,  go:"2026-12", obLock:null, csmLock:null},
+  {id:8, sign:"2026-09-10", name:"Grand Hôtel Wilson",           group:"",        tier:"gold",   type:"indiv",  hotels:1, dmbookOnly:false, go:"2026-12", obLock:null, csmLock:null},
+  {id:9, sign:"2026-09-12", name:"Riviera Resorts (4/4)",        group:"",        tier:"silver", type:"groupe", hotels:6, dmbookOnly:false, go:"2026-12", obLock:null, csmLock:null}
+];}
+function groupCsm(deal){ return deal.group && EXISTING_GROUPS[deal.group] ? EXISTING_GROUPS[deal.group] : null; }
+
+let WEIGHTS = {...DEFAULT_WEIGHTS};
+let OB = seedOB();
+let CSM = seedCSM();
+let PIPE = seedPipe();
+
+/* ============================================================
+   MOTEUR D'ATTRIBUTION
+   ============================================================ */
+/* Renvoie un plan {obByDeal, csmByDeal, obLoad, csmMonthLoad, obEligibleCount, csmEligibleCount} */
+function run(){
+  const obLoad = {};      OB.forEach(m=>obLoad[m.name]=0);           // projets simultanes
+  const csmMonthLoad = {}; // csmMonthLoad[name][month] = points
+  CSM.forEach(m=>{ csmMonthLoad[m.name]={}; MONTHS.forEach(mo=>csmMonthLoad[m.name][mo]=0); });
+  CSM.forEach(m=>{ csmMonthLoad[m.name][CUR_MONTH]+=m.base; }); // points deja attribues ce mois
+
+  const obByDeal={}, csmByDeal={}, obElig={}, csmElig={}, csmForced={};
+
+  // ordre de traitement : par go-live puis signature
+  const order=[...PIPE].sort((a,b)=> a.go===b.go ? a.sign.localeCompare(b.sign) : a.go.localeCompare(b.go));
+
+  order.forEach(deal=>{
+    const w=poids(deal);
+    // ---- OB ----
+    const eligibles=OB.filter(m=>obEligible(m.role,deal) && m.avail!=="absent");
+    obElig[deal.id]=eligibles.length;
+    let obPick=deal.obLock;
+    if(obPick && !OB.some(m=>m.name===obPick)) obPick=null; // lock invalide
+    if(!obPick){
+      let best=null,bestRem=-Infinity;
+      eligibles.forEach(m=>{
+        const rem=effCapOB(m)-obLoad[m.name];
+        if(rem>bestRem){bestRem=rem;best=m.name;}
+      });
+      obPick=best;
+    }
+    obByDeal[deal.id]=obPick;
+    if(obPick) obLoad[obPick]+=deal.hotels;
+
+    // ---- CSM (au mois de go-live) ----
+    const mo=deal.go;
+    const eligiblesC=CSM.filter(m=>m.avail!=="absent" && effCapCSM(m)>0);
+    csmElig[deal.id]=eligiblesC.length;
+    let csmPick=deal.csmLock;
+    if(csmPick && !CSM.some(m=>m.name===csmPick)) csmPick=null;
+    // continuité de groupe : prime sur la répartition auto (mais pas sur un override manuel)
+    const gc=groupCsm(deal);
+    if(!csmPick && gc && CSM.some(m=>m.name===gc)){ csmPick=gc; csmForced[deal.id]=true; }
+    if(!csmPick){
+      let best=null,bestRem=-Infinity;
+      eligiblesC.forEach(m=>{
+        const rem=effCapCSM(m)-(csmMonthLoad[m.name][mo]||0);
+        if(rem>bestRem){bestRem=rem;best=m.name;}
+      });
+      csmPick=best;
+    }
+    csmByDeal[deal.id]=csmPick;
+    if(csmPick && csmMonthLoad[csmPick]) csmMonthLoad[csmPick][mo]=(csmMonthLoad[csmPick][mo]||0)+w;
+  });
+
+  return {obByDeal,csmByDeal,obLoad,csmMonthLoad,obElig,csmElig,csmForced};
+}
+
+/* ============================================================
+   RENDU
+   ============================================================ */
+const $=id=>document.getElementById(id);
+const TIER_LBL={bronze:"Bronze",silver:"Silver",gold:"Gold",key:"Key"};
+const AVAIL_LBL={full:"Dispo",relache:"Relâche",absent:"Absent",stop:"STOP"};
+function utilClass(p){ return p>1.0001?"over":(p>=0.85?"limit":"ok"); }
+function bar(load,cap){
+  const p= cap>0? load/cap : (load>0?1.5:0);
+  const w=Math.min(100,p*100);
+  const cls=utilClass(p);
+  const pctTxt = cap>0? Math.round(p*100)+"%" : (load>0?"∞":"0%");
+  return `<div class="barwrap"><div class="bar ${cls}" style="width:${w}%"></div>
+    <span class="barlbl">${load} / ${cap} (${pctTxt})</span></div>`;
+}
+
+function renderAll(){
+  const plan=run();
+  renderKpis(plan);
+  renderPipe(plan);
+  renderOB(plan);
+  renderCSM(plan);
+  renderProj(plan);
+  renderWeights();
+  fillGroupSelect();
+}
+function fillGroupSelect(){
+  const sel=$("a_group"); if(!sel) return;
+  const cur=sel.value;
+  sel.innerHTML='<option value="">(nouveau groupe)</option>'+CSM.map(m=>`<option value="${m.name}">Groupe suivi par ${m.name}</option>`).join("");
+  sel.value=cur;
+}
+
+function renderKpis(plan){
+  const nPipe=PIPE.length;
+  let obOver=0; OB.forEach(m=>{ if(effCapOB(m)>0 && plan.obLoad[m.name]>effCapOB(m)) obOver++; });
+  let csmOver=0;
+  CSM.forEach(m=>{ MONTHS.forEach(mo=>{ if(effCapCSM(m)>0 && plan.csmMonthLoad[m.name][mo]>effCapCSM(m)) {csmOver++;} }); });
+  let unassigned=0; PIPE.forEach(d=>{ if(!plan.obByDeal[d.id]||!plan.csmByDeal[d.id]) unassigned++; });
+  const totalHotels=PIPE.reduce((s,d)=>s+d.hotels,0);
+  $("attribKpis").innerHTML=[
+    {v:nPipe,l:"Signatures au pipeline",c:""},
+    {v:totalHotels,l:"Hôtels à implémenter",c:"teal"},
+    {v:obOver,l:"Implémenteurs en surcharge",c:obOver?"warn":""},
+    {v:csmOver,l:"Mois CSM au-dessus du plafond",c:csmOver?"warn":""},
+    {v:unassigned,l:"Comptes non attribuables",c:unassigned?"warn":""}
+  ].map(k=>`<div class="kpi"><div class="v ${k.c}">${k.v}</div><div class="l">${k.l}</div></div>`).join("");
+}
+
+function renderPipe(plan){
+  const tb=document.querySelector("#pipeTbl tbody");
+  const rows=[...PIPE].sort((a,b)=> a.go===b.go ? a.sign.localeCompare(b.sign) : a.go.localeCompare(b.go));
+  tb.innerHTML=rows.map(d=>{
+    const w=poids(d);
+    const obOpts=OB.map(m=>{
+      const elig=obEligible(m.role,d) && m.avail!=="absent";
+      const sel=plan.obByDeal[d.id]===m.name?"selected":"";
+      return `<option value="${m.name}" ${sel} ${elig?"":"disabled"}>${m.name}${elig?"":" (non éligible)"}</option>`;
+    }).join("");
+    const csmOpts=CSM.map(m=>{
+      const elig=m.avail!=="absent" && effCapCSM(m)>0;
+      const sel=plan.csmByDeal[d.id]===m.name?"selected":"";
+      return `<option value="${m.name}" ${sel} ${elig?"":"disabled"}>${m.name}${elig?"":" (indispo)"}</option>`;
+    }).join("");
+    const obMiss=plan.obByDeal[d.id]?"":"<span class='miss'>aucun éligible</span>";
+    const csmMiss=plan.csmByDeal[d.id]?"":"<span class='miss'>aucun dispo</span>";
+    const obLock=d.obLock?" 🔒":"";
+    const csmLock=d.csmLock?" 🔒":(plan.csmForced[d.id]?` <span title="continuité de groupe (${d.group})">🔗</span>`:"");
+    return `<tr>
+      <td>${d.sign.slice(5)}</td>
+      <td><b>${d.name}</b></td>
+      <td>${TIER_LBL[d.tier]}</td>
+      <td>${d.type==="groupe"?"Groupe":"Indiv"}${d.dmbookOnly?" · DMB":""}</td>
+      <td class="num">${d.hotels}</td>
+      <td class="num">${w}</td>
+      <td>${d.go}</td>
+      <td>${plan.obByDeal[d.id]?`<select data-ob="${d.id}">${obOpts}</select>${obLock}`:obMiss}</td>
+      <td>${plan.csmByDeal[d.id]?`<select data-csm="${d.id}">${csmOpts}</select>${csmLock}`:csmMiss}</td>
+      <td><button class="act" style="padding:4px 8px;font-size:11px" data-del="${d.id}">✕</button></td>
+    </tr>`;
+  }).join("");
+
+  tb.querySelectorAll("[data-ob]").forEach(s=>s.addEventListener("change",e=>{
+    const d=PIPE.find(x=>x.id==e.target.dataset.ob); d.obLock=e.target.value; renderAll();
+  }));
+  tb.querySelectorAll("[data-csm]").forEach(s=>s.addEventListener("change",e=>{
+    const d=PIPE.find(x=>x.id==e.target.dataset.csm); d.csmLock=e.target.value; renderAll();
+  }));
+  tb.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",e=>{
+    PIPE=PIPE.filter(x=>x.id!=e.target.dataset.del); renderAll();
+  }));
+}
+
+function renderOB(plan){
+  const tb=document.querySelector("#obTbl tbody");
+  tb.innerHTML=OB.map((m,i)=>{
+    const cap=effCapOB(m), load=plan.obLoad[m.name];
+    const eligTxt=["senior","junior","alternant","stagiaire"];
+    const roleSel=eligTxt.map(r=>`<option value="${r}" ${m.role===r?"selected":""}>${r}</option>`).join("");
+    const availSel=Object.keys(AVAIL_LBL).map(a=>`<option value="${a}" ${m.avail===a?"selected":""}>${AVAIL_LBL[a]}</option>`).join("");
+    const elig = m.role==="senior"?"tout":(m.role==="junior"?"indiv + groupes <5":(m.role==="alternant"?"indiv, pas de groupe":"indiv seul"));
+    return `<tr>
+      <td><b>${m.name}</b></td>
+      <td><select data-obrole="${i}">${roleSel}</select></td>
+      <td class="num"><input type="number" data-obcap="${i}" value="${m.cap}" min="0" max="99"></td>
+      <td><select data-obavail="${i}">${availSel}</select></td>
+      <td class="num">${load}</td>
+      <td>${bar(load,cap)}</td>
+      <td><small class="hint">${elig}</small></td>
+    </tr>`;
+  }).join("");
+  tb.querySelectorAll("[data-obrole]").forEach(s=>s.addEventListener("change",e=>{
+    const m=OB[e.target.dataset.obrole]; m.role=e.target.value; m.cap=ROLE_CAP[m.role]; renderAll();
+  }));
+  tb.querySelectorAll("[data-obcap]").forEach(inp=>inp.addEventListener("input",e=>{
+    OB[e.target.dataset.obcap].cap=Math.max(0,+e.target.value||0); renderAll();
+  }));
+  tb.querySelectorAll("[data-obavail]").forEach(s=>s.addEventListener("change",e=>{
+    OB[e.target.dataset.obavail].avail=e.target.value; renderAll();
+  }));
+}
+
+function renderCSM(plan){
+  const tb=document.querySelector("#csmTbl tbody");
+  tb.innerHTML=CSM.map((m,i)=>{
+    const cap=effCapCSM(m), load=plan.csmMonthLoad[m.name][CUR_MONTH];
+    const availSel=Object.keys(AVAIL_LBL).map(a=>`<option value="${a}" ${m.avail===a?"selected":""}>${AVAIL_LBL[a]}</option>`).join("");
+    let statut,cls;
+    if(m.avail==="absent"){statut="Absent";cls="abs";}
+    else if(m.avail==="stop"){statut="STOP";cls="over";}
+    else if(m.avail==="relache"){ const p=cap>0?load/cap:0; statut="Relâche"; cls=p>1.0001?"over":(p>=0.85?"limit":"ok"); }
+    else{ const p=load/cap; if(p>1.0001){statut="Surcharge";cls="over";} else if(p>=0.85){statut="Limite";cls="limit";} else {statut="OK";cls="ok";} }
+    return `<tr>
+      <td><b>${m.name}</b></td>
+      <td class="num"><input type="number" data-csmpl="${i}" value="${m.plafond}" min="0" max="40"></td>
+      <td><select data-csmavail="${i}">${availSel}</select></td>
+      <td class="num">${load}</td>
+      <td>${bar(load,cap)}</td>
+      <td><span class="pill ${cls}">${statut}</span></td>
+    </tr>`;
+  }).join("");
+  tb.querySelectorAll("[data-csmpl]").forEach(inp=>inp.addEventListener("input",e=>{
+    CSM[e.target.dataset.csmpl].plafond=Math.max(0,+e.target.value||0); renderAll();
+  }));
+  tb.querySelectorAll("[data-csmavail]").forEach(s=>s.addEventListener("change",e=>{
+    CSM[e.target.dataset.csmavail].avail=e.target.value; renderAll();
+  }));
+}
+
+/* ---- charts (SVG simple, multi-series bars par mois) ---- */
+const PALETTE=["#5B2D8E","#00B5AD","#8455b8","#5fcfca","#b5771a","#c0392b","#2d8e5b","#8e5b2d"];
+function groupedChart(container, seriesNames, months, dataFn, capLine){
+  const W=1160,H=300,pad={l:40,r:14,t:16,b:46},iw=W-pad.l-pad.r,ih=H-pad.t-pad.b;
+  let maxv=capLine||1;
+  months.forEach((mo,mi)=>seriesNames.forEach(s=>{maxv=Math.max(maxv,dataFn(s,mo,mi));}));
+  maxv*=1.12;
+  const gw=iw/months.length, gap=gw*0.16, bw=(gw-gap*2)/seriesNames.length;
+  const y=v=>pad.t+ih-(v/maxv*ih);
+  let svg=`<svg viewBox="0 0 ${W} ${H}" width="100%">`;
+  for(let i=0;i<=4;i++){const val=maxv*i/4,yy=y(val);
+    svg+=`<line x1="${pad.l}" x2="${W-pad.r}" y1="${yy}" y2="${yy}" stroke="#eee"/>`;
+    svg+=`<text x="${pad.l-6}" y="${yy+4}" text-anchor="end" font-size="10" fill="#999">${Math.round(val)}</text>`;}
+  if(capLine){ const yy=y(capLine);
+    svg+=`<line x1="${pad.l}" x2="${W-pad.r}" y1="${yy}" y2="${yy}" stroke="#c0392b" stroke-dasharray="6 4" stroke-width="1.5"/>`;
+    svg+=`<text x="${W-pad.r}" y="${yy-5}" text-anchor="end" font-size="10" fill="#c0392b">plafond ${capLine}</text>`;}
+  months.forEach((mo,mi)=>{
+    const x0=pad.l+mi*gw+gap;
+    seriesNames.forEach((s,si)=>{
+      const v=dataFn(s,mo,mi); if(v<=0) return;
+      const x=x0+si*bw, h=pad.t+ih-y(v);
+      const over=capLine && v>capLine;
+      svg+=`<rect x="${x}" y="${y(v)}" width="${Math.max(1,bw-1)}" height="${h}" fill="${over?'#c0392b':PALETTE[si%PALETTE.length]}" rx="1.5"><title>${s}, ${mo}: ${Math.round(v*10)/10}</title></rect>`;
+    });
+    svg+=`<text x="${pad.l+mi*gw+gw/2}" y="${H-16}" text-anchor="middle" font-size="11" fill="#666">${mo.slice(5)}/${mo.slice(2,4)}</text>`;
+  });
+  svg+=`</svg>`;
+  container.innerHTML=svg;
+}
+function legend(container,names){
+  container.innerHTML=names.map((n,i)=>`<span><span class="sw" style="background:${PALETTE[i%PALETTE.length]}"></span>${n}</span>`).join("");
+}
+
+function renderProj(plan){
+  // OB : projets simultanes par implementeur = somme hotels des deals assignes dont go >= mois
+  const activeOB=OB.filter(m=>m.avail!=="absent");
+  const obNames=activeOB.map(m=>m.name);
+  const minCap=Math.min(...activeOB.map(m=>effCapOB(m)).filter(c=>c>0));
+  groupedChart($("obChart"),obNames,MONTHS,(name,mo)=>{
+    let sum=0;
+    PIPE.forEach(d=>{ if(plan.obByDeal[d.id]===name && d.go>=mo) sum+=d.hotels; });
+    return sum;
+  }, isFinite(minCap)?minCap:0);
+  legend($("obLegend"),obNames);
+
+  // flags OB
+  let obf=[];
+  activeOB.forEach(m=>{
+    const cap=effCapOB(m);
+    MONTHS.forEach(mo=>{
+      let sum=0; PIPE.forEach(d=>{ if(plan.obByDeal[d.id]===m.name && d.go>=mo) sum+=d.hotels; });
+      if(cap>0 && sum>cap) obf.push(`${m.name} dépasse son plafond de ${cap} projets en ${mo.slice(5)}/${mo.slice(2,4)} (${sum}).`);
+    });
+  });
+  $("obFlags").innerHTML = obf.length
+    ? `<div class="flag"><b>Surcharge OB anticipée.</b> ${[...new Set(obf)].slice(0,6).join(" ")}</div>`
+    : `<div class="info"><b>Charge OB tenable</b> sur l'horizon avec le pipeline actuel.</div>`;
+
+  // CSM : points par mois
+  const activeCSM=CSM.filter(m=>m.avail!=="absent" && effCapCSM(m)>0);
+  const csmNames=activeCSM.map(m=>m.name);
+  groupedChart($("csmChart"),csmNames,MONTHS,(name,mo)=> plan.csmMonthLoad[name]? (plan.csmMonthLoad[name][mo]||0):0, 15);
+  legend($("csmLegend"),csmNames);
+
+  let cf=[];
+  activeCSM.forEach(m=>{ const cap=effCapCSM(m);
+    MONTHS.forEach(mo=>{ const v=plan.csmMonthLoad[m.name][mo]||0;
+      if(cap>0 && v>cap) cf.push(`${m.name} au-dessus du plafond en ${mo.slice(5)}/${mo.slice(2,4)} (${Math.round(v)} pts).`);
+    });
+  });
+  $("csmFlags").innerHTML = cf.length
+    ? `<div class="flag"><b>Montée en charge CSM à surveiller.</b> ${[...new Set(cf)].slice(0,6).join(" ")}</div>`
+    : `<div class="info"><b>Montée en charge CSM absorbable</b> avec l'effectif dispo actuel.</div>`;
+}
+
+function renderWeights(){
+  const tb=document.querySelector("#wTbl tbody");
+  tb.innerHTML=WEIGHT_LABELS.map(([k,lbl])=>`<tr><td>${lbl}</td>
+    <td class="num"><input type="number" data-w="${k}" value="${WEIGHTS[k]}" min="0" max="30" step="1"></td></tr>`).join("");
+  tb.querySelectorAll("[data-w]").forEach(inp=>inp.addEventListener("input",e=>{
+    WEIGHTS[e.target.dataset.w]=Math.max(0,+e.target.value||0); renderAll();
+  }));
+}
+
+/* ---- tabs ---- */
+$("tabs").addEventListener("click",e=>{
+  const b=e.target.closest(".tab"); if(!b)return;
+  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("on"));
+  document.querySelectorAll(".panel").forEach(x=>x.classList.remove("on"));
+  b.classList.add("on"); $("p_"+b.dataset.t).classList.add("on");
+});
+
+/* ---- add / reset ---- */
+$("btnAdd").addEventListener("click",()=>{
+  const name=$("a_name").value.trim()||"Nouveau compte";
+  const hotels=Math.max(1,+$("a_hotels").value||1);
+  const type=$("a_type").value;
+  const id=Math.max(0,...PIPE.map(p=>p.id))+1;
+  const gCsm=$("a_group").value;
+  let group="";
+  if(gCsm){ group="G"+id; EXISTING_GROUPS[group]=gCsm; }
+  PIPE.push({id,sign:CUR_MONTH+"-15",name,group,tier:$("a_tier").value,
+    type:(hotels>1?type:"indiv"),hotels,dmbookOnly:$("a_dmb").value==="yes",go:$("a_go").value||"2026-11",obLock:null,csmLock:null});
+  $("a_name").value=""; renderAll();
+});
+$("btnReset").addEventListener("click",()=>{ OB=seedOB();CSM=seedCSM();PIPE=seedPipe();WEIGHTS={...DEFAULT_WEIGHTS};renderAll(); });
+$("btnResetW").addEventListener("click",()=>{ WEIGHTS={...DEFAULT_WEIGHTS};renderAll(); });
+
+renderAll();
+</script>
+</body>
+</html>

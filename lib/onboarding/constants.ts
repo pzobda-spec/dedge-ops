@@ -1,4 +1,7 @@
-export const IMPLEMENTATION_GROUP = ['Lan', 'Thuy-Tien', 'Dalia', 'Winli', 'Deydra'] as const
+// Roster implémentation courant, aligné sur la table `ob_capacity_rules`
+// (migration 20260905120000_plan_charge_attribution.sql). Lan est partie,
+// Deydra bascule CSM.
+export const IMPLEMENTATION_GROUP = ['Thuy-Tien', 'Dalia', 'Winli'] as const
 
 export const EXCLUDED_ONBOARDING_OWNERS = ['Bruno', 'Admin', 'Dominic', 'Lauren'] as const
 
