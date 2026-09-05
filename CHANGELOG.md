@@ -6,6 +6,30 @@ Les entrées antérieures au 15 juillet 2026 ont été reconstituées à partir 
 l’historique Git ; elles synthétisent les changements fonctionnels encore
 pertinents plutôt que chaque correction intermédiaire.
 
+## 2026-09-05 — Pipeline Zoho du plan de charge OB / CSM
+
+Deuxième étape. Le moteur est désormais alimenté par les données réelles, mais
+il n’est toujours pas exposé dans l’interface.
+
+### Ajouté
+
+- Construction du pipeline des comptes signés pas encore live à partir de Zoho
+  CRM et Zoho Projects : un compte client dont la date de démarrage
+  d’abonnement est future et qui n’a aucun projet en ligne.
+- Résolution du nom du chargé de succès client renvoyé par Zoho, qui n’est pas
+  normalisé, vers le nom utilisé par les règles de capacité. Une correspondance
+  ambiguë est signalée comme non résolue plutôt que devinée.
+- Lecture des opportunités gagnées, utilisée uniquement pour confirmer et dater
+  une signature.
+- Diagnostics de construction : comptes exclus, hôtels comptés par repli,
+  signatures non datées, chargés de succès client non résolus, groupes sans
+  continuité identifiable.
+
+### Corrigé
+
+- Un compte dont la date de signature est postérieure au go-live ne disparaît
+  plus de la projection de charge.
+
 ## 2026-09-05 — Moteur d’attribution et anticipation de charge OB / CSM
 
 Première étape, scaffolding. Le moteur existe et est testé, mais il n’est pas

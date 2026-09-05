@@ -60,6 +60,24 @@ Vérifications passées le 5 septembre 2026 : `npx tsc --noEmit --pretty false`
 sans erreur, `npm run lint` sans avertissement, `npm run build` complet,
 `npm test` à 30 tests verts dont 19 nouveaux.
 
+### Étape 2, pipeline Zoho — FAIT
+
+- `supabase/migrations/20260905140000_csm_directory_aliases.sql` : ajoute
+  `zoho_user_id` et `zoho_aliases` à `csm_capacity_rules`, seedés avec les noms
+  de famille observés côté Zoho.
+- `lib/zoho/crmClient.ts` : champs `Account_Type`, `Sub_Start_date`,
+  `Date_de_passation`, `Nombre_d_h_tels`, `Created_Time` ajoutés à la requête et
+  au type `CRMAccount`, plus `csmUserId`. Nouveau lecteur `fetchWonDeals()` sur
+  `/Deals/search?criteria=(Stage:equals:Won)`.
+- `lib/onboarding/csmDirectory.ts` : `resolveCsmName`, résolution par id
+  utilisateur Zoho, puis nom exact, puis alias, puis jeton. Ambiguïté et échec
+  renvoient un non résolu, jamais une supposition.
+- `lib/onboarding/pipeline.ts` : `buildPlanChargePipeline`, pur, construit le
+  pipeline des comptes signés pas encore live et la table de continuité de
+  groupe, avec des diagnostics détaillés.
+- `lib/onboarding/planChargeSources.ts` : chargement réel Zoho et Supabase.
+- `tests/plan-charge-pipeline.test.ts`.
+
 ## Décisions tranchées
 
 - Priorité d'attribution : `override manuel` > `continuité de groupe` >
@@ -85,21 +103,44 @@ sans erreur, `npm run lint` sans avertissement, `npm run build` complet,
 - Table optionnelle `assignment_group_csm` non créée : la continuité de groupe
   se lit depuis Zoho CRM (`Parent_Account` et champ `CSM` des comptes frères).
 
+### Décisions propres au pipeline Zoho
+
+- Source de vérité du pipeline, ce sont les **Accounts**, pas les Deals :
+  `Account_Type = 'Client'`, `Sub_Start_date` renseignée et future, et aucun
+  projet en statut `live`. Les deals gagnés ne servent qu'à confirmer la
+  signature et à la dater.
+- Aucun join Deal vers Account : sur un deal `Won`, `Account_Name` pointe vers
+  un compte générique « D-EDGE ». L'appariement passe donc par une similarité
+  de texte entre `Deal_Name` et le nom du compte, seuil `DEAL_MATCH_THRESHOLD`
+  fixé à `0.9` et volontairement conservateur. En pratique beaucoup de deals ne
+  seront pas appariés, et la date de signature retombera sur `Created_Time` du
+  compte. C'est assumé, et compté dans les diagnostics.
+- Le comptage des hôtels d'un groupe impose `fetchAllCRMAccounts({
+  includeZeroMrr: true })`. Le filtre `mrr > 0` par défaut écarterait des
+  comptes enfants et sous-compterait les groupes.
+- L'appariement projet live vers compte se fait par id, puis par nom
+  strictement égal après normalisation. On n'utilise pas
+  `matchAccountByName` de `clientResolver`, dont l'appariement partiel par
+  `includes` ferait disparaître des comptes du pipeline sans laisser de trace.
+- `dmbookOnly` est dérivé du champ `Plan` du compte, faute de drapeau dédié
+  côté Zoho. À valider avec le métier.
+- Les points de départ du mois CSM sont dérivés de `onboarding_projects`, via
+  `csm_assigned_at` dans le mois courant. À valider avec le métier.
+
 ## À confirmer avec le métier
 
 - Faut-il ajouter des CSM à `csm_capacity_rules` (le prototype citait Harmony
   et Astrid, plafond 8) et quelle capacité CSM pour Winli ?
-- Confirmation du module `Deals` pour la notion de « signé », du libellé du
-  stage gagné et du lien Deal vers Account.
-- Confirmation que `Sub_Start_date` est réellement renseigné sur les comptes
-  signés récents, sinon repli sur la date du Deal.
+- Les ids utilisateurs Zoho des CSM restent à renseigner dans
+  `csm_capacity_rules.zoho_user_id`. Tant qu'ils sont vides, la résolution
+  repose sur les noms et les alias, ce qui est moins fiable.
+- La dérivation de `dmbookOnly` depuis le champ `Plan` du compte est-elle
+  correcte ?
+- « La charge déjà attribuée ce mois » côté CSM, faut-il bien la lire sur
+  `csm_assigned_at` du mois courant, ou sur la date de go-live ?
 
 ## Reste à faire
 
-- Étape 2 : `lib/onboarding/pipeline.ts`, ajout au mapping `CRMAccount` des
-  champs `Sub_Start_date`, `Date_de_passation`, `Nombre_d_h_tels`,
-  `Account_Type`, et construction du pipeline des comptes signés pas encore
-  live.
 - Étape 3 : routes `GET /api/onboarding/plan-charge`,
   `POST /api/onboarding/plan-charge/assignments`,
   `POST /api/onboarding/plan-charge/roster`, avec tag de cache dédié invalidé

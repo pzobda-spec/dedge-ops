@@ -117,9 +117,31 @@ Continuité de groupe, implémentation, pour un compte dont `Parent_Account` = X
 
 Type et nombre d'hôtels, un compte avec `Parent_Account` non nul est un membre de groupe. Nombre d'hôtels du groupe = `Nombre_d_h_tels` si rempli, sinon compter les comptes du même `Parent_Account`.
 
-### Reste à confirmer côté tech avant de coder le pipeline
-1. Signé, Pablo confirme, signé = présence d'une opportunité (module Deals), ou notion d'opportunité dans les Notes. Confirmer le module `Deals`, le nom du stage "signé / gagné", et le lien Deal -> Account. La date de go-live prévue = `Sub_Start_date` du compte, sinon `Closing_Date` du Deal.
-2. Confirmer que `Sub_Start_date` est bien renseigné en pratique sur les comptes signés récents (sinon se rabattre sur la date du Deal).
+### Points tranchés le 05/09 par Pablo, ne pas les redériver
+
+**Signature.** Signé = `Deals.Stage = 'Won'`. Stages observés sur le module `Deals` : `Presentation`, `Evaluation`, `Negociation`, `Verbal`, `Won`, `Lost`. Le pipeline commercial encore en cours, c'est tout ce qui n'est ni `Won` ni `Lost`.
+
+**Piège 1, ne JAMAIS joindre Deal vers Account sur les deals gagnés.** Sur les deals `Won`, `Account_Name` pointe vers un compte générique « D-EDGE » (id `93025000000688535`) et non vers le vrai client. Le client réel est dans le texte de `Deal_Name`. Conséquence directe sur l'architecture du pipeline :
+
+- La source de vérité du pipeline « signé pas encore live », ce sont les **Accounts**, pas les Deals. Critères : `Account_Type = 'Client'`, `Sub_Start_date` renseignée et future, et aucun projet en statut `live` côté Zoho Projects.
+- `Sub_Start_date` est fiable et bien renseignée en pratique (exemples vus, Cairns 2027-01-11, Windy 2026-12-01). C'est la date de go-live prévue.
+- Les Deals ne servent qu'à confirmer la signature, jamais à porter l'identité du client. Tout rapprochement Deal vers compte passe par le texte de `Deal_Name`, donc reste approximatif, et doit être signalé comme tel plutôt que présenté comme certain.
+
+**Piège 2, le nom du CSM n'est pas normalisé côté Zoho.** Le lookup `CSM` renvoie tantôt le nom complet (« Aika Aitkali »), tantôt le seul nom de famille (« Rohaut », « Exilie », « Bonnaud »), alors que `csm_capacity_rules` est indexée sur les prénoms. `CRMAccount.csm`, aujourd'hui alimenté par `CSM?.name`, renvoie donc une valeur brute inutilisable telle quelle pour la continuité de groupe.
+
+Il faut un resolver, idéalement appuyé sur l'id utilisateur Zoho plutôt que sur le libellé. Correspondances connues :
+
+| Nom de famille Zoho | Prénom dans `csm_capacity_rules` |
+| --- | --- |
+| Rohaut | Ghislaine |
+| Exilie | Laurane |
+| Bonnaud | Anne-Charlotte |
+| Aitkali | Aika |
+| Acero | Deydra |
+| Benamar | Sherazade |
+| Donnelly | Tara |
+
+Un CSM non résolu ne doit jamais être deviné ni rattaché au hasard : il doit ressortir explicitement comme non résolu.
 
 Roster tranché, OB implé = Thuy-Tien (senior), Dalia (junior), Winli (junior). Deydra et Sherazade sont CSM et sortent de l'implé. Winli fera aussi du CSM (capacité à définir) et est prioritaire sur les clients APAC en implé (règle de zone à ajouter plus tard).
 

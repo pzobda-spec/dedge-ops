@@ -272,6 +272,23 @@ test('projection OB : charge de la signature au go-live inclus, pas au-delà', (
   assert.equal(result.obLoadByMonth[owner]['2026-12'], 0)
 })
 
+test('projection OB : une signature postérieure au go-live se rabat sur le mois de go-live', () => {
+  // Garde-fou contre une fenêtre vide, qui ferait disparaître le compte de la
+  // projection sans que rien ne le signale.
+  const result = runAssignmentEngine({
+    pipeline: [
+      makeAccount({ id: 'a1', signedDate: '2026-11-20', expectedGoLiveMonth: '2026-09', hotels: 3 }),
+    ],
+    obRoster: [makeOb({ name: 'Thuy-Tien' })],
+    csmRoster: [makeCsm({ name: 'Winli' })],
+    months: ['2026-09', '2026-10', '2026-11'],
+    currentMonth: '2026-09',
+  })
+  assert.equal(result.obLoadByMonth['Thuy-Tien']['2026-09'], 3)
+  assert.equal(result.obLoadByMonth['Thuy-Tien']['2026-10'], 0)
+  assert.equal(result.obLoadByMonth['Thuy-Tien']['2026-11'], 0)
+})
+
 test('projection CSM : les points ne tombent que sur le mois de go-live', () => {
   const result = runAssignmentEngine({
     pipeline: [makeAccount({ id: 'a1', tier: 'Gold', signedDate: '2026-09-05', expectedGoLiveMonth: '2026-11' })],

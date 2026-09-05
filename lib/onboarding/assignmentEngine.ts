@@ -303,8 +303,13 @@ export function runAssignmentEngine(input: AssignmentEngineInput): AssignmentEng
   ordered.forEach((account, index) => {
     const owner = assignments[index].obOwner
     if (owner === null) return
-    const signedMonth = account.signedDate.slice(0, 7)
     const goLiveMonth = account.expectedGoLiveMonth
+    // Garde-fou : une date de signature postérieure au go-live (donnée Zoho
+    // incohérente, ou date de signature en repli) donnerait une fenêtre vide,
+    // donc un compte qui ne pèserait sur aucun mois sans que rien ne le signale.
+    // On le rabat alors sur le seul mois de go-live.
+    const rawSignedMonth = account.signedDate.slice(0, 7)
+    const signedMonth = rawSignedMonth <= goLiveMonth ? rawSignedMonth : goLiveMonth
     if (!obLoadByMonth[owner]) {
       obLoadByMonth[owner] = {}
       for (const month of months) obLoadByMonth[owner][month] = 0
