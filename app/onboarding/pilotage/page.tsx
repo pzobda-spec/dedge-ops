@@ -374,6 +374,7 @@ export default function OnboardingPilotagePage() {
               <Link href="/onboarding/board" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">Board</Link>
               <span aria-current="page" className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-[#59319f] shadow-sm">{t('Pilotage')}</span>
               <Link href="/onboarding/clients" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Clients')}</Link>
+              <Link href="/onboarding/plan-charge" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Plan de charge')}</Link>
             </nav>
             <button
               type="button"
