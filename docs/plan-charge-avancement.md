@@ -14,6 +14,11 @@ Branche de travail : `agent/plan-charge-scaffolding`, partie de `origin/main`.
 PR 1, scaffolding : https://github.com/pzobda-spec/dedge-ops/pull/19
 PR 2, pipeline Zoho : https://github.com/pzobda-spec/dedge-ops/pull/20
 (branche `agent/plan-charge-pipeline`, empilée sur celle de la PR 1)
+PR 3, API et page : https://github.com/pzobda-spec/dedge-ops/pull/21
+(branche `agent/plan-charge-ui`, empilée sur celle de la PR 2)
+
+Ordre de fusion : 19, puis 20, puis 21. GitHub recible chaque PR automatiquement
+à la fusion de la précédente.
 
 ## Découpage retenu
 
@@ -22,7 +27,7 @@ PR 2, pipeline Zoho : https://github.com/pzobda-spec/dedge-ops/pull/20
 2. **PR 2, pipeline Zoho** : `lib/onboarding/pipeline.ts`, extension du mapping
    CRM, alimentation du moteur avec les comptes signés pas encore live.
 3. **PR 3, API et page** : `/api/onboarding/plan-charge*` et
-   `app/onboarding/plan-charge`.
+   `app/onboarding/plan-charge`. Livrée.
 
 ## État
 
@@ -82,6 +87,29 @@ sans erreur, `npm run lint` sans avertissement, `npm run build` complet,
 - `lib/onboarding/planCharge.ts` : `computePlanCharge`, enchaîne pipeline,
   points de départ et moteur. C'est le point d'entrée de la route API.
 - `tests/plan-charge-pipeline.test.ts`.
+
+### Étape 3, API et page — FAIT
+
+- `app/api/onboarding/plan-charge/route.ts`, GET agrégé. Aplatit pipeline et
+  attributions en une seule liste de comptes, pour que l'interface n'ait pas à
+  recoller deux tableaux.
+- `app/api/onboarding/plan-charge/assignments/route.ts`, POST d'override
+  manuel. Écriture par FUSION avec la ligne existante : champ absent =
+  inchangé, `null` explicite = effacé. Un `upsert` direct aurait effacé un
+  verrou CSM en posant un override OB.
+- `app/api/onboarding/plan-charge/roster/route.ts`, POST de mise à jour du
+  rôle, du plafond et de la disponibilité. Tient `csm_capacity_rules.active`
+  cohérent avec `availability`.
+- `app/onboarding/plan-charge/page.tsx`, page en français, cinq blocs : KPI,
+  attribution éditable, équipes et disponibilité, projection, barème en
+  lecture seule.
+- Lien « Plan de charge » ajouté à la navigation des quatre pages onboarding
+  existantes.
+
+Aucun `revalidateTag` sur les mutations, volontairement : les lectures Supabase
+ne sont pas mises en cache et la route GET est `force-dynamic`, donc une
+écriture est visible immédiatement. Invalider le tag Zoho forcerait un
+rechargement complet du CRM à chaque édition de roster.
 
 ## Décisions tranchées
 
@@ -158,13 +186,13 @@ sans erreur, `npm run lint` sans avertissement, `npm run build` complet,
 - Les plafonds de Harmony (15) et Astrid (8) viennent du prototype de
   référence : à confirmer avec la team lead CSM. Ils sont éditables depuis le
   roster.
-- Capacité CSM de Winli, toujours à définir.
+- Capacité CSM de Winli, toujours à définir. Elle n'est pas encore dans
+  `csm_capacity_rules`, elle n'apparaît donc pas au roster CSM.
+- Appliquer les trois migrations en base (`supabase db push`) avant d'ouvrir la
+  page : sans elles, le roster OB et les overrides ressortent vides, avec un
+  avertissement visible plutôt qu'une erreur.
 
 ## Reste à faire
 
-- Étape 3 : routes `GET /api/onboarding/plan-charge`,
-  `POST /api/onboarding/plan-charge/assignments`,
-  `POST /api/onboarding/plan-charge/roster`, avec tag de cache dédié invalidé
-  après mutation, puis la page `app/onboarding/plan-charge`.
 - Étape 4, optionnelle : étendre le snapshot quotidien de la migration 026 pour
   historiser aussi la charge CSM projetée par mois.

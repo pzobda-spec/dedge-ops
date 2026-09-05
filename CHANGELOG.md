@@ -6,6 +6,28 @@ Les entrées antérieures au 15 juillet 2026 ont été reconstituées à partir 
 l’historique Git ; elles synthétisent les changements fonctionnels encore
 pertinents plutôt que chaque correction intermédiaire.
 
+## 2026-09-05 — Page Plan de charge OB / CSM
+
+### Ajouté
+
+- Page « Plan de charge » dans l’espace onboarding : pré-attribution des
+  comptes signés pas encore live à un implémenteur et à un chargé de succès
+  client, et projection mensuelle de la montée en charge.
+- Attribution éditable et persistée. Un choix manuel pose un verrou, prioritaire
+  sur la continuité de groupe et sur la répartition automatique, et se lève
+  depuis la même ligne.
+- Édition du rôle, du plafond et de la disponibilité de chaque implémenteur et
+  de chaque chargé de succès client. Quatre états, Dispo, Relâche qui divise la
+  capacité par deux, Absent et STOP qui l’annulent.
+- Deux projections mensuelles avec ligne de plafond et liste des dépassements :
+  projets simultanés par implémenteur, points de reprise par chargé de succès
+  client.
+- Barème de pondération affiché en lecture seule, avec rappel qu’il se modifie
+  en base.
+- Les limites de données restent visibles : origine d’une date de signature ou
+  d’un nombre d’hôtels déduits, chargé de succès client Zoho non résolu, liste
+  d’opportunités tronquée.
+
 ## 2026-09-05 — Pipeline Zoho du plan de charge OB / CSM
 
 Deuxième étape. Le moteur est désormais alimenté par les données réelles, mais
