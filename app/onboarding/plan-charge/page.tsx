@@ -233,6 +233,7 @@ export default function PlanChargePage() {
             <Link href="/onboarding/pilotage" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Pilotage')}</Link>
             <Link href="/onboarding/clients" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Clients')}</Link>
             <span aria-current="page" className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-[#59319f] shadow-sm">{t('Plan de charge')}</span>
+            <Link href="/onboarding/csm" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">CSM</Link>
           </nav>
         </div>
       </header>

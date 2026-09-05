@@ -19,7 +19,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 export async function POST(req: NextRequest) {
   try {
-    await requireRole(req, ['admin', 'onboarder'])
+    await requireRole(req, ['admin', 'onboarder', 'csm_lead'])
 
     const body = await req.json().catch(() => ({})) as Record<string, unknown>
 

@@ -111,6 +111,33 @@ ne sont pas mises en cache et la route GET est `force-dynamic`, donc une
 écriture est visible immédiatement. Invalider le tag Zoho forcerait un
 rechargement complet du CRM à chaque édition de roster.
 
+### Étape 4, rôle team lead CSM et page dédiée — FAIT
+
+Rôle applicatif `csm_lead`, pour donner un accès restreint à la team lead CSM
+sans lui ouvrir tout le cockpit.
+
+- `supabase/migrations/20260905180000_csm_lead_role.sql` : remplace la
+  contrainte CHECK sur `users.role`. Elle est REMPLACÉE et non doublée, deux
+  CHECK cumulatifs auraient rejeté tous les rôles.
+- `lib/auth/roles.ts` : type `Role`, `ROLE_LABELS`, `isRole`.
+- `middleware.ts` : `csm_lead` ajouté au seul groupe onboarding, absent des
+  groupes `/dashboard`, `/tickets`, `/escalations`, `/trainings`, `/reporting`
+  et `/admin`. `homePathForRole` le renvoie vers `/onboarding/csm`.
+- Sept routes API : le rôle est ajouté aux lectures onboarding et aux deux
+  écritures du plan de charge. Le middleware seul n'aurait PAS suffi, chaque
+  route rappelle `requireRole` avec sa propre liste et aurait renvoyé 403.
+- Sur `workspace` et `implementation`, seul le `GET` s'ouvre, pas le `PATCH`.
+  Les écritures sensibles (fiche projet, produits, passation CSM,
+  synchronisations Zoho) restent en `admin` / `onboarder`.
+- `app/onboarding/csm/page.tsx` : page de travail, équipe CSM éditable,
+  reprises à venir avec attribution CSM éditable et implémenteur en lecture
+  seule, projection CSM, barème. Entrée « CSM » ajoutée à la barre d'onglets
+  des cinq pages onboarding et à la barre latérale.
+
+Périmètre du rôle, tranché avec Pablo : il voit TOUTE la section Onboarding
+sans restriction, et rien du reste du cockpit. Il écrit uniquement sur le
+roster CSM et les attributions CSM du plan de charge.
+
 ## Décisions tranchées
 
 - Priorité d'attribution : `override manuel` > `continuité de groupe` >

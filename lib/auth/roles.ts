@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getSessionUserEmail } from './session'
 import { supabaseAdmin } from '@/lib/supabase/server'
 
-export type Role = 'admin' | 'onboarder' | 'support' | 'commercial_readonly'
+export type Role = 'admin' | 'onboarder' | 'support' | 'commercial_readonly' | 'csm_lead'
 
 export interface AppUser {
   id: string
@@ -26,13 +26,15 @@ export const ROLE_LABELS: Record<Role, string> = {
   onboarder: 'Onboarder',
   support: 'Support',
   commercial_readonly: 'Commercial',
+  csm_lead: 'Team lead CSM',
 }
 
 export function isRole(value: unknown): value is Role {
   return value === 'admin' ||
     value === 'onboarder' ||
     value === 'support' ||
-    value === 'commercial_readonly'
+    value === 'commercial_readonly' ||
+    value === 'csm_lead'
 }
 
 export async function getUserByEmail(email: string): Promise<AppUser | null> {

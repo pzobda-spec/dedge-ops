@@ -104,7 +104,7 @@ async function loadCockpit(projectId: string) {
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
-    await requireRole(req, ['admin', 'onboarder', 'support', 'commercial_readonly'])
+    await requireRole(req, ['admin', 'onboarder', 'support', 'commercial_readonly', 'csm_lead'])
     const project = await getOnboardingProjectByIdOrZohoId(params.id)
     if (!project) return NextResponse.json({ error: 'Projet introuvable' }, { status: 404 })
     return NextResponse.json(await loadCockpit(project.id))

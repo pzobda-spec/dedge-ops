@@ -6,6 +6,23 @@ Les entrées antérieures au 15 juillet 2026 ont été reconstituées à partir 
 l’historique Git ; elles synthétisent les changements fonctionnels encore
 pertinents plutôt que chaque correction intermédiaire.
 
+## 2026-09-05 — Accès restreint pour la team lead CSM
+
+### Ajouté
+
+- Rôle « Team lead CSM », attribuable depuis l’administration des
+  utilisateurs. Il donne accès à toute la section Onboarding et à rien d’autre
+  du cockpit : tableau de bord, tickets, bugs, formations et reporting restent
+  fermés.
+- Page « Reprises et capacité CSM », page d’accueil de ce rôle : capacité et
+  disponibilité de chaque chargé de succès client, reprises à venir avec
+  attribution modifiable, projection mensuelle et barème.
+- Le rôle peut modifier la capacité et la disponibilité de son équipe ainsi que
+  les attributions de chargé de succès client. Les autres écritures de
+  l’onboarding lui restent fermées.
+- Sur la page CSM, l’implémenteur de chaque compte est visible en lecture seule,
+  pour préparer la passation.
+
 ## 2026-09-05 — Page Plan de charge OB / CSM
 
 ### Ajouté

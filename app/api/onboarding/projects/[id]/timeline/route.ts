@@ -10,7 +10,7 @@ export async function GET(
   { params }: { params: { id: string } },
 ) {
   try {
-    await requireRole(req, ['admin', 'onboarder', 'support'])
+    await requireRole(req, ['admin', 'onboarder', 'support', 'csm_lead'])
 
     const project = await getOnboardingProjectByIdOrZohoId(params.id)
     if (!project) return NextResponse.json({ error: 'Projet introuvable' }, { status: 404 })

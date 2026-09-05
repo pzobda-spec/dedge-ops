@@ -37,16 +37,18 @@ const navItems: NavItem[] = [
   {
     href: '/onboarding',
     label: 'Onboarding',
-    roles: ['admin', 'onboarder', 'commercial_readonly'],
+    roles: ['admin', 'onboarder', 'commercial_readonly', 'csm_lead'],
     children: [
       { href: '/onboarding', label: 'Projets' },
       { href: '/onboarding/pilotage', label: 'Pilotage' },
+      { href: '/onboarding/plan-charge', label: 'Plan de charge' },
+      { href: '/onboarding/csm', label: 'CSM' },
     ],
   },
   { href: '/knowledge', label: 'Knowledge Base', roles: ['admin', 'support'], hidden: true },
   { href: '/reporting', label: 'Reporting', roles: ['admin', 'support'] },
   { href: '/assistant', label: 'Assistant IA', roles: ['admin', 'support'], hidden: true },
-  { href: '/settings', label: 'Paramètres', roles: ['admin', 'onboarder', 'support', 'commercial_readonly'] },
+  { href: '/settings', label: 'Paramètres', roles: ['admin', 'onboarder', 'support', 'commercial_readonly', 'csm_lead'] },
   {
     href: '/admin/users',
     label: 'Administration',
