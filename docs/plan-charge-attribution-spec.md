@@ -117,11 +117,57 @@ Continuité de groupe, implémentation, pour un compte dont `Parent_Account` = X
 
 Type et nombre d'hôtels, un compte avec `Parent_Account` non nul est un membre de groupe. Nombre d'hôtels du groupe = `Nombre_d_h_tels` si rempli, sinon compter les comptes du même `Parent_Account`.
 
-### Reste à confirmer côté tech avant de coder le pipeline
-1. Signé, Pablo confirme, signé = présence d'une opportunité (module Deals), ou notion d'opportunité dans les Notes. Confirmer le module `Deals`, le nom du stage "signé / gagné", et le lien Deal -> Account. La date de go-live prévue = `Sub_Start_date` du compte, sinon `Closing_Date` du Deal.
-2. Confirmer que `Sub_Start_date` est bien renseigné en pratique sur les comptes signés récents (sinon se rabattre sur la date du Deal).
+### Pipeline "signé pas encore live", résolu (recherche COQL du 05/09)
+
+Module `Deals`, stages observés, `Presentation`, `Evaluation`, `Negociation`, `Verbal`, `Won`, `Lost`. Signé = `Stage = 'Won'`. Perdu = `Lost`. Pipeline commercial en cours = les autres stages.
+
+PIÈGE 1, les Deals au stage `Won` ont leur lookup `Account_Name` pointant vers un compte générique "D-EDGE" (id 93025000000688535), PAS vers le vrai compte client (le nom du client est dans `Deal_Name`). Donc ne pas joindre Deal -> Account pour retrouver le client d'un deal gagné. La bonne source du pipeline, ce sont les `Accounts` eux-mêmes, `Account_Type = 'Client'` et `Sub_Start_date` renseigné et dans le futur, et pas encore de projet `live` côté Zoho Projects. `Sub_Start_date` est fiable et bien rempli sur les comptes signés récents (dates futures présentes, ex Cairns 2027-01-11, Hotel Windy 2026-12-01). Go-live prévu = `Sub_Start_date`. Le module Deals sert surtout à confirmer/dater la signature, pas à porter le client.
+
+PIÈGE 2, normalisation du nom CSM. Le lookup `CSM` renvoie tantôt le nom complet ("Aika Aitkali"), tantôt seulement le nom de famille ("Rohaut", "Exilie", "Bonnaud"). Or `csm_capacity_rules` utilise les prénoms (Ghislaine, Laurane, Anne-Charlotte...). Il faut un resolver de correspondance vers la clé du roster, idéalement via l'id utilisateur Zoho. Correspondances connues, Rohaut = Ghislaine, Exilie = Laurane, Bonnaud = Anne-Charlotte, Aitkali = Aika. Prévoir la même prudence pour Deydra (Acero), Sherazade (Benamar), Tara (Donnelly). Le mapping existant `crmClient.csm = CSM?.name` renvoie donc une valeur non normalisée, à corriger.
+
+`Date_de_passation` (Accounts) marque la passation OB -> CSM effectuée, souvent null, rempli quand fait.
+
+Un CSM non résolu ne doit jamais être deviné ni rattaché au hasard, il doit ressortir explicitement comme non résolu. Un mauvais rattachement fausserait silencieusement la continuité de groupe, donc toute la projection.
 
 Roster tranché, OB implé = Thuy-Tien (senior), Dalia (junior), Winli (junior). Deydra et Sherazade sont CSM et sortent de l'implé. Winli fera aussi du CSM (capacité à définir) et est prioritaire sur les clients APAC en implé (règle de zone à ajouter plus tard).
+
+## 9. Décisions tranchées le 05/09 par Pablo, vérifiées dans Zoho, ne pas les redériver
+
+### 9.1 `dmbookOnly` se dérive bien du champ `Plan`
+
+Vérifié sur données réelles. Les comptes Dmbook seul ont `Plan` valant exactement `["Dmbook"]` (Maison Astor, Citysuites, Hana, The One Monumental Palace).
+
+Valeurs de `Plan` observées : `Insight`, `Enterprise`, `Dmbook`, `Communication`, `Sentinel`, `WhatsApp`, `Guest Survey`, `Loyalty Programme`.
+
+Règle : `dmbookOnly` est vrai si et seulement si `Plan` vaut exactement `["Dmbook"]`, Dmbook et rien d'autre. Attention, la valeur est `"Dmbook"`, pas `"Dmbook Pro"`. Un `Plan` contenant Dmbook parmi d'autres produits n'est PAS un compte Dmbook seul.
+
+### 9.2 Les points de départ du mois CSM s'indexent sur le go-live, pas sur la date d'attribution
+
+Le barème compte les points à la passation (modèle du SUIVI), et toute la projection est indexée sur le go-live. Mélanger les deux axes fausserait le mois courant : un compte attribué ce mois mais live le mois suivant serait mal placé.
+
+Règle : la base du mois courant est la somme des poids des comptes dont `Date_de_passation` tombe dans le mois courant, à défaut leur go-live. Ne PAS utiliser `onboarding_projects.csm_assigned_at`.
+
+### 9.3 Ids utilisateurs Zoho
+
+Récupérés le 05/09, voir `docs/plan-charge-csm-user-ids.sql`. Ils fiabilisent la résolution du nom de CSM, qui repose sinon sur les noms et alias.
+
+| Clé du roster | Nom Zoho | Id utilisateur |
+| --- | --- | --- |
+| Anne-Charlotte | Bonnaud | 93025000241678001 |
+| Laurane | Exilie | 93025000105340001 |
+| Deydra | Acero Vela | 93025000029321001 |
+| Sherazade | Benamar | 93025000011483001 |
+| Tara | Donnelly | 93025000116805001 |
+| Aika | Aitkali | 93025000077681001 |
+| Ghislaine | Rohaut | 93025000129927001 |
+| Harmony | Telli | 93025000262893001 |
+| Astrid | Lapeyre | 93025000264881001 |
+
+Implémenteurs OB : Thuy-Tien (Truong) `93025000189875001`, Dalia (Chaal) `93025000180012268`, Winli `93025000257105001`.
+
+Harmony et Astrid ne figurent pas dans le seed de la migration 016, qui ne créait que 7 CSM : il faut les INSÉRER avant de poser leur id.
+
+Piège de résolution : une « Anne-Sophie Paillard » existe parmi les utilisateurs Zoho, à ne jamais confondre avec Anne-Charlotte.
 
 ## 8. Définition de fini
 - Migrations appliquées, seeds cohérents avec le SUIVI.
