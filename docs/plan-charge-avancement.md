@@ -11,7 +11,9 @@ Prototype exécutable de référence : `docs/plan-charge-prototype-reference.htm
 Note de vérification : `docs/plan-charge-verification.md`.
 
 Branche de travail : `agent/plan-charge-scaffolding`, partie de `origin/main`.
-PR 1 ouverte : https://github.com/pzobda-spec/dedge-ops/pull/19
+PR 1, scaffolding : https://github.com/pzobda-spec/dedge-ops/pull/19
+PR 2, pipeline Zoho : https://github.com/pzobda-spec/dedge-ops/pull/20
+(branche `agent/plan-charge-pipeline`, empilée sur celle de la PR 1)
 
 ## Découpage retenu
 
