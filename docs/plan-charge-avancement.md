@@ -175,6 +175,43 @@ non la reprise.
 `max-w-full overflow-x-auto`. Sans la contrainte de largeur, un `inline-flex` se
 dimensionne sur son contenu et ne défile jamais.
 
+### Étape 6, section CSM autonome et dashboard — FAIT
+
+**Architecture d'information.** L'onboarding redevient strictement l'OB. Section
+CSM de premier niveau avec `/csm/pilotage` et `/csm/plan-charge`, redirections
+depuis les anciennes URL, routes API déplacées sous `/api/csm/plan-charge`.
+
+**Diagnostic des « comptes non rattachés ».** Ce n'était pas un défaut du
+resolver. Les comptes concernés sont encore portés par Grégoire Tiers, ancien
+Head of CSM, dont la réattribution n'a jamais été faite. Confirmé sur données
+réelles, avec des comptes Best Western dedans, dont BEST WESTERN FRANCE à
+71 884 € de MRR. Traité comme une action à faire, via un bandeau « Portefeuille
+à réattribuer » en tête de page, et non comme un avertissement technique.
+La liste des porteurs concernés est dans `UNMANAGED_OWNER_IDS`
+(`lib/csm/dashboard.ts`), éditable.
+
+Découvert au passage, non traité : des comptes portent un CSM dont le nom
+revient `null` de l'API, avec l'id `93025000149940001`, soit Aizzaty Sultan,
+absente de `csm_capacity_rules`. Ses comptes ne sont rattachés à personne.
+
+**Churn.** Source trouvée, ce sont les tags du module Accounts, `churn`,
+`churn25`, `churn26`, `churn27`. Le champ `Tag` a été ajouté au mapping CRM.
+Les millésimes sont affichés séparément et non agrégés en un taux unique : les
+tags mélangent churn constaté et churn annoncé, `churn27` étant déjà alimenté.
+Les tags `downgrade*` sont volontairement exclus, un downgrade n'est pas une
+perte de compte.
+
+**Santé de compte.** Tickets Desk ouverts à l'instant T et volume sur 6 mois,
+lus depuis `ticket_analytics` (12 mois d'historique, la fenêtre est couverte).
+Le rattachement ticket vers compte se fait par égalité STRICTE de nom
+normalisé, jamais via `matchAccountByName` de `accountCache` : son appariement
+partiel attribuerait les tickets d'un compte à un autre. Les comptes sans
+correspondance sont comptés et affichés.
+
+Aucun seuil de bonne ou mauvaise santé n'est défini, aucun score composite : la
+page expose les compteurs bruts et un classement. La qualification viendra du
+métier une fois les ordres de grandeur observés.
+
 ## Décisions tranchées
 
 - Priorité d'attribution : `override manuel` > `continuité de groupe` >

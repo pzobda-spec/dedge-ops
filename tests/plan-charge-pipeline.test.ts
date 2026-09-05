@@ -36,6 +36,7 @@ function makeAccount(overrides: Partial<CRMAccount> = {}): CRMAccount {
     handoverDate: null,
     hotelCount: null,
     createdTime: '2026-01-01',
+    tags: [],
     ...overrides,
   }
 }
@@ -625,6 +626,7 @@ test('computePlanCharge ne compte jamais deux fois un compte du pipeline', async
       csmDirectory: directory,
       overrides: [],
       weightRules: [...DEFAULT_WEIGHT_RULES],
+      ticketsByAccountName: new Map(),
       warnings: [],
     },
     { referenceDate: '2026-09-05', months: ['2026-09', '2026-10'] },

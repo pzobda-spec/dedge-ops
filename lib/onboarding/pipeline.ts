@@ -202,7 +202,7 @@ export function oldestGoLiveByAccount(
 }
 
 /** Forme de compte dérivée, réutilisée par le pipeline et par `computeCurrentMonthBasePoints`. */
-interface DerivedAccountShape {
+export interface DerivedAccountShape {
   tier: AccountTier
   groupId: string | null
   isGroup: boolean
@@ -222,7 +222,7 @@ interface DerivedAccountShape {
  * Sentinel, WhatsApp, Guest Survey, Loyalty Programme. Attention, la valeur
  * est "Dmbook", pas "Dmbook Pro".
  */
-function deriveAccountShape(
+export function deriveAccountShape(
   account: CRMAccount,
   childrenByParentId: Map<string, CRMAccount[]>,
 ): DerivedAccountShape {

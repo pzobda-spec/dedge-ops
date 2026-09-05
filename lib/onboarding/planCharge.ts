@@ -26,6 +26,7 @@ import {
 import { countActiveProjectsByOwner } from '@/lib/onboarding/workload'
 import { computeCsmPortfolios, type CsmPortfolioResult } from '@/lib/onboarding/csmAnalytics'
 import type { PlanChargeSources } from '@/lib/onboarding/planChargeSources'
+import { computeCsmDashboard, type CsmDashboardResult } from '@/lib/csm/dashboard'
 
 /** Options de calcul du plan de charge. */
 export interface ComputePlanChargeOptions {
@@ -51,6 +52,7 @@ export interface PlanChargeComputation {
   dealsTruncated: boolean
   warnings: string[]
   csmPortfolios: CsmPortfolioResult
+  csmDashboard: CsmDashboardResult
 }
 
 /** Enchaîne pipeline, points de départ et moteur à partir des sources chargées. */
@@ -138,6 +140,20 @@ export function computePlanCharge(
     )
   }
 
+  const csmDashboard = computeCsmDashboard({
+    accounts: sources.accounts,
+    projects: sources.projects,
+    csmDirectory: sources.csmDirectory,
+    csmNames: sources.csmRoster.map(member => member.name),
+    ticketsByAccountName: sources.ticketsByAccountName,
+  })
+
+  if (csmDashboard.unmanaged.accounts > 0) {
+    warnings.push(
+      `${csmDashboard.unmanaged.accounts} compte(s) portés par un ancien CSM sont à réattribuer, pour un MRR de ${csmDashboard.unmanaged.mrr}.`,
+    )
+  }
+
   return {
     referenceDate: options.referenceDate,
     currentMonth,
@@ -150,5 +166,6 @@ export function computePlanCharge(
     dealsTruncated: sources.dealsTruncated,
     warnings,
     csmPortfolios,
+    csmDashboard,
   }
 }

@@ -4,7 +4,7 @@
  *
  * Volontairement aucun `revalidateTag` n'est appelé ici : les lectures
  * Supabase de `loadPlanChargeSources` ne sont pas mises en cache et la route
- * GET `/api/onboarding/plan-charge` est `force-dynamic`, donc l'écriture est
+ * GET `/api/csm/plan-charge` est `force-dynamic`, donc l'écriture est
  * visible immédiatement. Invalider le tag Zoho forcerait un rechargement
  * complet du CRM à chaque édition, pour rien.
  */

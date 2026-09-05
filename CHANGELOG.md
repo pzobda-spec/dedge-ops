@@ -6,6 +6,28 @@ Les entrées antérieures au 15 juillet 2026 ont été reconstituées à partir 
 l’historique Git ; elles synthétisent les changements fonctionnels encore
 pertinents plutôt que chaque correction intermédiaire.
 
+## 2026-09-05 — Section CSM et tableau de bord de portefeuille
+
+### Ajouté
+
+- Section « CSM » de premier niveau, avec deux sous-sections, Pilotage et Plan
+  de charge. L’espace Onboarding redevient strictement l’implémentation.
+- Tableau de bord CSM : revenu récurrent total et par chargé de succès client,
+  répartition groupe et individuel, churn par millésime, tickets support
+  ouverts et volume sur six mois.
+- Bandeau « Portefeuille à réattribuer » : les comptes encore rattachés à un
+  ancien chargé de succès client sont isolés, avec leur nombre et leur revenu
+  récurrent, pour être réaffectés.
+- Classement des comptes aux plus forts volumes de tickets ouverts. Aucun seuil
+  de bonne ou mauvaise santé n’est appliqué à ce stade, les compteurs sont
+  exposés bruts.
+- Les étiquettes de churn du CRM sont désormais lues et exploitées.
+
+### Modifié
+
+- Les anciennes adresses du plan de charge et du pilotage CSM redirigent vers
+  la nouvelle section.
+
 ## 2026-09-05 — Charge d’implémentation réelle et pilotage CSM
 
 ### Corrigé

@@ -135,7 +135,7 @@ export default function PlanChargePage() {
     setLoading(true)
     setError(null)
 
-    fetch('/api/onboarding/plan-charge', { signal: controller.signal })
+    fetch('/api/csm/plan-charge', { signal: controller.signal })
       .then(response => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
         return response.json() as Promise<PlanChargeResponse>
@@ -155,7 +155,7 @@ export default function PlanChargePage() {
 
   async function reload() {
     try {
-      const response = await fetch('/api/onboarding/plan-charge')
+      const response = await fetch('/api/csm/plan-charge')
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       setData(await response.json())
     } catch {
@@ -177,7 +177,7 @@ export default function PlanChargePage() {
   async function postAssignment(body: Record<string, unknown>) {
     setActionError(null)
     try {
-      const response = await fetch('/api/onboarding/plan-charge/assignments', {
+      const response = await fetch('/api/csm/plan-charge/assignments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -198,7 +198,7 @@ export default function PlanChargePage() {
   async function postRoster(body: Record<string, unknown>) {
     setActionError(null)
     try {
-      const response = await fetch('/api/onboarding/plan-charge/roster', {
+      const response = await fetch('/api/csm/plan-charge/roster', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

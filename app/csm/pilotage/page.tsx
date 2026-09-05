@@ -94,6 +94,43 @@ interface CsmPortfolioRow {
   goLivesThisMonth: number
 }
 
+interface CsmDashboardBucket {
+  accounts: number
+  liveAccounts: number
+  mrr: number
+  groupAccounts: number
+  individualAccounts: number
+  churnByVintage: Record<string, number>
+  churnMrrByVintage: Record<string, number>
+  openTickets: number
+  tickets6m: number
+}
+
+interface CsmDashboardRow extends CsmDashboardBucket {
+  csmName: string
+}
+
+interface AccountHealthRow {
+  accountId: string
+  accountName: string
+  csmName: string | null
+  mrr: number
+  openTickets: number
+  tickets6m: number
+}
+
+interface CsmDashboard {
+  global: CsmDashboardBucket
+  byCsm: CsmDashboardRow[]
+  unmanaged: CsmDashboardBucket & { ownerLabels: string[] }
+  accountHealth: AccountHealthRow[]
+  diagnostics: {
+    accountsWithoutCsm: number
+    unresolvedCsm: Array<{ accountId: string; accountName: string; rawCsm: string }>
+    accountsWithoutTicketMatch: number
+  }
+}
+
 interface PlanChargeResponse {
   referenceDate: string
   currentMonth: string
@@ -112,6 +149,19 @@ interface PlanChargeResponse {
   diagnostics: Record<string, unknown>
   dealsTruncated: boolean
   warnings: string[]
+  csmDashboard?: CsmDashboard
+}
+
+const EUR_FORMATTER = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
+
+function formatEuros(value: number): string {
+  return EUR_FORMATTER.format(value)
+}
+
+function currentChurnVintageKey(currentMonth: string): string | null {
+  const match = /^(\d{4})-\d{2}$/.exec(currentMonth)
+  if (!match) return null
+  return `churn${match[1].slice(2)}`
 }
 
 export default function CsmPage() {
@@ -127,7 +177,7 @@ export default function CsmPage() {
     setLoading(true)
     setError(null)
 
-    fetch('/api/onboarding/plan-charge', { signal: controller.signal })
+    fetch('/api/csm/plan-charge', { signal: controller.signal })
       .then(response => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
         return response.json() as Promise<PlanChargeResponse>
@@ -147,7 +197,7 @@ export default function CsmPage() {
 
   async function reload() {
     try {
-      const response = await fetch('/api/onboarding/plan-charge')
+      const response = await fetch('/api/csm/plan-charge')
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       setData(await response.json())
     } catch {
@@ -169,7 +219,7 @@ export default function CsmPage() {
   async function postAssignment(body: Record<string, unknown>) {
     setActionError(null)
     try {
-      const response = await fetch('/api/onboarding/plan-charge/assignments', {
+      const response = await fetch('/api/csm/plan-charge/assignments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -188,7 +238,7 @@ export default function CsmPage() {
   async function postRoster(body: Record<string, unknown>) {
     setActionError(null)
     try {
-      const response = await fetch('/api/onboarding/plan-charge/roster', {
+      const response = await fetch('/api/csm/plan-charge/roster', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -209,10 +259,6 @@ export default function CsmPage() {
     [data],
   )
   const csmPortfolios = useMemo(() => data?.csmPortfolios ?? [], [data])
-  const portfolioAccounts = useMemo(
-    () => csmPortfolios.reduce((sum, row) => sum + row.liveAccounts, 0),
-    [csmPortfolios],
-  )
   const attentionProjectsTotal = useMemo(
     () => csmPortfolios.reduce((sum, row) => sum + row.attentionProjects, 0),
     [csmPortfolios],
@@ -229,7 +275,7 @@ export default function CsmPage() {
           <div className="min-w-0">
             <h1 className="text-2xl font-bold tracking-tight text-[#1a1a1a]">{t('Pilotage CSM')}</h1>
             <p className="mt-1 text-sm text-[#696969]">
-              {t('Suit le portefeuille, la charge et la montée en charge de l’équipe CSM.')}
+              {t('Suit le portefeuille, le MRR, le churn, la santé de compte, la charge et la montée en charge de l’équipe CSM.')}
             </p>
           </div>
           <nav className="inline-flex max-w-full overflow-x-auto rounded-lg border border-[#ded8e8] bg-[#f7f5fa] p-1" aria-label={t('Vues CSM')}>
@@ -260,9 +306,21 @@ export default function CsmPage() {
             )}
             {actionError && <p role="alert" className="rounded-lg border border-[#f1b4b0] bg-[#fff1f0] px-4 py-3 text-xs font-medium text-[#b7221b]">{actionError}</p>}
 
-            <section aria-label={t('Indicateurs clés')} className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            {data.csmDashboard && data.csmDashboard.unmanaged.accounts > 0 && (
+              <UnmanagedPortfolioBanner unmanaged={data.csmDashboard.unmanaged} />
+            )}
+
+            <CsmDashboardOverviewSection dashboard={data.csmDashboard} currentMonth={data.currentMonth} />
+
+            <CsmDashboardByCsmSection dashboard={data.csmDashboard} currentMonth={data.currentMonth} />
+
+            <AccountHealthSection dashboard={data.csmDashboard} />
+
+            {/* Indicateurs de charge d'équipe, placés au contact du bloc de charge
+                qu'ils qualifient. « Comptes en portefeuille » a été retiré : la carte
+                « Comptes clients » de la vue d'ensemble porte déjà cette information. */}
+            <section aria-label={t('Charge de l’équipe')} className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <KpiCard label={t('CSM disponibles')} value={formatNumber(availableCsmCount, locale)} subtitle={t('Dispo ou relâche')} />
-              <KpiCard label={t('Comptes en portefeuille')} value={formatNumber(portfolioAccounts, locale)} subtitle={t('Comptes live rattachés à un CSM')} />
               <KpiCard label={t('À surveiller')} value={formatNumber(attentionProjectsTotal, locale)} subtitle={t('Bloqués, en retard ou risque élevé/critique')} accent={attentionProjectsTotal > 0 ? 'text-[#b7221b]' : undefined} />
               <KpiCard label={t('Reprises du mois')} value={formatNumber(goLivesThisMonthTotal, locale)} subtitle={t('Passation ou go-live sur le mois courant')} />
               <KpiCard label={t('Mois au-dessus du plafond')} value={formatNumber(data.csmOverloads.length, locale)} subtitle={t('Occurrences mois × CSM')} accent={data.csmOverloads.length > 0 ? 'text-[#b7221b]' : undefined} />
@@ -291,6 +349,178 @@ function KpiCard({ label, value, subtitle, accent }: { label: string; value: str
       <p className={`mt-2 truncate text-3xl font-bold tracking-tight ${accent ?? 'text-[#1a1a1a]'}`}>{value}</p>
       <p className="mt-2 min-h-8 text-xs leading-4 text-[#8a8a8a]">{subtitle}</p>
     </article>
+  )
+}
+
+function UnmanagedPortfolioBanner({ unmanaged }: { unmanaged: CsmDashboard['unmanaged'] }) {
+  const { t } = useLocale()
+  return (
+    <div role="alert" className="rounded-lg border border-[#f0c756] bg-[#fbf1ca] px-4 py-3 text-sm text-[#84550e]">
+      <p className="font-semibold">
+        {t('{count} comptes à réattribuer ({mrr} de MRR)')
+          .replace('{count}', formatNumber(unmanaged.accounts, 'fr'))
+          .replace('{mrr}', formatEuros(unmanaged.mrr))}
+      </p>
+      <p className="mt-1 text-xs leading-5">
+        {t('Ces comptes restent rattachés à un ancien CSM ({owners}) et n’ont donc pas de suivi réel : à réattribuer dans Zoho.')
+          .replace('{owners}', unmanaged.ownerLabels.join(', ') || '—')}
+      </p>
+    </div>
+  )
+}
+
+function CsmDashboardOverviewSection({ dashboard, currentMonth }: { dashboard: CsmDashboard | undefined; currentMonth: string }) {
+  const { locale, t } = useLocale()
+  const global = dashboard?.global
+  const vintageKey = currentChurnVintageKey(currentMonth)
+  const churnCount = global && vintageKey ? global.churnByVintage[vintageKey] ?? 0 : null
+  const churnMrr = global && vintageKey ? global.churnMrrByVintage[vintageKey] ?? 0 : null
+  const accountsWithoutCsm = dashboard?.diagnostics.accountsWithoutCsm ?? null
+
+  return (
+    <section aria-label={t('Vue d’ensemble')} className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+      <KpiCard label={t('MRR portefeuille')} value={global ? formatEuros(global.mrr) : '—'} subtitle={t('Tous comptes clients')} />
+      <KpiCard label={t('Comptes clients')} value={global ? formatNumber(global.accounts, locale) : '—'} subtitle={global ? `${formatNumber(global.liveAccounts, locale)} ${t('live')}` : '—'} />
+      <KpiCard label={t('Groupe / Indiv')} value={global ? formatNumber(global.groupAccounts, locale) : '—'} subtitle={global ? `${formatNumber(global.individualAccounts, locale)} ${t('individuels')}` : '—'} />
+      <KpiCard
+        label={t('Churn {year}').replace('{year}', vintageKey ? vintageKey.replace('churn', '20') : '—')}
+        value={churnCount !== null ? formatNumber(churnCount, locale) : '—'}
+        subtitle={churnMrr !== null ? formatEuros(churnMrr) : '—'}
+        accent={churnCount !== null && churnCount > 0 ? 'text-[#b7221b]' : undefined}
+      />
+      <KpiCard label={t('Tickets ouverts')} value={global ? formatNumber(global.openTickets, locale) : '—'} subtitle={global ? `${formatNumber(global.tickets6m, locale)} ${t('sur 6 mois')}` : '—'} />
+      <KpiCard
+        label={t('Comptes sans CSM')}
+        value={accountsWithoutCsm !== null ? formatNumber(accountsWithoutCsm, locale) : '—'}
+        subtitle={t('Diagnostic de rattachement')}
+        accent={accountsWithoutCsm !== null && accountsWithoutCsm > 0 ? 'text-[#b7221b]' : undefined}
+      />
+    </section>
+  )
+}
+
+function CsmDashboardByCsmSection({ dashboard, currentMonth }: { dashboard: CsmDashboard | undefined; currentMonth: string }) {
+  const { locale, t } = useLocale()
+  const vintageKey = currentChurnVintageKey(currentMonth)
+  const rows = useMemo(
+    () => dashboard ? [...dashboard.byCsm].sort((a, b) => b.mrr - a.mrr) : [],
+    [dashboard],
+  )
+
+  function churnTitle(row: CsmDashboardRow): string {
+    const entries = Object.entries(row.churnByVintage)
+    if (entries.length === 0) return t('Aucun churn')
+    return entries.map(([key, count]) => `${key} : ${count}`).join(', ')
+  }
+
+  function churnCount(row: CsmDashboardRow): number {
+    return vintageKey ? row.churnByVintage[vintageKey] ?? 0 : 0
+  }
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-[#e2e2e2] bg-white shadow-[0_4px_10px_rgba(36,25,55,0.05)]" aria-labelledby="csm-breakdown-title">
+      <div className="border-b border-[#e2e2e2] px-4 py-4 sm:px-5">
+        <h2 id="csm-breakdown-title" className="text-sm font-bold text-[#1a1a1a]">{t('Répartition par CSM')}</h2>
+      </div>
+
+      {!dashboard || rows.length === 0 ? (
+        <div className="p-8 text-center text-sm text-[#696969]">{t('Aucune donnée de portefeuille disponible.')}</div>
+      ) : (
+        <>
+          <div className="hidden overflow-x-auto md:block">
+            <table className="w-full min-w-[880px] text-sm">
+              <thead className="border-b border-[#e2e2e2] bg-[#f7f7f7]">
+                <tr>
+                  {[t('CSM'), t('MRR'), t('Comptes'), t('Groupe / Indiv'), t('Churn'), t('Tickets ouverts'), t('Tickets 6 mois')].map((heading, index) => (
+                    <th key={heading} className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-[#696969] ${index === 0 ? 'text-left' : 'text-center'}`}>{heading}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#e2e2e2]">
+                {rows.map(row => (
+                  <tr key={row.csmName} className="hover:bg-[#faf9f5]">
+                    <td className="px-4 py-3 font-semibold text-[#1a1a1a]">{row.csmName}</td>
+                    <td className="px-4 py-3 text-center tabular-nums text-[#4a4a4a]">{formatEuros(row.mrr)}</td>
+                    <td className="px-4 py-3 text-center tabular-nums text-[#4a4a4a]">
+                      {row.accounts}
+                      <span className="ml-1 text-[10px] font-normal text-[#8a8a8a]">({row.liveAccounts} {t('live')})</span>
+                    </td>
+                    <td className="px-4 py-3 text-center tabular-nums text-[#4a4a4a]">{row.groupAccounts} / {row.individualAccounts}</td>
+                    <td className={`px-4 py-3 text-center font-semibold tabular-nums ${churnCount(row) > 0 ? 'text-[#b7221b]' : 'text-[#878787]'}`} title={churnTitle(row)}>
+                      {churnCount(row)}
+                    </td>
+                    <td className={`px-4 py-3 text-center font-semibold tabular-nums ${row.openTickets > 0 ? 'text-[#b7221b]' : 'text-[#878787]'}`}>{row.openTickets}</td>
+                    <td className="px-4 py-3 text-center tabular-nums text-[#4a4a4a]">{row.tickets6m}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="divide-y divide-[#e2e2e2] md:hidden">
+            {rows.map(row => (
+              <article key={row.csmName} className="space-y-3 p-4">
+                <h3 className="font-semibold text-[#1a1a1a]">{row.csmName}</h3>
+                <dl className="grid grid-cols-3 gap-3 text-center">
+                  <PortfolioMetric label={t('MRR')} value={formatEuros(row.mrr)} />
+                  <PortfolioMetric label={t('Comptes')} value={`${row.accounts} (${row.liveAccounts} ${t('live')})`} />
+                  <PortfolioMetric label={t('Groupe / Indiv')} value={`${row.groupAccounts} / ${row.individualAccounts}`} />
+                  <PortfolioMetric label={t('Churn')} value={churnCount(row)} alert={churnCount(row) > 0} />
+                  <PortfolioMetric label={t('Tickets ouverts')} value={row.openTickets} alert={row.openTickets > 0} />
+                  <PortfolioMetric label={t('Tickets 6 mois')} value={row.tickets6m} />
+                </dl>
+              </article>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
+  )
+}
+
+function AccountHealthSection({ dashboard }: { dashboard: CsmDashboard | undefined }) {
+  const { locale, t } = useLocale()
+  const accountHealth = dashboard?.accountHealth ?? []
+  const accountsWithoutTicketMatch = dashboard?.diagnostics.accountsWithoutTicketMatch ?? null
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-[#e2e2e2] bg-white shadow-[0_4px_10px_rgba(36,25,55,0.05)]" aria-labelledby="account-health-title">
+      <div className="border-b border-[#e2e2e2] px-4 py-4 sm:px-5">
+        <h2 id="account-health-title" className="text-sm font-bold text-[#1a1a1a]">{t('Comptes à surveiller')}</h2>
+      </div>
+
+      {!dashboard || accountHealth.length === 0 ? (
+        <div className="p-8 text-center text-sm text-[#696969]">{t('Aucun compte à surveiller dans ce périmètre.')}</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] text-sm">
+            <thead className="border-b border-[#e2e2e2] bg-[#f7f7f7]">
+              <tr>
+                {[t('Compte'), t('CSM'), t('MRR'), t('Tickets ouverts'), t('Tickets 6 mois')].map((heading, index) => (
+                  <th key={heading} className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-[#696969] ${index === 0 ? 'text-left' : 'text-center'}`}>{heading}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#e2e2e2]">
+              {accountHealth.map(row => (
+                <tr key={row.accountId} className="hover:bg-[#faf9f5]">
+                  <td className="px-4 py-3 font-semibold text-[#1a1a1a]">{row.accountName}</td>
+                  <td className="px-4 py-3 text-center text-[#4a4a4a]">{row.csmName ?? '—'}</td>
+                  <td className="px-4 py-3 text-center tabular-nums text-[#4a4a4a]">{formatEuros(row.mrr)}</td>
+                  <td className="px-4 py-3 text-center font-semibold tabular-nums text-[#b7221b]">{row.openTickets}</td>
+                  <td className="px-4 py-3 text-center tabular-nums text-[#4a4a4a]">{formatNumber(row.tickets6m, locale)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <p className="border-t border-[#eeeeee] px-4 py-3 text-[11px] leading-4 text-[#8a8a8a] sm:px-5">
+        {t('Ce classement repose sur le volume de tickets ouverts : aucun seuil de bonne ou mauvaise santé n’est défini à ce stade. {count} comptes dont le nom Desk ne correspond pas exactement à un compte CRM ne sont pas rattachés.')
+          .replace('{count}', accountsWithoutTicketMatch !== null ? formatNumber(accountsWithoutTicketMatch, locale) : '—')}
+      </p>
+    </section>
   )
 }
 

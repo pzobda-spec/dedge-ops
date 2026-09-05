@@ -48,6 +48,8 @@ export interface CRMAccount {
   hotelCount: number | null
   /** Created_Time ramené à 'YYYY-MM-DD'. */
   createdTime: string | null
+  /** Noms des tags Zoho portés par le compte (ex. churn25). Tableau vide si aucun. */
+  tags: string[]
 }
 
 /** Accepte 'YYYY-MM-DD' ou une date ISO complète ; ne fabrique jamais de date à partir d'une valeur non reconnue. */
@@ -78,6 +80,7 @@ interface RawCRMAccount {
   Date_de_passation: string | null
   Nombre_d_h_tels: number | null
   Created_Time: string | null
+  Tag: Array<{ name: string; id: string }> | null
 }
 
 function mapRaw(a: RawCRMAccount): CRMAccount {
@@ -99,11 +102,12 @@ function mapRaw(a: RawCRMAccount): CRMAccount {
     handoverDate: toIsoDate(a.Date_de_passation),
     hotelCount: typeof a.Nombre_d_h_tels === 'number' && Number.isFinite(a.Nombre_d_h_tels) && a.Nombre_d_h_tels > 0 ? a.Nombre_d_h_tels : null,
     createdTime: toIsoDate(a.Created_Time),
+    tags: (a.Tag ?? []).map(tag => tag.name).filter(name => name.trim() !== ''),
   }
 }
 
 const FIELDS =
-  'Account_Name,MRR_Total,MRR_CSM_manual1,Plan,CSM,Billing_Country,LoungeUp_Client_ID,Parent_Account,Account_Type,Sub_Start_date,Date_de_passation,Nombre_d_h_tels,Created_Time'
+  'Account_Name,MRR_Total,MRR_CSM_manual1,Plan,CSM,Billing_Country,LoungeUp_Client_ID,Parent_Account,Account_Type,Sub_Start_date,Date_de_passation,Nombre_d_h_tels,Created_Time,Tag'
 
 export async function fetchCRMAccounts(perPage = 200): Promise<CRMAccount[]> {
   const data = await crmFetch<{ data: RawCRMAccount[] }>(`/Accounts?fields=${FIELDS}&per_page=${perPage}`)

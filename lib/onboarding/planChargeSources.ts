@@ -21,6 +21,7 @@ import {
 import type { ObMember, CsmMember } from '@/lib/onboarding/assignmentEngine'
 import type { CsmDirectoryEntry } from '@/lib/onboarding/csmDirectory'
 import type { AccountAssignmentOverride } from '@/lib/onboarding/pipeline'
+import { loadTicketCountsByAccountName, type TicketHealthCounts } from '@/lib/csm/ticketHealth'
 
 /** Fuseau métier du plan de charge. */
 const PLAN_CHARGE_TIME_ZONE = 'Europe/Paris'
@@ -41,6 +42,8 @@ export interface PlanChargeSources {
   overrides: AccountAssignmentOverride[]
   /** Barème de poids OB/CSM, chargé depuis `csm_assignment_rules` (repli sur `DEFAULT_WEIGHT_RULES` sinon). */
   weightRules: AssignmentWeightRule[]
+  /** Compteurs de tickets Desk par nom de compte normalisé, pour la santé de compte CSM. */
+  ticketsByAccountName: Map<string, TicketHealthCounts>
   /** Anomalies non bloquantes rencontrées au chargement, à afficher plutôt qu'à taire. */
   warnings: string[]
 }
@@ -228,12 +231,13 @@ export async function loadPlanChargeSources(): Promise<PlanChargeSources> {
   const warnings: string[] = []
   const referenceDate = planChargeReferenceDate()
 
-  const [zohoSources, obRoster, csmRosterAndDirectory, overrides, weightRules] = await Promise.all([
+  const [zohoSources, obRoster, csmRosterAndDirectory, overrides, weightRules, ticketsByAccountName] = await Promise.all([
     getPlanChargeZohoSources(),
     loadObRoster(warnings),
     loadCsmRosterAndDirectory(warnings),
     loadOverrides(warnings),
     loadWeightRules(warnings),
+    loadTicketCountsByAccountName(referenceDate, warnings),
   ])
 
   if (zohoSources.dealsTruncated) {
@@ -256,6 +260,7 @@ export async function loadPlanChargeSources(): Promise<PlanChargeSources> {
     csmDirectory: csmRosterAndDirectory.csmDirectory,
     overrides,
     weightRules,
+    ticketsByAccountName,
     warnings,
   }
 }
