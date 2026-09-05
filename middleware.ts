@@ -36,7 +36,9 @@ const RESTRICTED_ROUTES: Array<{ prefixes: string[]; roles: Role[] }> = [
   {
     prefixes: [
       '/onboarding',
+      '/csm',
       '/api/onboarding',
+      '/api/csm',
       '/api/zoho/projects',
       '/api/acuity',
       '/api/ai/onboarding-summary',
@@ -115,7 +117,7 @@ async function getMiddlewareUser(email: string): Promise<MiddlewareUser | null> 
 }
 
 function homePathForRole(role: Role | null): string {
-  if (role === 'csm_lead') return '/onboarding/csm'
+  if (role === 'csm_lead') return '/csm/pilotage'
   if (role === 'onboarder' || role === 'commercial_readonly') return '/onboarding'
   return '/dashboard'
 }

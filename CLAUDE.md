@@ -83,6 +83,8 @@ These routes redirect to the analytical dashboards:
 
 - `/tickets/[id]`, `/tickets/analytics`, `/tickets/analytics/other` → `/tickets`
 - `/escalations/analytics` → `/escalations`
+- `/onboarding/plan-charge` → `/csm/plan-charge`
+- `/onboarding/csm` → `/csm/pilotage`
 
 Keep the underlying Zoho/Linear read and action API routes: other modules and
 RAG workflows can still depend on them.

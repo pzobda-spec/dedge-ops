@@ -41,8 +41,15 @@ const navItems: NavItem[] = [
     children: [
       { href: '/onboarding', label: 'Projets' },
       { href: '/onboarding/pilotage', label: 'Pilotage' },
-      { href: '/onboarding/plan-charge', label: 'Plan de charge' },
-      { href: '/onboarding/csm', label: 'CSM' },
+    ],
+  },
+  {
+    href: '/csm',
+    label: 'CSM',
+    roles: ['admin', 'onboarder', 'commercial_readonly', 'csm_lead'],
+    children: [
+      { href: '/csm/pilotage', label: 'Pilotage' },
+      { href: '/csm/plan-charge', label: 'Plan de charge' },
     ],
   },
   { href: '/knowledge', label: 'Knowledge Base', roles: ['admin', 'support'], hidden: true },

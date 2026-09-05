@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
 
-export default function LegacyOnboardingCsmPage() {
+export default function CsmIndexRedirect() {
   redirect('/csm/pilotage')
 }

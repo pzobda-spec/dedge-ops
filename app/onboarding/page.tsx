@@ -437,8 +437,6 @@ export default function MesProjetsPage() {
             <button type="button" onClick={() => router.push('/onboarding/board')} aria-pressed="false" className="flex-none shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">Board</button>
             <button type="button" onClick={() => router.push('/onboarding/pilotage')} aria-pressed="false" className="flex-none shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Pilotage')}</button>
             <button type="button" onClick={() => router.push('/onboarding/clients')} aria-pressed="false" className="flex-none shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Clients')}</button>
-            <button type="button" onClick={() => router.push('/onboarding/plan-charge')} aria-pressed="false" className="flex-none shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Plan de charge')}</button>
-            <button type="button" onClick={() => router.push('/onboarding/csm')} aria-pressed="false" className="flex-none shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">CSM</button>
           </div>
         </div>
       </header>
