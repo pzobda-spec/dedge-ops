@@ -77,7 +77,10 @@ sans erreur, `npm run lint` sans avertissement, `npm run build` complet,
 - `lib/onboarding/pipeline.ts` : `buildPlanChargePipeline`, pur, construit le
   pipeline des comptes signés pas encore live et la table de continuité de
   groupe, avec des diagnostics détaillés.
-- `lib/onboarding/planChargeSources.ts` : chargement réel Zoho et Supabase.
+- `lib/onboarding/planChargeSources.ts` : chargement réel Zoho et Supabase,
+  barème inclus, lu depuis `csm_assignment_rules`.
+- `lib/onboarding/planCharge.ts` : `computePlanCharge`, enchaîne pipeline,
+  points de départ et moteur. C'est le point d'entrée de la route API.
 - `tests/plan-charge-pipeline.test.ts`.
 
 ## Décisions tranchées
@@ -129,17 +132,33 @@ sans erreur, `npm run lint` sans avertissement, `npm run build` complet,
 - Les points de départ du mois CSM sont dérivés de `onboarding_projects`, via
   `csm_assigned_at` dans le mois courant. À valider avec le métier.
 
+### Arbitrages métier du 05/09, vérifiés dans Zoho (spec §9)
+
+- `dmbookOnly` est vrai si et seulement si `Plan` vaut exactement
+  `["Dmbook"]`. La valeur métier est `"Dmbook"`, pas `"Dmbook Pro"`.
+- Les points de départ du mois CSM s'indexent sur `Date_de_passation`, à défaut
+  le go-live réel du projet, à défaut `Sub_Start_date`. On n'utilise PAS
+  `onboarding_projects.csm_assigned_at` : le barème compte les points à la
+  passation et la projection est indexée sur le go-live, mélanger les deux axes
+  placerait mal un compte attribué ce mois mais live le mois suivant.
+- Les ids utilisateurs Zoho sont posés par
+  `20260905160000_csm_zoho_user_ids.sql`, qui insère aussi Harmony (15) et
+  Astrid (8), absents du seed de la migration 016.
+- Piège de résolution : une « Anne-Sophie Paillard » existe côté Zoho, à ne
+  jamais confondre avec Anne-Charlotte. Couvert par un test.
+- `computePlanCharge` calcule les points de départ APRÈS le pipeline, en
+  excluant ses comptes. Sans cette exclusion, un compte dont la date de
+  démarrage tombe plus tard dans le mois courant pèserait deux fois sur ce
+  mois.
+
 ## À confirmer avec le métier
 
 - Faut-il ajouter des CSM à `csm_capacity_rules` (le prototype citait Harmony
   et Astrid, plafond 8) et quelle capacité CSM pour Winli ?
-- Les ids utilisateurs Zoho des CSM restent à renseigner dans
-  `csm_capacity_rules.zoho_user_id`. Tant qu'ils sont vides, la résolution
-  repose sur les noms et les alias, ce qui est moins fiable.
-- La dérivation de `dmbookOnly` depuis le champ `Plan` du compte est-elle
-  correcte ?
-- « La charge déjà attribuée ce mois » côté CSM, faut-il bien la lire sur
-  `csm_assigned_at` du mois courant, ou sur la date de go-live ?
+- Les plafonds de Harmony (15) et Astrid (8) viennent du prototype de
+  référence : à confirmer avec la team lead CSM. Ils sont éditables depuis le
+  roster.
+- Capacité CSM de Winli, toujours à définir.
 
 ## Reste à faire
 

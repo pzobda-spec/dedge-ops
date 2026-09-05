@@ -25,10 +25,20 @@ il n’est toujours pas exposé dans l’interface.
   signatures non datées, chargés de succès client non résolus, groupes sans
   continuité identifiable.
 
+- Barème de pondération lu depuis les règles en base plutôt que depuis une
+  constante du code.
+- Ids utilisateurs Zoho des chargés de succès client et des implémenteurs, qui
+  fiabilisent la résolution des noms. Deux chargées de succès client
+  supplémentaires ajoutées au roster.
+
 ### Corrigé
 
 - Un compte dont la date de signature est postérieure au go-live ne disparaît
   plus de la projection de charge.
+- Un compte dont la date de démarrage tombe plus tard dans le mois courant
+  n’est plus compté deux fois sur ce mois.
+- Un compte n’est considéré comme « Dmbook seul » que si son offre est
+  exactement Dmbook, et non dès qu’elle contient Dmbook.
 
 ## 2026-09-05 — Moteur d’attribution et anticipation de charge OB / CSM
 

@@ -17,7 +17,13 @@
 import { distance } from 'fastest-levenshtein'
 import type { CRMAccount, ZohoWonDeal } from '@/lib/zoho/crmClient'
 import type { OnboardingProject } from '@/lib/zoho/projectsClient'
-import { tierFromSegment, type AccountTier } from '@/lib/onboarding/capacityModel'
+import {
+  tierFromSegment,
+  weightForAccount,
+  DEFAULT_WEIGHT_RULES,
+  type AccountTier,
+  type AssignmentWeightRule,
+} from '@/lib/onboarding/capacityModel'
 import type { PipelineAccount } from '@/lib/onboarding/assignmentEngine'
 import { resolveCsmName, type CsmDirectoryEntry } from '@/lib/onboarding/csmDirectory'
 
@@ -119,6 +125,65 @@ function accountLabelSimilarity(left: string, right: string): number {
 
 function isPositiveInteger(value: number | null): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0
+}
+
+/** Forme de compte dérivée, réutilisée par le pipeline et par `computeCurrentMonthBasePoints`. */
+interface DerivedAccountShape {
+  tier: AccountTier
+  groupId: string | null
+  isGroup: boolean
+  hotels: number
+  hotelsSource: PlanChargePipelineEntry['hotelsSource']
+  hotelsFromFallback: boolean
+  dmbookOnly: boolean
+}
+
+/**
+ * Dérive la forme d'un compte (tier, groupe, nombre d'hôtels, dmbookOnly) à
+ * partir du compte CRM et de l'index des enfants par parent.
+ *
+ * `dmbookOnly` (spec §9.1, vérifiée sur données réelles) : vrai si et
+ * seulement si `Plan` vaut exactement `["Dmbook"]` — Dmbook et rien d'autre.
+ * Valeurs de `Plan` observées : Insight, Enterprise, Dmbook, Communication,
+ * Sentinel, WhatsApp, Guest Survey, Loyalty Programme. Attention, la valeur
+ * est "Dmbook", pas "Dmbook Pro".
+ */
+function deriveAccountShape(
+  account: CRMAccount,
+  childrenByParentId: Map<string, CRMAccount[]>,
+): DerivedAccountShape {
+  const tier: AccountTier = tierFromSegment(account.segment)
+
+  const groupId: string | null = account.parentId
+    ? account.parentId
+    : (childrenByParentId.get(account.id)?.length ?? 0) > 0
+      ? account.id
+      : null
+  const isGroup = groupId !== null
+
+  let hotels: number
+  let hotelsSource: PlanChargePipelineEntry['hotelsSource']
+  let hotelsFromFallback = false
+  if (isPositiveInteger(account.hotelCount)) {
+    hotels = account.hotelCount
+    hotelsSource = 'zoho_field'
+  } else if (account.parentId) {
+    const siblings = childrenByParentId.get(account.parentId) ?? []
+    hotels = Math.max(1, siblings.length)
+    hotelsSource = 'sibling_count'
+    hotelsFromFallback = true
+  } else if ((childrenByParentId.get(account.id)?.length ?? 0) > 0) {
+    hotels = childrenByParentId.get(account.id)!.length
+    hotelsSource = 'children_count'
+    hotelsFromFallback = true
+  } else {
+    hotels = 1
+    hotelsSource = 'default'
+  }
+  const plan = account.plan ?? []
+  const dmbookOnly = plan.length === 1 && normalizeForSimilarity(plan[0]) === 'dmbook'
+
+  return { tier, groupId, isGroup, hotels, hotelsSource, hotelsFromFallback, dmbookOnly }
 }
 
 export function buildPlanChargePipeline(input: PlanChargePipelineInput): PlanChargePipelineResult {
@@ -285,37 +350,9 @@ export function buildPlanChargePipeline(input: PlanChargePipelineInput): PlanCha
   const entries: PlanChargePipelineEntry[] = []
 
   for (const account of selected) {
-    const tier: AccountTier = tierFromSegment(account.segment)
-
-    const groupId: string | null = account.parentId
-      ? account.parentId
-      : (childrenByParentId.get(account.id)?.length ?? 0) > 0
-        ? account.id
-        : null
-    const isGroup = groupId !== null
-
-    let hotels: number
-    let hotelsSource: PlanChargePipelineEntry['hotelsSource']
-    if (isPositiveInteger(account.hotelCount)) {
-      hotels = account.hotelCount
-      hotelsSource = 'zoho_field'
-    } else if (account.parentId) {
-      const siblings = childrenByParentId.get(account.parentId) ?? []
-      hotels = Math.max(1, siblings.length)
-      hotelsSource = 'sibling_count'
-      hotelsFromFallback += 1
-    } else if ((childrenByParentId.get(account.id)?.length ?? 0) > 0) {
-      hotels = childrenByParentId.get(account.id)!.length
-      hotelsSource = 'children_count'
-      hotelsFromFallback += 1
-    } else {
-      hotels = 1
-      hotelsSource = 'default'
-    }
-
-    const plan = account.plan ?? []
-    const dmbookOnly =
-      plan.length > 0 && plan.every(entry => normalizeForSimilarity(entry).includes('dmbook'))
+    const { tier, groupId, isGroup, hotels, hotelsSource, hotelsFromFallback: isFallback, dmbookOnly } =
+      deriveAccountShape(account, childrenByParentId)
+    if (isFallback) hotelsFromFallback += 1
 
     const expectedGoLiveMonth = account.subStartDate!.slice(0, 7)
 
@@ -453,4 +490,124 @@ export function buildPlanChargePipeline(input: PlanChargePipelineInput): PlanCha
     groupContinuity,
     diagnostics,
   }
+}
+
+/** Entrée de `computeCurrentMonthBasePoints`. */
+export interface CurrentMonthBasePointsInput {
+  accounts: readonly CRMAccount[]
+  projects: readonly OnboardingProject[]
+  csmDirectory: readonly CsmDirectoryEntry[]
+  weightRules?: readonly AssignmentWeightRule[]
+  /** Mois courant, 'YYYY-MM'. */
+  currentMonth: string
+  /**
+   * Comptes à ne pas compter, typiquement ceux encore au pipeline. Leur poids
+   * sera ajouté par le moteur au mois de go-live : les compter ici aussi les
+   * ferait peser deux fois sur le mois courant.
+   */
+  excludeAccountIds?: ReadonlySet<string>
+}
+
+/** Résultat de `computeCurrentMonthBasePoints`. */
+export interface CurrentMonthBasePointsResult {
+  /** Nom canonique de CSM -> points déjà attribués sur le mois courant. */
+  pointsByCsm: Record<string, number>
+  /** Comptes retenus dans le calcul. */
+  accountsCounted: number
+  /** Comptes retenus dont le CSM n'a pas pu être résolu : leurs points ne sont comptés nulle part. */
+  unresolvedCsm: { accountId: string; accountName: string; rawCsm: string }[]
+}
+
+/**
+ * Points de départ du mois courant par CSM (spec §9.2, tranchée sur données
+ * réelles) : la base du mois courant est la somme des poids des comptes dont
+ * `Date_de_passation` tombe dans le mois courant, à défaut leur go-live. On
+ * n'utilise PAS `onboarding_projects.csm_assigned_at` : le barème compte les
+ * points à la passation, et toute la projection est indexée sur le go-live ;
+ * mélanger les deux axes placerait mal un compte attribué ce mois mais live
+ * le mois suivant.
+ *
+ * Fonction pure : aucun appel réseau, aucune horloge, aucune mutation des
+ * entrées.
+ */
+export function computeCurrentMonthBasePoints(
+  input: CurrentMonthBasePointsInput,
+): CurrentMonthBasePointsResult {
+  const { accounts, projects, csmDirectory, currentMonth } = input
+  const weightRules = input.weightRules ?? DEFAULT_WEIGHT_RULES
+  const excluded = input.excludeAccountIds ?? new Set<string>()
+
+  const childrenByParentId = new Map<string, CRMAccount[]>()
+  for (const account of accounts) {
+    if (!account.parentId) continue
+    const siblings = childrenByParentId.get(account.parentId) ?? []
+    siblings.push(account)
+    childrenByParentId.set(account.parentId, siblings)
+  }
+
+  // Index compte -> go-live effectif, par accountCRMId en priorité, sinon par
+  // égalité stricte de nom normalisé (jamais matchAccountByName de
+  // clientResolver, trop permissif pour cet usage). Garde le go-live le plus
+  // ancien en cas de projets multiples.
+  const accountsByNormalizedName = new Map<string, CRMAccount[]>()
+  for (const account of accounts) {
+    const key = normalizeAccountName(account.name)
+    const list = accountsByNormalizedName.get(key) ?? []
+    list.push(account)
+    accountsByNormalizedName.set(key, list)
+  }
+
+  const goLiveByAccountId = new Map<string, string>()
+  const registerGoLive = (accountId: string, goLive: string) => {
+    const existing = goLiveByAccountId.get(accountId)
+    if (!existing || goLive < existing) goLiveByAccountId.set(accountId, goLive)
+  }
+
+  for (const project of projects) {
+    if (!project.actualGoLiveDate) continue
+    if (project.accountCRMId) {
+      registerGoLive(project.accountCRMId, project.actualGoLiveDate)
+      continue
+    }
+    if (!project.accountCRMName) continue
+    const candidates = accountsByNormalizedName.get(normalizeAccountName(project.accountCRMName)) ?? []
+    if (candidates.length === 1) {
+      registerGoLive(candidates[0].id, project.actualGoLiveDate)
+    }
+  }
+
+  const pointsByCsm: Record<string, number> = {}
+  const unresolvedCsm: CurrentMonthBasePointsResult['unresolvedCsm'] = []
+  let accountsCounted = 0
+
+  for (const account of accounts) {
+    if (excluded.has(account.id)) continue
+
+    const effectiveMonth = account.handoverDate
+      ? account.handoverDate.slice(0, 7)
+      : goLiveByAccountId.has(account.id)
+        ? goLiveByAccountId.get(account.id)!.slice(0, 7)
+        : account.subStartDate
+          ? account.subStartDate.slice(0, 7)
+          : null
+
+    if (effectiveMonth === null || effectiveMonth !== currentMonth) continue
+
+    accountsCounted += 1
+
+    const rawCsm = account.csm
+    const resolution = resolveCsmName(csmDirectory, { name: account.csm, userId: account.csmUserId })
+    if (!resolution.csmName) {
+      if (rawCsm && rawCsm.trim()) {
+        unresolvedCsm.push({ accountId: account.id, accountName: account.name, rawCsm: rawCsm.trim() })
+      }
+      continue
+    }
+
+    const shape = deriveAccountShape(account, childrenByParentId)
+    const points = weightForAccount(weightRules, shape)
+    pointsByCsm[resolution.csmName] = (pointsByCsm[resolution.csmName] ?? 0) + points
+  }
+
+  return { pointsByCsm, accountsCounted, unresolvedCsm }
 }

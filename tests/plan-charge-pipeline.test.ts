@@ -9,10 +9,12 @@ import {
 } from '@/lib/onboarding/csmDirectory'
 import {
   buildPlanChargePipeline,
+  computeCurrentMonthBasePoints,
   type AccountAssignmentOverride,
   type PlanChargePipelineInput,
 } from '@/lib/onboarding/pipeline'
 import { runAssignmentEngine } from '@/lib/onboarding/assignmentEngine'
+import { DEFAULT_WEIGHT_RULES } from '@/lib/onboarding/capacityModel'
 
 function makeAccount(overrides: Partial<CRMAccount> = {}): CRMAccount {
   return {
@@ -142,6 +144,36 @@ test('resolveCsmName renvoie non résolu sur libellé inconnu, et sur ambiguït�
   const ambiguous = resolveCsmName(ambiguousDirectory, { name: 'X' })
   assert.equal(ambiguous.csmName, null)
   assert.equal(ambiguous.matchedBy, null)
+})
+
+test('resolveCsmName : "Anne-Sophie Paillard" ne se résout pas vers Anne-Charlotte', () => {
+  // Piège de résolution documenté en spec §9.3 : un homonyme partiel de
+  // prénom ("Anne-") existe côté Zoho (Anne-Sophie Paillard) et ne doit
+  // jamais être confondu avec Anne-Charlotte lors de la résolution par jeton.
+  const directory = makeDirectory()
+  const result = resolveCsmName(directory, { name: 'Anne-Sophie Paillard' })
+  assert.equal(result.csmName, null)
+  assert.equal(result.matchedBy, null)
+})
+
+test('resolveCsmName : "Acero Vela" se résout vers Deydra via l\'alias composé, "Harmony Telli" via jeton', () => {
+  const directory: CsmDirectoryEntry[] = [
+    ...makeDirectory(),
+    { csmName: 'Harmony', zohoUserId: 'u-harmony', aliases: ['Telli'] },
+    { csmName: 'Astrid', zohoUserId: 'u-astrid', aliases: ['Lapeyre'] },
+  ]
+  // Deydra a l'alias composé "Acero Vela" en plus de "Acero".
+  const withComposedAlias = directory.map(entry =>
+    entry.csmName === 'Deydra' ? { ...entry, aliases: ['Acero', 'Acero Vela'] } : entry,
+  )
+
+  const aceroVela = resolveCsmName(withComposedAlias, { name: 'Acero Vela' })
+  assert.equal(aceroVela.csmName, 'Deydra')
+  assert.equal(aceroVela.matchedBy, 'alias')
+
+  const harmonyTelli = resolveCsmName(withComposedAlias, { name: 'Harmony Telli' })
+  assert.equal(harmonyTelli.csmName, 'Harmony')
+  assert.equal(harmonyTelli.matchedBy, 'token')
 })
 
 test('sélection : Client avec Sub_Start_date future et sans projet live entre dans le pipeline', () => {
@@ -302,20 +334,35 @@ test('deals : nom sous le seuil n\'est pas apparié, aucune date erronée', () =
   assert.equal(result.diagnostics.dealsMatched, 0)
 })
 
-test('dmbookOnly : plan uniquement Dmbook est marqué, plan mixte ne l\'est pas', () => {
-  const dmbookOnly = buildPlanChargePipeline(
+test('dmbookOnly : vrai seulement si Plan vaut exactement ["Dmbook"] (spec §9.1)', () => {
+  const exact = buildPlanChargePipeline(
     baseInput({
-      accounts: [makeAccount({ id: 'a1', subStartDate: '2027-01-01', plan: ['Dmbook Pro', 'DMBOOK'] })],
+      accounts: [makeAccount({ id: 'a1', subStartDate: '2027-01-01', plan: ['Dmbook'] })],
     }),
   )
-  assert.equal(dmbookOnly.pipeline[0].dmbookOnly, true)
+  assert.equal(exact.pipeline[0].dmbookOnly, true)
 
-  const mixed = buildPlanChargePipeline(
+  const withOther = buildPlanChargePipeline(
     baseInput({
-      accounts: [makeAccount({ id: 'a1', subStartDate: '2027-01-01', plan: ['Dmbook Pro', 'Enterprise'] })],
+      accounts: [makeAccount({ id: 'a1', subStartDate: '2027-01-01', plan: ['Dmbook', 'Insight'] })],
     }),
   )
-  assert.equal(mixed.pipeline[0].dmbookOnly, false)
+  assert.equal(withOther.pipeline[0].dmbookOnly, false)
+
+  // La valeur métier est "Dmbook", pas "Dmbook Pro" : ce dernier n'est jamais dmbookOnly.
+  const dmbookPro = buildPlanChargePipeline(
+    baseInput({
+      accounts: [makeAccount({ id: 'a1', subStartDate: '2027-01-01', plan: ['Dmbook Pro'] })],
+    }),
+  )
+  assert.equal(dmbookPro.pipeline[0].dmbookOnly, false)
+
+  const empty = buildPlanChargePipeline(
+    baseInput({
+      accounts: [makeAccount({ id: 'a1', subStartDate: '2027-01-01', plan: [] })],
+    }),
+  )
+  assert.equal(empty.pipeline[0].dmbookOnly, false)
 })
 
 test('overrides : override verrouillé repris, override non verrouillé ignoré', () => {
@@ -389,4 +436,200 @@ test('déterminisme : deux appels identiques donnent des résultats deepEqual, s
   const second = buildPlanChargePipeline(input)
   assert.deepEqual(first, second)
   assert.deepEqual(accounts, accountsCopy)
+})
+
+test('computeCurrentMonthBasePoints : Date_de_passation dans le mois courant compte ses points sur le CSM résolu', () => {
+  const result = computeCurrentMonthBasePoints({
+    accounts: [
+      makeAccount({ id: 'a1', segment: 'Silver', plan: ['Enterprise'], csm: 'Rohaut', handoverDate: '2026-09-12' }),
+    ],
+    projects: [],
+    csmDirectory: makeDirectory(),
+    currentMonth: '2026-09',
+  })
+  assert.equal(result.pointsByCsm['Ghislaine'], 3) // Silver Individuel
+  assert.equal(result.accountsCounted, 1)
+  assert.deepEqual(result.unresolvedCsm, [])
+})
+
+test('computeCurrentMonthBasePoints : Date_de_passation prime sur le go-live du projet sur des mois différents', () => {
+  const result = computeCurrentMonthBasePoints({
+    accounts: [
+      makeAccount({
+        id: 'a1',
+        segment: 'Silver',
+        plan: ['Enterprise'],
+        csm: 'Rohaut',
+        handoverDate: '2026-09-12',
+        subStartDate: '2026-10-01',
+      }),
+    ],
+    projects: [makeProject({ accountCRMId: 'a1', actualGoLiveDate: '2026-10-05' })],
+    csmDirectory: makeDirectory(),
+    currentMonth: '2026-09',
+  })
+  assert.equal(result.pointsByCsm['Ghislaine'], 3)
+  assert.equal(result.accountsCounted, 1)
+
+  const otherMonth = computeCurrentMonthBasePoints({
+    accounts: [
+      makeAccount({
+        id: 'a1',
+        segment: 'Silver',
+        plan: ['Enterprise'],
+        csm: 'Rohaut',
+        handoverDate: '2026-09-12',
+        subStartDate: '2026-10-01',
+      }),
+    ],
+    projects: [makeProject({ accountCRMId: 'a1', actualGoLiveDate: '2026-10-05' })],
+    csmDirectory: makeDirectory(),
+    currentMonth: '2026-10',
+  })
+  assert.equal(otherMonth.pointsByCsm['Ghislaine'], undefined)
+  assert.equal(otherMonth.accountsCounted, 0)
+})
+
+test('computeCurrentMonthBasePoints : sans Date_de_passation, repli sur le go-live du projet, sinon sur subStartDate', () => {
+  const withGoLive = computeCurrentMonthBasePoints({
+    accounts: [
+      makeAccount({ id: 'a1', segment: 'Gold', plan: ['Enterprise'], csm: 'Rohaut', handoverDate: null, subStartDate: '2026-11-01' }),
+    ],
+    projects: [makeProject({ accountCRMId: 'a1', actualGoLiveDate: '2026-09-20' })],
+    csmDirectory: makeDirectory(),
+    currentMonth: '2026-09',
+  })
+  assert.equal(withGoLive.pointsByCsm['Ghislaine'], 5) // Gold Individuel
+  assert.equal(withGoLive.accountsCounted, 1)
+
+  const withSubStartOnly = computeCurrentMonthBasePoints({
+    accounts: [
+      makeAccount({ id: 'a1', segment: 'Gold', plan: ['Enterprise'], csm: 'Rohaut', handoverDate: null, subStartDate: '2026-09-20' }),
+    ],
+    projects: [],
+    csmDirectory: makeDirectory(),
+    currentMonth: '2026-09',
+  })
+  assert.equal(withSubStartOnly.pointsByCsm['Ghislaine'], 5)
+  assert.equal(withSubStartOnly.accountsCounted, 1)
+})
+
+test('computeCurrentMonthBasePoints : un compte d\'un autre mois n\'est pas compté', () => {
+  const result = computeCurrentMonthBasePoints({
+    accounts: [
+      makeAccount({ id: 'a1', segment: 'Gold', plan: ['Enterprise'], csm: 'Rohaut', handoverDate: '2026-08-01' }),
+    ],
+    projects: [],
+    csmDirectory: makeDirectory(),
+    currentMonth: '2026-09',
+  })
+  assert.equal(result.accountsCounted, 0)
+  assert.deepEqual(result.pointsByCsm, {})
+})
+
+test('computeCurrentMonthBasePoints : un CSM non résolu place le compte dans unresolvedCsm sans compter ses points', () => {
+  const result = computeCurrentMonthBasePoints({
+    accounts: [
+      makeAccount({ id: 'a1', name: 'Compte Test', segment: 'Gold', plan: ['Enterprise'], csm: 'Nom Inconnu', handoverDate: '2026-09-01' }),
+    ],
+    projects: [],
+    csmDirectory: makeDirectory(),
+    currentMonth: '2026-09',
+  })
+  assert.deepEqual(result.pointsByCsm, {})
+  assert.equal(result.accountsCounted, 1)
+  assert.deepEqual(result.unresolvedCsm, [{ accountId: 'a1', accountName: 'Compte Test', rawCsm: 'Nom Inconnu' }])
+})
+
+test('computeCurrentMonthBasePoints : le barème passé en weightRules est bien celui utilisé', () => {
+  const account = makeAccount({ id: 'a1', segment: 'Silver', plan: ['Enterprise'], csm: 'Rohaut', handoverDate: '2026-09-01' })
+
+  const withDefault = computeCurrentMonthBasePoints({
+    accounts: [account],
+    projects: [],
+    csmDirectory: makeDirectory(),
+    currentMonth: '2026-09',
+  })
+  assert.equal(withDefault.pointsByCsm['Ghislaine'], 3)
+
+  const customRules = DEFAULT_WEIGHT_RULES.map(rule =>
+    rule.tier === 'Silver' && rule.customerType === 'Individuel' ? { ...rule, points: 42 } : rule,
+  )
+  const withCustom = computeCurrentMonthBasePoints({
+    accounts: [account],
+    projects: [],
+    csmDirectory: makeDirectory(),
+    weightRules: customRules,
+    currentMonth: '2026-09',
+  })
+  assert.equal(withCustom.pointsByCsm['Ghislaine'], 42)
+})
+
+test('un compte encore au pipeline n\'est pas compté aussi dans les points de départ du mois', () => {
+  // Piège de double comptage : un compte dont la date de démarrage tombe plus
+  // tard dans le mois courant est à la fois au pipeline et sur le mois courant.
+  // Le moteur ajoutera son poids au mois de go-live ; le compter en base le
+  // ferait peser deux fois sur le même mois.
+  const directory: CsmDirectoryEntry[] = [{ csmName: 'Ghislaine', zohoUserId: null, aliases: ['Rohaut'] }]
+  const account = makeAccount({
+    id: 'acc-futur',
+    name: 'Hotel Bientot',
+    csm: 'Rohaut',
+    subStartDate: '2026-09-20',
+    handoverDate: null,
+  })
+
+  const pipeline = buildPlanChargePipeline({
+    accounts: [account],
+    projects: [],
+    csmDirectory: directory,
+    referenceDate: '2026-09-05',
+  })
+  assert.equal(pipeline.pipeline.length, 1)
+
+  const sansExclusion = computeCurrentMonthBasePoints({
+    accounts: [account],
+    projects: [],
+    csmDirectory: directory,
+    currentMonth: '2026-09',
+  })
+  assert.equal(sansExclusion.pointsByCsm['Ghislaine'], 3)
+
+  const avecExclusion = computeCurrentMonthBasePoints({
+    accounts: [account],
+    projects: [],
+    csmDirectory: directory,
+    currentMonth: '2026-09',
+    excludeAccountIds: new Set(pipeline.pipeline.map(entry => entry.id)),
+  })
+  assert.deepEqual(avecExclusion.pointsByCsm, {})
+  assert.equal(avecExclusion.accountsCounted, 0)
+})
+
+test('computePlanCharge ne compte jamais deux fois un compte du pipeline', async () => {
+  const { computePlanCharge } = await import('@/lib/onboarding/planCharge')
+  const directory: CsmDirectoryEntry[] = [{ csmName: 'Ghislaine', zohoUserId: null, aliases: ['Rohaut'] }]
+  const result = computePlanCharge(
+    {
+      accounts: [
+        makeAccount({ id: 'acc-futur', name: 'Hotel Bientot', csm: 'Rohaut', subStartDate: '2026-09-20' }),
+        makeAccount({ id: 'acc-passe', name: 'Hotel Deja La', csm: 'Rohaut', subStartDate: '2026-01-01', handoverDate: '2026-09-02' }),
+      ],
+      projects: [],
+      wonDeals: [],
+      dealsTruncated: false,
+      obRoster: [{ name: 'Thuy-Tien', role: 'senior', maxProjects: 50, availability: 'full' }],
+      csmRoster: [{ name: 'Ghislaine', monthlyCapacityPoints: 15, availability: 'full' }],
+      csmDirectory: directory,
+      overrides: [],
+      weightRules: [...DEFAULT_WEIGHT_RULES],
+      warnings: [],
+    },
+    { referenceDate: '2026-09-05', months: ['2026-09', '2026-10'] },
+  )
+
+  // Le compte déjà passé compte en base (3 points), celui du pipeline est
+  // ajouté une seule fois par le moteur : 6 au total, pas 9.
+  assert.equal(result.basePoints.pointsByCsm['Ghislaine'], 3)
+  assert.equal(result.engine.csmLoadByMonth['Ghislaine']['2026-09'], 6)
 })

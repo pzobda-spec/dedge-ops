@@ -10,7 +10,14 @@ import { formatInTimeZone } from 'date-fns-tz'
 import { fetchAllCRMAccounts, fetchWonDeals, type CRMAccount, type ZohoWonDeal } from '@/lib/zoho/crmClient'
 import { fetchAllZohoProjects, type OnboardingProject } from '@/lib/zoho/projectsClient'
 import { supabaseAdmin } from '@/lib/supabase/server'
-import { isAvailability, isObRole, type Availability, type ObRole } from '@/lib/onboarding/capacityModel'
+import {
+  isAvailability,
+  isObRole,
+  DEFAULT_WEIGHT_RULES,
+  type Availability,
+  type ObRole,
+  type AssignmentWeightRule,
+} from '@/lib/onboarding/capacityModel'
 import type { ObMember, CsmMember } from '@/lib/onboarding/assignmentEngine'
 import type { CsmDirectoryEntry } from '@/lib/onboarding/csmDirectory'
 import type { AccountAssignmentOverride } from '@/lib/onboarding/pipeline'
@@ -32,6 +39,8 @@ export interface PlanChargeSources {
   csmRoster: CsmMember[]
   csmDirectory: CsmDirectoryEntry[]
   overrides: AccountAssignmentOverride[]
+  /** Barème de poids OB/CSM, chargé depuis `csm_assignment_rules` (repli sur `DEFAULT_WEIGHT_RULES` sinon). */
+  weightRules: AssignmentWeightRule[]
   /** Anomalies non bloquantes rencontrées au chargement, à afficher plutôt qu'à taire. */
   warnings: string[]
 }
@@ -188,72 +197,54 @@ async function loadOverrides(warnings: string[]): Promise<AccountAssignmentOverr
   }))
 }
 
-/**
- * Points de départ du mois courant pour chaque CSM, à partir de
- * `onboarding_projects`.
- *
- * INTERPRÉTATION (spec §4.3, à valider avec le métier) : « la charge déjà
- * attribuée ce mois » est ici comprise comme les points dont l'attribution
- * CSM (`csm_assigned_at`) est tombée dans le mois courant — pas les points
- * des comptes dont le go-live tombe ce mois-ci. On retient donc la date
- * d'attribution du CSM, pas la date de go-live.
- *
- * Les bornes du mois sont comparées en UTC alors que la date de référence est
- * calculée en Europe/Paris. L'écart ne concerne que les attributions faites
- * dans les toutes premières heures d'un mois ; il est assumé plutôt que
- * masqué par une fausse précision.
- */
-async function loadCurrentMonthBasePoints(
-  referenceDate: string,
-  warnings: string[],
-): Promise<Map<string, number>> {
-  const [year, month] = referenceDate.split('-').map(Number)
-  const monthStart = `${year}-${String(month).padStart(2, '0')}-01`
-  const nextMonth = month === 12 ? { y: year + 1, m: 1 } : { y: year, m: month + 1 }
-  const monthEnd = `${nextMonth.y}-${String(nextMonth.m).padStart(2, '0')}-01`
-
+/** Charge le barème de poids OB/CSM depuis `csm_assignment_rules`. Repli sur `DEFAULT_WEIGHT_RULES` si absente ou vide. */
+async function loadWeightRules(warnings: string[]): Promise<AssignmentWeightRule[]> {
   const { data, error } = await supabaseAdmin
-    .from('onboarding_projects')
-    .select('csm_name, csm_assignment_points, csm_assigned_at')
-    .gte('csm_assigned_at', monthStart)
-    .lt('csm_assigned_at', monthEnd)
+    .from('csm_assignment_rules')
+    .select('tier, customer_type, dmbook_only, points')
 
   if (error) {
     if (isMissingTableError(error)) {
-      warnings.push('Table onboarding_projects absente : points de départ CSM du mois courant ignorés.')
-      return new Map()
+      warnings.push('Table csm_assignment_rules absente : repli sur le barème de poids par défaut.')
+      return [...DEFAULT_WEIGHT_RULES]
     }
     throw new Error(error.message)
   }
 
-  const totals = new Map<string, number>()
-  for (const row of data ?? []) {
-    if (!row.csm_name || row.csm_assignment_points === null || row.csm_assignment_points === undefined) continue
-    totals.set(row.csm_name, (totals.get(row.csm_name) ?? 0) + Number(row.csm_assignment_points))
+  if (!data || data.length === 0) {
+    warnings.push('Barème csm_assignment_rules vide : repli sur le barème de poids par défaut.')
+    return [...DEFAULT_WEIGHT_RULES]
   }
-  return totals
+
+  return data.map(row => ({
+    tier: row.tier,
+    customerType: row.customer_type,
+    dmbookOnly: row.dmbook_only,
+    points: Number(row.points),
+  }))
 }
 
 export async function loadPlanChargeSources(): Promise<PlanChargeSources> {
   const warnings: string[] = []
   const referenceDate = planChargeReferenceDate()
 
-  const [zohoSources, obRoster, csmRosterAndDirectory, overrides, currentMonthBasePoints] = await Promise.all([
+  const [zohoSources, obRoster, csmRosterAndDirectory, overrides, weightRules] = await Promise.all([
     getPlanChargeZohoSources(),
     loadObRoster(warnings),
     loadCsmRosterAndDirectory(warnings),
     loadOverrides(warnings),
-    loadCurrentMonthBasePoints(referenceDate, warnings),
+    loadWeightRules(warnings),
   ])
 
   if (zohoSources.dealsTruncated) {
     warnings.push('La liste des deals gagnés Zoho est tronquée (plafond de pagination atteint) : partielle.')
   }
 
-  const csmRoster: CsmMember[] = csmRosterAndDirectory.csmRoster.map(member => ({
-    ...member,
-    currentMonthBasePoints: currentMonthBasePoints.get(member.name) ?? 0,
-  }))
+  const currentMonth = referenceDate.slice(0, 7)
+  // Les points de départ du mois courant ne sont PAS calculés ici : ils dépendent
+  // du pipeline (un compte encore au pipeline ne doit pas peser deux fois). C'est
+  // `computePlanCharge` de `@/lib/onboarding/planCharge` qui les injecte.
+  const csmRoster: CsmMember[] = csmRosterAndDirectory.csmRoster.map(member => ({ ...member }))
 
   return {
     accounts: zohoSources.accounts,
@@ -264,6 +255,7 @@ export async function loadPlanChargeSources(): Promise<PlanChargeSources> {
     csmRoster,
     csmDirectory: csmRosterAndDirectory.csmDirectory,
     overrides,
+    weightRules,
     warnings,
   }
 }
