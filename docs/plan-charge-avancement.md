@@ -11,6 +11,7 @@ Prototype exécutable de référence : `docs/plan-charge-prototype-reference.htm
 Note de vérification : `docs/plan-charge-verification.md`.
 
 Branche de travail : `agent/plan-charge-scaffolding`, partie de `origin/main`.
+PR 1 ouverte : https://github.com/pzobda-spec/dedge-ops/pull/19
 
 ## Découpage retenu
 
