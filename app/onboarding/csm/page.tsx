@@ -86,6 +86,14 @@ interface WeightRule {
   points: number
 }
 
+interface CsmPortfolioRow {
+  csmName: string
+  liveAccounts: number
+  totalAccounts: number
+  attentionProjects: number
+  goLivesThisMonth: number
+}
+
 interface PlanChargeResponse {
   referenceDate: string
   currentMonth: string
@@ -93,6 +101,7 @@ interface PlanChargeResponse {
   accounts: AccountRow[]
   obRoster: unknown[]
   csmRoster: CsmRosterMember[]
+  csmPortfolios?: CsmPortfolioRow[]
   obLoadByMonth: Record<string, Record<string, number>>
   csmLoadByMonth: Record<string, Record<string, number>>
   obOverloads: OverloadEntry[]
@@ -199,13 +208,18 @@ export default function CsmPage() {
     () => data?.csmRoster.filter(member => member.availability === 'full' || member.availability === 'relache').length ?? 0,
     [data],
   )
-  const assignedPointsThisMonth = useMemo(
-    () => data?.csmRoster.reduce((sum, member) => sum + member.currentMonthBasePoints, 0) ?? 0,
-    [data],
+  const csmPortfolios = useMemo(() => data?.csmPortfolios ?? [], [data])
+  const portfolioAccounts = useMemo(
+    () => csmPortfolios.reduce((sum, row) => sum + row.liveAccounts, 0),
+    [csmPortfolios],
   )
-  const unassignableCsmCount = useMemo(
-    () => data?.accounts.filter(account => account.csmName === null).length ?? 0,
-    [data],
+  const attentionProjectsTotal = useMemo(
+    () => csmPortfolios.reduce((sum, row) => sum + row.attentionProjects, 0),
+    [csmPortfolios],
+  )
+  const goLivesThisMonthTotal = useMemo(
+    () => csmPortfolios.reduce((sum, row) => sum + row.goLivesThisMonth, 0),
+    [csmPortfolios],
   )
 
   return (
@@ -213,21 +227,21 @@ export default function CsmPage() {
       <header className="border-b border-[#e2e2e2] bg-white px-4 py-5 sm:px-6 lg:px-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold tracking-tight text-[#1a1a1a]">{t('Reprises et capacité CSM')}</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-[#1a1a1a]">{t('Pilotage CSM')}</h1>
             <p className="mt-1 text-sm text-[#696969]">
-              {t('Pilote la capacité de l’équipe CSM et les reprises de comptes à venir.')}
+              {t('Suit le portefeuille, la charge et la montée en charge de l’équipe CSM.')}
             </p>
             <Link href="/onboarding/plan-charge" className="mt-1 inline-block text-xs font-semibold text-[#59319f] hover:underline">
               {t('Vue complète, implémentation comprise')}
             </Link>
           </div>
-          <nav className="inline-flex rounded-lg border border-[#ded8e8] bg-[#f7f5fa] p-1" aria-label={t('Vues onboarding')}>
-            <Link href="/onboarding" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Liste')}</Link>
-            <Link href="/onboarding/board" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">Board</Link>
-            <Link href="/onboarding/pilotage" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Pilotage')}</Link>
-            <Link href="/onboarding/clients" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Clients')}</Link>
-            <Link href="/onboarding/plan-charge" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Plan de charge')}</Link>
-            <span aria-current="page" className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-[#59319f] shadow-sm">CSM</span>
+          <nav className="inline-flex max-w-full overflow-x-auto rounded-lg border border-[#ded8e8] bg-[#f7f5fa] p-1" aria-label={t('Vues onboarding')}>
+            <Link href="/onboarding" className="flex-none shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Liste')}</Link>
+            <Link href="/onboarding/board" className="flex-none shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">Board</Link>
+            <Link href="/onboarding/pilotage" className="flex-none shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Pilotage')}</Link>
+            <Link href="/onboarding/clients" className="flex-none shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Clients')}</Link>
+            <Link href="/onboarding/plan-charge" className="flex-none shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Plan de charge')}</Link>
+            <span aria-current="page" className="flex-none shrink-0 whitespace-nowrap rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-[#59319f] shadow-sm">CSM</span>
           </nav>
         </div>
       </header>
@@ -255,17 +269,19 @@ export default function CsmPage() {
 
             <section aria-label={t('Indicateurs clés')} className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
               <KpiCard label={t('CSM disponibles')} value={formatNumber(availableCsmCount, locale)} subtitle={t('Dispo ou relâche')} />
-              <KpiCard label={t('Points attribués ce mois')} value={formatNumber(assignedPointsThisMonth, locale)} subtitle={t('Somme des points du mois courant')} />
-              <KpiCard label={t('Reprises à venir')} value={formatNumber(data.accounts.length, locale)} subtitle={t('Comptes du pipeline')} />
+              <KpiCard label={t('Comptes en portefeuille')} value={formatNumber(portfolioAccounts, locale)} subtitle={t('Comptes live rattachés à un CSM')} />
+              <KpiCard label={t('À surveiller')} value={formatNumber(attentionProjectsTotal, locale)} subtitle={t('Bloqués, en retard ou risque élevé/critique')} accent={attentionProjectsTotal > 0 ? 'text-[#b7221b]' : undefined} />
+              <KpiCard label={t('Reprises du mois')} value={formatNumber(goLivesThisMonthTotal, locale)} subtitle={t('Passation ou go-live sur le mois courant')} />
               <KpiCard label={t('Mois au-dessus du plafond')} value={formatNumber(data.csmOverloads.length, locale)} subtitle={t('Occurrences mois × CSM')} accent={data.csmOverloads.length > 0 ? 'text-[#b7221b]' : undefined} />
-              <KpiCard label={t('Comptes sans CSM attribuable')} value={formatNumber(unassignableCsmCount, locale)} subtitle={t('Aucun CSM éligible')} accent={unassignableCsmCount > 0 ? 'text-[#b7221b]' : undefined} />
             </section>
+
+            <CsmPortfolioSection roster={data.csmRoster} portfolios={csmPortfolios} />
+
+            <CsmProjectionSection data={data} />
 
             <CsmRosterSection roster={data.csmRoster} onUpdate={postRoster} />
 
             <UpcomingTakeoversSection data={data} onAssign={postAssignment} />
-
-            <CsmProjectionSection data={data} />
 
             <WeightRulesSection rules={data.weightRules} />
           </>
@@ -282,6 +298,89 @@ function KpiCard({ label, value, subtitle, accent }: { label: string; value: str
       <p className={`mt-2 truncate text-3xl font-bold tracking-tight ${accent ?? 'text-[#1a1a1a]'}`}>{value}</p>
       <p className="mt-2 min-h-8 text-xs leading-4 text-[#8a8a8a]">{subtitle}</p>
     </article>
+  )
+}
+
+function CsmPortfolioSection({ roster, portfolios }: { roster: CsmRosterMember[]; portfolios: CsmPortfolioRow[] }) {
+  const { t } = useLocale()
+  const byName = useMemo(() => new Map(portfolios.map(row => [row.csmName, row])), [portfolios])
+  const rows = roster.map(member => ({ member, portfolio: byName.get(member.name) ?? null }))
+  const headings = [t('CSM'), t('Portefeuille'), t('À surveiller'), t('Reprises du mois'), t('Charge'), t('Satisfaction'), t('TTV moyen')]
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-[#e2e2e2] bg-white shadow-[0_4px_10px_rgba(36,25,55,0.05)]" aria-labelledby="csm-portfolio-title">
+      <div className="border-b border-[#e2e2e2] px-4 py-4 sm:px-5">
+        <h2 id="csm-portfolio-title" className="text-sm font-bold text-[#1a1a1a]">{t('Charge par CSM')}</h2>
+      </div>
+
+      {rows.length === 0 ? <div className="p-8 text-center text-sm text-[#696969]">{t('Aucun CSM dans ce périmètre.')}</div> : (
+        <>
+          <div className="hidden overflow-x-auto md:block">
+            <table className="w-full min-w-[880px] text-sm">
+              <thead className="border-b border-[#e2e2e2] bg-[#f7f7f7]">
+                <tr>
+                  {headings.map((heading, index) => (
+                    <th key={heading} className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-[#696969] ${index === 0 ? 'text-left' : 'text-center'}`}>{heading}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#e2e2e2]">
+                {rows.map(({ member, portfolio }) => (
+                  <tr key={member.name} className="hover:bg-[#faf9f5]">
+                    <td className="px-4 py-3 font-semibold text-[#1a1a1a]">{member.name}</td>
+                    <td className="px-4 py-3 text-center tabular-nums text-[#4a4a4a]">
+                      {portfolio ? portfolio.liveAccounts : '—'}
+                      {portfolio && <span className="ml-1 text-[10px] font-normal text-[#8a8a8a]">/ {portfolio.totalAccounts}</span>}
+                    </td>
+                    <td className={`px-4 py-3 text-center font-semibold tabular-nums ${portfolio && portfolio.attentionProjects > 0 ? 'text-[#b7221b]' : 'text-[#878787]'}`}>
+                      {portfolio ? portfolio.attentionProjects : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-center font-semibold tabular-nums text-[#1c6437]">{portfolio ? portfolio.goLivesThisMonth : '—'}</td>
+                    <td className="min-w-[170px] px-4 py-3">
+                      <ChargeBar load={member.currentMonthBasePoints} capacity={member.effectiveCapacity} />
+                    </td>
+                    <td className="px-4 py-3 text-center text-[#878787]">—</td>
+                    <td className="px-4 py-3 text-center text-[#878787]">—</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="divide-y divide-[#e2e2e2] md:hidden">
+            {rows.map(({ member, portfolio }) => (
+              <article key={member.name} className="space-y-3 p-4">
+                <h3 className="font-semibold text-[#1a1a1a]">{member.name}</h3>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-[#8a8a8a]">{t('Charge')}</p>
+                  <ChargeBar load={member.currentMonthBasePoints} capacity={member.effectiveCapacity} />
+                </div>
+                <dl className="grid grid-cols-3 gap-3 text-center">
+                  <PortfolioMetric label={t('Portefeuille')} value={portfolio ? `${portfolio.liveAccounts}/${portfolio.totalAccounts}` : '—'} />
+                  <PortfolioMetric label={t('À surveiller')} value={portfolio ? portfolio.attentionProjects : '—'} alert={Boolean(portfolio && portfolio.attentionProjects > 0)} />
+                  <PortfolioMetric label={t('Reprises du mois')} value={portfolio ? portfolio.goLivesThisMonth : '—'} success />
+                  <PortfolioMetric label={t('Satisfaction')} value="—" />
+                  <PortfolioMetric label="TTV" value="—" />
+                </dl>
+              </article>
+            ))}
+          </div>
+
+          <p className="border-t border-[#eeeeee] px-4 py-3 text-[11px] leading-4 text-[#8a8a8a] sm:px-5">
+            {t('La satisfaction n’est pas rattachée au CSM dans la source actuelle et le TTV mesure l’implémentation, pas la reprise : ces colonnes affichent « — » plutôt qu’un chiffre trompeur.')}
+          </p>
+        </>
+      )}
+    </section>
+  )
+}
+
+function PortfolioMetric({ label, value, alert = false, success = false }: { label: string; value: string | number; alert?: boolean; success?: boolean }) {
+  return (
+    <div className="rounded-lg bg-[#f7f7f7] p-2">
+      <dt className="text-[10px] uppercase tracking-wide text-[#8a8a8a]">{label}</dt>
+      <dd className={`mt-1 text-sm font-bold tabular-nums ${alert ? 'text-[#b7221b]' : success ? 'text-[#1c6437]' : 'text-[#1a1a1a]'}`}>{value}</dd>
+    </div>
   )
 }
 

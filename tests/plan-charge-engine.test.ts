@@ -381,3 +381,40 @@ test('entrées vides ne lèvent pas et renvoient des collections vides', () => {
   assert.deepEqual(result.obOverloads, [])
   assert.deepEqual(result.csmOverloads, [])
 })
+
+test('la charge OB démarre aux projets actifs réels, pas à zéro', () => {
+  // Sans amorçage, un implémenteur déjà au-dessus de son plafond apparaissait
+  // vide et le greedy continuait de lui attribuer des comptes.
+  const result = runAssignmentEngine({
+    pipeline: [makeAccount({ id: 'a1', expectedGoLiveMonth: '2026-10' })],
+    obRoster: [
+      makeOb({ name: 'Thuy-Tien', maxProjects: 50, currentActiveProjects: 51 }),
+      makeOb({ name: 'Dalia', maxProjects: 50, currentActiveProjects: 4 }),
+    ],
+    csmRoster: [makeCsm({ name: 'Winli' })],
+    months: ['2026-09', '2026-10'],
+    currentMonth: '2026-09',
+  })
+
+  // Le compte va chez celle qui a de la vraie marge.
+  assert.equal(result.assignments[0].obOwner, 'Dalia')
+  assert.equal(result.obLoad['Thuy-Tien'], 51)
+  assert.equal(result.obLoad['Dalia'], 5)
+
+  // Et la surcharge existante ressort, au lieu d'être invisible.
+  assert.ok(
+    result.obOverloads.some(overload => overload.name === 'Thuy-Tien' && overload.load === 51),
+  )
+})
+
+test('les projets actifs pèsent sur tous les mois de l\'horizon', () => {
+  const result = runAssignmentEngine({
+    pipeline: [],
+    obRoster: [makeOb({ name: 'Thuy-Tien', maxProjects: 50, currentActiveProjects: 12 })],
+    csmRoster: [],
+    months: ['2026-09', '2026-10', '2026-11'],
+    currentMonth: '2026-09',
+  })
+  assert.equal(result.obLoadByMonth['Thuy-Tien']['2026-09'], 12)
+  assert.equal(result.obLoadByMonth['Thuy-Tien']['2026-11'], 12)
+})

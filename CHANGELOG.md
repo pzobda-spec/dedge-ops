@@ -6,6 +6,29 @@ Les entrées antérieures au 15 juillet 2026 ont été reconstituées à partir 
 l’historique Git ; elles synthétisent les changements fonctionnels encore
 pertinents plutôt que chaque correction intermédiaire.
 
+## 2026-09-05 — Charge d’implémentation réelle et pilotage CSM
+
+### Corrigé
+
+- La charge des implémenteurs partait de zéro et ne tenait compte que des
+  comptes signés pas encore live. Un implémenteur déjà au-dessus de son plafond
+  apparaissait disponible, et la répartition automatique continuait de lui
+  confier des comptes. Elle démarre désormais des projets actifs réels, comptés
+  comme sur la page de pilotage.
+- Les libellés de la barre d’onglets de l’onboarding ne se cassent plus sur
+  plusieurs lignes ; la barre défile quand la place manque.
+
+### Modifié
+
+- La page CSM devient un vrai pilotage : une ligne par chargé de succès client
+  avec portefeuille, points à surveiller, reprises du mois et charge du mois,
+  puis la courbe de montée en charge. L’édition de la capacité et des
+  attributions passe en second plan, sous les indicateurs.
+- Satisfaction et temps de mise en service restent affichés à « — » sur cette
+  page : la satisfaction n’est pas rattachée au chargé de succès client dans la
+  source, et le temps de mise en service mesure l’implémentation, pas la
+  reprise.
+
 ## 2026-09-05 — Accès restreint pour la team lead CSM
 
 ### Ajouté

@@ -138,6 +138,43 @@ Périmètre du rôle, tranché avec Pablo : il voit TOUTE la section Onboarding
 sans restriction, et rien du reste du cockpit. Il écrit uniquement sur le
 roster CSM et les attributions CSM du plan de charge.
 
+### Étape 5, charge OB réelle et pilotage CSM — FAIT
+
+**Correctif de charge OB.** Le moteur partait d'une charge nulle et ne comptait
+que le pipeline. Un implémenteur déjà à 51 projets actifs apparaissait vide, et
+le greedy continuait de lui attribuer des comptes. `countActiveProjectsByOwner`
+(`lib/onboarding/workload.ts`) compte désormais les projets actifs réels, avec
+exactement les règles de `/onboarding/pilotage` : `isActiveProject`, exclusion
+des owners hors périmètre, normalisation du nom dont les alias de Winli, un
+projet Zoho par hôtel. `computePlanCharge` amorce `obLoad` avec ce comptage.
+
+Deux choix assumés :
+- Les projets actifs pèsent sur TOUS les mois de l'horizon. Leur date de sortie
+  du stock n'est pas modélisée, l'approximation surestime plutôt qu'elle ne
+  masque une surcharge. Piste d'amélioration, utiliser l'`endDate` des projets
+  Zoho comme date de libération du slot.
+- Les projets actifs portés par une personne absente du roster OB ne sont
+  comptés dans aucune capacité, et un avertissement les nomme.
+
+**Analytique CSM.** `lib/onboarding/csmAnalytics.ts`, `computeCsmPortfolios`,
+produit une ligne par CSM : portefeuille live, comptes totaux, projets à
+surveiller, reprises du mois. Exposé par la route sous `csmPortfolios`.
+
+Deux factorisations au passage, pour éviter des divergences silencieuses :
+`indexProjectsByAccount` (l'appariement projet vers compte était écrit trois
+fois) et `effectiveMonthForAccount` (la cascade passation, go-live,
+`Sub_Start_date` de la spec §9.2 était écrite deux fois).
+
+**Page CSM** refondue sur le modèle de `/onboarding/pilotage` : KPI, charge par
+CSM, montée en charge, puis édition du roster et attributions en secondaire.
+Satisfaction et TTV restent à `—` avec la limitation affichée : la satisfaction
+n'est pas rattachée au CSM dans la source, et le TTV mesure l'implémentation et
+non la reprise.
+
+**Barre d'onglets** : libellés en `whitespace-nowrap`, conteneur en
+`max-w-full overflow-x-auto`. Sans la contrainte de largeur, un `inline-flex` se
+dimensionne sur son contenu et ne défile jamais.
+
 ## Décisions tranchées
 
 - Priorité d'attribution : `override manuel` > `continuité de groupe` >

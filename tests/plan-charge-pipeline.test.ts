@@ -10,11 +10,13 @@ import {
 import {
   buildPlanChargePipeline,
   computeCurrentMonthBasePoints,
+  indexProjectsByAccount,
   type AccountAssignmentOverride,
   type PlanChargePipelineInput,
 } from '@/lib/onboarding/pipeline'
 import { runAssignmentEngine } from '@/lib/onboarding/assignmentEngine'
 import { DEFAULT_WEIGHT_RULES } from '@/lib/onboarding/capacityModel'
+import { computeCsmPortfolios } from '@/lib/onboarding/csmAnalytics'
 
 function makeAccount(overrides: Partial<CRMAccount> = {}): CRMAccount {
   return {
@@ -632,4 +634,160 @@ test('computePlanCharge ne compte jamais deux fois un compte du pipeline', async
   // ajouté une seule fois par le moteur : 6 au total, pas 9.
   assert.equal(result.basePoints.pointsByCsm['Ghislaine'], 3)
   assert.equal(result.engine.csmLoadByMonth['Ghislaine']['2026-09'], 6)
+})
+
+test('countActiveProjectsByOwner reproduit le comptage de la page pilotage', async () => {
+  const { countActiveProjectsByOwner } = await import('@/lib/onboarding/workload')
+  const counts = countActiveProjectsByOwner([
+    makeProject({ id: 'p1', ownerShort: 'Thuy-Tien', status: 'in_progress' }),
+    makeProject({ id: 'p2', ownerShort: 'Thuy-Tien', status: 'blocked' }),
+    // Live et "autre" ne pèsent plus sur la charge.
+    makeProject({ id: 'p3', ownerShort: 'Thuy-Tien', status: 'live' }),
+    makeProject({ id: 'p4', ownerShort: 'Thuy-Tien', status: 'other' }),
+    // Alias de Winli, normalisé sur le nom canonique.
+    makeProject({ id: 'p5', ownerShort: 'Wilini', status: 'in_progress' }),
+    // Owner exclu du périmètre onboarding.
+    makeProject({ id: 'p6', ownerShort: 'Bruno', status: 'in_progress' }),
+  ])
+  assert.equal(counts['Thuy-Tien'], 2)
+  assert.equal(counts['Winli'], 1)
+  assert.equal(counts['Bruno'], undefined)
+})
+
+test('indexProjectsByAccount : appariement par accountCRMId, puis par nom strictement égal, jamais en cas d\'ambiguïté', () => {
+  const accounts = [
+    makeAccount({ id: 'acc-1', name: 'Hotel Alpha' }),
+    makeAccount({ id: 'acc-2', name: 'Hotel Beta' }),
+    makeAccount({ id: 'acc-3', name: 'Hotel Beta' }), // doublon de nom, ambiguïté volontaire
+  ]
+  const projects = [
+    makeProject({ id: 'p-by-id', accountCRMId: 'acc-1', accountCRMName: null }),
+    makeProject({ id: 'p-by-name', accountCRMId: null, accountCRMName: 'Hotel Alpha' }),
+    makeProject({ id: 'p-ambiguous', accountCRMId: null, accountCRMName: 'Hotel Beta' }),
+  ]
+
+  const index = indexProjectsByAccount(accounts, projects)
+
+  const acc1Projects = index.byAccountId.get('acc-1') ?? []
+  assert.equal(acc1Projects.length, 2)
+  assert.ok(acc1Projects.some(p => p.id === 'p-by-id'))
+  assert.ok(acc1Projects.some(p => p.id === 'p-by-name'))
+  assert.equal(index.byAccountId.has('acc-2'), false)
+  assert.equal(index.byAccountId.has('acc-3'), false)
+  assert.equal(index.unlinkedCount, 1) // p-ambiguous, jamais rattaché arbitrairement
+})
+
+test('diagnostics.liveProjectsUnlinked ne compte que les projets live non rattachés (non-régression de la factorisation)', () => {
+  const accounts = [makeAccount({ id: 'acc-1', name: 'Hotel Alpha', subStartDate: '2027-01-01' })]
+  const projects = [
+    // Live non rattaché : compte.
+    makeProject({ id: 'p-live-unlinked', status: 'live', accountCRMId: null, accountCRMName: 'Inconnu' }),
+    // Non-live non rattaché : ne doit pas compter.
+    makeProject({ id: 'p-other-unlinked', status: 'in_progress', accountCRMId: null, accountCRMName: 'Aussi inconnu' }),
+  ]
+
+  const result = buildPlanChargePipeline(baseInput({ accounts, projects }))
+  assert.equal(result.diagnostics.liveProjectsUnlinked, 1)
+})
+
+test('computeCsmPortfolios : liveAccounts compte les comptes avec au moins un projet live, totalAccounts tous', () => {
+  const accounts = [
+    makeAccount({ id: 'acc-live', name: 'Hotel Live', csm: 'Rohaut' }),
+    makeAccount({ id: 'acc-not-live', name: 'Hotel Not Live', csm: 'Rohaut' }),
+  ]
+  const projects = [
+    makeProject({ id: 'p1', accountCRMId: 'acc-live', status: 'live' }),
+    makeProject({ id: 'p2', accountCRMId: 'acc-not-live', status: 'in_progress' }),
+  ]
+
+  const result = computeCsmPortfolios({
+    accounts,
+    projects,
+    csmDirectory: makeDirectory(),
+    csmNames: ['Ghislaine'],
+    currentMonth: '2026-09',
+  })
+
+  const row = result.rows.find(r => r.csmName === 'Ghislaine')!
+  assert.equal(row.liveAccounts, 1)
+  assert.equal(row.totalAccounts, 2)
+})
+
+test('computeCsmPortfolios : attentionProjects compte bloqué, en retard et risque élevé ; pas un projet sain', () => {
+  const accounts = [makeAccount({ id: 'acc-1', name: 'Hotel Alpha', csm: 'Rohaut' })]
+  const projects = [
+    makeProject({ id: 'p-blocked', accountCRMId: 'acc-1', isBlocked: true }),
+    makeProject({ id: 'p-overdue', accountCRMId: 'acc-1', isOverdue: true }),
+    makeProject({ id: 'p-high-risk', accountCRMId: 'acc-1', riskLevel: 'high' }),
+    makeProject({ id: 'p-healthy', accountCRMId: 'acc-1' }),
+  ]
+
+  const result = computeCsmPortfolios({
+    accounts,
+    projects,
+    csmDirectory: makeDirectory(),
+    csmNames: ['Ghislaine'],
+    currentMonth: '2026-09',
+  })
+
+  const row = result.rows.find(r => r.csmName === 'Ghislaine')!
+  assert.equal(row.attentionProjects, 3)
+})
+
+test('computeCsmPortfolios : goLivesThisMonth suit la cascade passation, go-live réel, puis subStartDate', () => {
+  const accounts = [
+    makeAccount({ id: 'acc-handover', name: 'Hotel Handover', csm: 'Rohaut', handoverDate: '2026-09-15', subStartDate: '2026-01-01' }),
+    makeAccount({ id: 'acc-golive', name: 'Hotel GoLive', csm: 'Rohaut', handoverDate: null, subStartDate: '2026-01-01' }),
+    makeAccount({ id: 'acc-substart', name: 'Hotel SubStart', csm: 'Rohaut', handoverDate: null, subStartDate: '2026-09-20' }),
+    makeAccount({ id: 'acc-other-month', name: 'Hotel Other', csm: 'Rohaut', handoverDate: '2026-05-01' }),
+  ]
+  const projects = [
+    makeProject({ id: 'p-golive', accountCRMId: 'acc-golive', actualGoLiveDate: '2026-09-10' }),
+  ]
+
+  const result = computeCsmPortfolios({
+    accounts,
+    projects,
+    csmDirectory: makeDirectory(),
+    csmNames: ['Ghislaine'],
+    currentMonth: '2026-09',
+  })
+
+  const row = result.rows.find(r => r.csmName === 'Ghislaine')!
+  assert.equal(row.goLivesThisMonth, 3)
+})
+
+test('computeCsmPortfolios : un CSM du roster sans aucun compte a bien une ligne à zéro', () => {
+  const result = computeCsmPortfolios({
+    accounts: [],
+    projects: [],
+    csmDirectory: makeDirectory(),
+    csmNames: ['Ghislaine'],
+    currentMonth: '2026-09',
+  })
+
+  const row = result.rows.find(r => r.csmName === 'Ghislaine')!
+  assert.deepEqual(row, {
+    csmName: 'Ghislaine',
+    liveAccounts: 0,
+    totalAccounts: 0,
+    attentionProjects: 0,
+    goLivesThisMonth: 0,
+  })
+})
+
+test('computeCsmPortfolios : un compte au CSM Zoho non résolu figure dans unresolvedAccounts et n\'est compté nulle part', () => {
+  const accounts = [makeAccount({ id: 'acc-1', name: 'Hotel Alpha', csm: 'Inconnu Du Referentiel' })]
+
+  const result = computeCsmPortfolios({
+    accounts,
+    projects: [],
+    csmDirectory: makeDirectory(),
+    csmNames: ['Ghislaine'],
+    currentMonth: '2026-09',
+  })
+
+  assert.equal(result.unresolvedAccounts.length, 1)
+  assert.equal(result.unresolvedAccounts[0].accountId, 'acc-1')
+  assert.equal(result.rows.every(row => row.totalAccounts === 0), true)
 })
