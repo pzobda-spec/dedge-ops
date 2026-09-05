@@ -14,6 +14,11 @@ Branche de travail : `agent/plan-charge-scaffolding`, partie de `origin/main`.
 PR 1, scaffolding : https://github.com/pzobda-spec/dedge-ops/pull/19
 PR 2, pipeline Zoho : https://github.com/pzobda-spec/dedge-ops/pull/20
 (branche `agent/plan-charge-pipeline`, empilée sur celle de la PR 1)
+PR 3, API et page : https://github.com/pzobda-spec/dedge-ops/pull/21
+(branche `agent/plan-charge-ui`, empilée sur celle de la PR 2)
+
+Ordre de fusion : 19, puis 20, puis 21. GitHub recible chaque PR automatiquement
+à la fusion de la précédente.
 
 ## Découpage retenu
 
