@@ -154,11 +154,7 @@ Relevé le 2026-09-07 sur `main`, commit `8ad425f`.
    prototype, à confirmer.
 6. **Seuil de santé de compte**, nombre de tickets ouverts à partir duquel un
    compte passe en alerte. Aucun seuil posé à ce jour, volontairement.
-7. **Indicateur annoncé mais jamais livré.** Le `CHANGELOG` du 21 juillet 2026
-   annonce, dans le pilotage, un « nombre de jours consécutifs au-dessus de
-   80 % de charge sur la période sélectionnée ». Cet indicateur n'existe dans
-   aucun fichier du code. Il devient calculable dès que les snapshots
-   s'accumulent : faut-il le construire, ou retirer la mention du CHANGELOG ?
+7. **Résolu le 7 septembre.** Voir la section 7, backlog.
 
 ---
 
@@ -180,16 +176,30 @@ Pour quelqu'un sans aucun contexte :
    90 jours : sans filtre, 1 340 jalons en retard et un retard médian de
    394 jours, inexploitable ; avec filtre, 128 jalons sur 40 projets.
 
-## 6 bis. Incident résolu
+## 7. Backlog, avec conditions d'entrée
 
-Un `.git/index.lock` a bloqué tout commit le 7 septembre entre 16 h 23 et
-17 h 10. Origine : un `git status` lancé depuis un autre outil sur le dossier
-monté, ni par le main ni par un worker. Rien à corriger dans le repo. Le verrou
-a été levé par Pablo, les fichiers du lot A1 ont ensuite été commités.
+### Compteur de jours consécutifs au-dessus de 80 % de charge
+
+**Condition d'entrée : trente jours de relevés réels en base.** Un compteur de
+jours consécutifs calculé sur deux jours d'historique est du bruit, et le calculer
+sur la partie estimée serait exactement le mélange de natures que le lot 0.3
+interdit.
+
+Origine : le `CHANGELOG` du 21 juillet 2026 annonce cet indicateur dans le
+pilotage onboarding. Il n'a jamais été livré, il n'existe dans aucune page.
+L'entrée du 21 juillet est conservée intacte et une entrée de correction datée du
+7 septembre le dit. Une entrée effacée en silence rendrait le journal des
+changements non fiable sans laisser de trace, ce qui est pire que l'erreur.
+
+Règle de calcul déjà tranchée, à ne pas redécider au moment de coder : elle est
+écrite dans `docs/snapshots-verification.md`, section « Règle du `charge_pct`
+nul ». En résumé, un jour `null` interrompt la série et s'affiche comme un trou,
+il n'est jamais compté comme sous le seuil, et les 80 % s'entendent du plafond
+réel stocké dans la colonne `capacity`, pas de la constante à 50.
 
 ---
 
-## 7. Fichiers commités
+## 8. Fichiers commités
 
 ### Lot A1, commit `bfabe06` du 2026-09-07
 
@@ -219,3 +229,12 @@ Commités au même moment :
 
 Le code est livré et vérifié. Le lot reste `en cours` jusqu'à la vérification en
 production décrite en section 6.
+## 9. Incident résolu
+
+Un `.git/index.lock` a bloqué tout commit le 7 septembre entre 16 h 23 et
+17 h 10. Origine : un `git status` lancé depuis un autre outil sur le dossier
+monté, ni par le main ni par un worker. Rien à corriger dans le repo. Le verrou
+a été levé par Pablo, les fichiers du lot A1 ont ensuite été commités.
+
+---
+

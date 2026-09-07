@@ -6,6 +6,21 @@ Les entrées antérieures au 15 juillet 2026 ont été reconstituées à partir 
 l’historique Git ; elles synthétisent les changements fonctionnels encore
 pertinents plutôt que chaque correction intermédiaire.
 
+## 2026-09-07 — Correction d’une entrée du 21 juillet 2026
+
+### Corrigé
+
+- L’entrée du 21 juillet 2026 annonce, dans le pilotage onboarding, un
+  « nombre de jours consécutifs au-dessus de 80 % de charge sur la période
+  sélectionnée ». Cet indicateur **n’a jamais été livré** : il n’existe dans
+  aucune page. L’entrée d’origine est conservée telle quelle, un journal des
+  changements se corrige et ne se réécrit pas. L’indicateur est reporté au
+  backlog, avec une condition d’entrée : trente jours de relevés réels. Le
+  calculer sur deux jours d’historique produirait du bruit, et le calculer sur
+  la partie estimée mélangerait deux natures de données qui ne se comparent
+  pas. Détail et règle de calcul retenue dans
+  `docs/plan-execution-journal.md` et `docs/snapshots-verification.md`.
+
 ## 2026-09-07 — L’historique de charge et de portefeuille commence à se constituer
 
 ### Ajouté

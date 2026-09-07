@@ -49,6 +49,35 @@ Le cron ne calcule aucune date lui-même.
 - **`valued_accounts` accompagne `valued_mrr`.** Le MRR n'est renseigné que sur
   45,5 % du parc : sans son dénominateur, le montant historique serait illisible.
 
+## Règle du `charge_pct` nul, tranchée le 7 septembre 2026
+
+Cette règle est écrite avant toute implémentation d'un compteur de jours au-dessus
+du seuil, pour qu'elle ne soit pas redécidée au moment de coder.
+
+**Un jour où `charge_pct` vaut `null` interrompt la série et s'affiche comme un
+trou. Il n'est JAMAIS compté comme « sous le seuil ».**
+
+La raison est que le signal cherché serait inversé. Un implémenteur absent ou en
+stop a une capacité effective nulle : si ses dossiers ne lui ont pas été retirés,
+il est en surcharge de fait. Traiter ce jour comme « sous le seuil » remettrait le
+compteur de surcharge à zéro précisément le jour où la situation est la plus
+mauvaise.
+
+Conséquences à respecter :
+
+- un jour `null` coupe la série de jours consécutifs, il ne la prolonge pas et ne
+  la remet pas à zéro comme le ferait un jour sous le seuil ;
+- il s'affiche comme une absence de donnée, jamais comme une valeur ;
+- les personnes concernées sont nommées séparément, avec leur nombre de dossiers
+  portés, ce que fait déjà la page de pilotage sous le graphique.
+
+**Le seuil de 80 % s'entend en pourcentage du plafond réel stocké dans la colonne
+`capacity`**, pas de la constante globale `CAPACITY_THRESHOLD` fixée à 50. Les
+plafonds vont diverger : 50 pour un senior ou un junior, 30 pour un alternant,
+5 pour un stagiaire, pondérés par le coefficient de disponibilité (relâche à 0,5,
+absent et stop à 0). Un seuil calculé sur 50 pour tout le monde donnerait un
+stagiaire à 40 % de charge alors qu'il serait à 400 % de la sienne.
+
 ## Séries réelles et estimées, jamais mélangées
 
 Le graphique porte deux séries par implémenteur, `owner` pour le réel et
