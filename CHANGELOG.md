@@ -6,6 +6,21 @@ Les entrées antérieures au 15 juillet 2026 ont été reconstituées à partir 
 l’historique Git ; elles synthétisent les changements fonctionnels encore
 pertinents plutôt que chaque correction intermédiaire.
 
+## 2026-09-07 — La charge des implémenteurs ne compte plus les dossiers en pause
+
+### Corrigé
+
+- Un dossier bloqué, en attente client ou en standby ne pèse plus sur la charge
+  de l’implémenteur qui le porte, ni sur son plafond de projets simultanés.
+  Personne ne traite ces dossiers : les compter faisait apparaître des
+  implémenteurs saturés à tort et détournait les nouvelles affectations vers
+  d’autres personnes. Les indicateurs de charge, le pourcentage par
+  implémenteur et la répartition automatique des comptes signés s’en trouvent
+  tous corrigés.
+- Les dossiers en pause restent visibles là où c’est leur place : les colonnes
+  Bloqué, En attente client et Standby du board, et le périmètre « actifs » du
+  répertoire clients, sont inchangés.
+
 ## 2026-09-05 — Tableau de bord CSM filtrable
 
 ### Corrigé

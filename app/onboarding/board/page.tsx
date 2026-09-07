@@ -6,6 +6,7 @@ import { AlertTriangle, ExternalLink, RotateCcw, Search } from 'lucide-react'
 import type { OnboardingProject, ProjectStatus } from '@/lib/zoho/projectsClient'
 import { formatDate } from '@/lib/utils/dates'
 import { IMPLEMENTATION_GROUP, isExcludedOnboardingOwner, normalizeOnboardingProjectOwner } from '@/lib/onboarding/constants'
+import { isOpenProject } from '@/lib/onboarding/workload'
 import { useLocale } from '@/lib/i18n/LocaleContext'
 
 type AttentionFilter = 'all' | 'blocked' | 'overdue' | 'high_risk'
@@ -182,7 +183,7 @@ export default function OnboardingBoardPage() {
     const query = normalize(search.trim())
     return baseProjects.filter(project => {
       const scopeMatches = scope === 'all'
-        || (scope === 'active' && project.status !== 'live' && project.status !== 'other')
+        || (scope === 'active' && isOpenProject(project))
         || (scope === 'live' && project.status === 'live')
       const ownerMatches = owner === 'all'
         || (owner === 'implementation'

@@ -7,6 +7,7 @@ import type { ClientTypology, OnboardingProject } from '@/lib/zoho/projectsClien
 import { aggregateOnboardingClients, clientPropertyKey } from '@/lib/onboarding/clientAggregation'
 import { isExcludedOnboardingOwner, normalizeOnboardingProjectOwner } from '@/lib/onboarding/constants'
 import { useLocale } from '@/lib/i18n/LocaleContext'
+import { isOpenProject } from '@/lib/onboarding/workload'
 
 type Scope = 'active' | 'all' | 'live'
 type TypologyFilter = 'all' | ClientTypology
@@ -71,7 +72,7 @@ export default function OnboardingClientsPage() {
 
   const scopedProjects = useMemo(() => projects
     .filter(project => !isExcludedOnboardingOwner(project.ownerShort))
-    .filter(project => scope === 'all' || (scope === 'live' ? project.status === 'live' : project.status !== 'live' && project.status !== 'other')),
+    .filter(project => scope === 'all' || (scope === 'live' ? project.status === 'live' : isOpenProject(project))),
   [projects, scope])
   const clients = useMemo(() => aggregateOnboardingClients(scopedProjects), [scopedProjects])
   const visibleClients = useMemo(() => {

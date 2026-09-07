@@ -642,6 +642,7 @@ test('countActiveProjectsByOwner reproduit le comptage de la page pilotage', asy
   const { countActiveProjectsByOwner } = await import('@/lib/onboarding/workload')
   const counts = countActiveProjectsByOwner([
     makeProject({ id: 'p1', ownerShort: 'Thuy-Tien', status: 'in_progress' }),
+    // Les dossiers en pause ne pèsent plus sur la charge : personne ne les traite.
     makeProject({ id: 'p2', ownerShort: 'Thuy-Tien', status: 'blocked' }),
     // Live et "autre" ne pèsent plus sur la charge.
     makeProject({ id: 'p3', ownerShort: 'Thuy-Tien', status: 'live' }),
@@ -651,7 +652,7 @@ test('countActiveProjectsByOwner reproduit le comptage de la page pilotage', asy
     // Owner exclu du périmètre onboarding.
     makeProject({ id: 'p6', ownerShort: 'Bruno', status: 'in_progress' }),
   ])
-  assert.equal(counts['Thuy-Tien'], 2)
+  assert.equal(counts['Thuy-Tien'], 1)
   assert.equal(counts['Winli'], 1)
   assert.equal(counts['Bruno'], undefined)
 })
