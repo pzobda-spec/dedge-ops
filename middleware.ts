@@ -30,6 +30,13 @@ const RESTRICTED_ROUTES: Array<{ prefixes: string[]; roles: Role[] }> = [
     ],
     roles: ['admin', 'support'],
   },
+  // Vue « À traiter cette semaine » : elle croise implémentation, support et
+  // CSM, elle est donc ouverte à tous les rôles applicatifs. Le périmètre des
+  // données reste porté par la route elle-même.
+  {
+    prefixes: ['/a-traiter'],
+    roles: ['admin', 'support', 'onboarder', 'commercial_readonly', 'csm_lead'],
+  },
   // Onboarding scope: admin + onboarder + commercial_readonly + csm_lead.
   // csm_lead voit toute la section onboarding, mais rien du reste du cockpit :
   // il n'est listé dans aucun des groupes ci-dessus.

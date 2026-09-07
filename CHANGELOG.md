@@ -6,6 +6,23 @@ Les entrées antérieures au 15 juillet 2026 ont été reconstituées à partir 
 l’historique Git ; elles synthétisent les changements fonctionnels encore
 pertinents plutôt que chaque correction intermédiaire.
 
+## 2026-09-07 — Une page « À traiter cette semaine »
+
+### Ajouté
+
+- Une page qui liste les dossiers demandant une décision, plutôt que l’état
+  général du portefeuille. Elle est accessible à tous les rôles.
+- Chaque ligne porte sa raison en toutes lettres, chiffrée : « 3 jalons en
+  retard, le plus ancien depuis 47 jours », « 5 tickets support en 7 jours ».
+  Plus besoin d’ouvrir Zoho pour comprendre pourquoi un dossier remonte.
+- Le comptage porte sur les dossiers, pas sur les signaux : un projet portant
+  trois jalons en retard est une seule ligne. Le nombre de signaux reste
+  affiché à part, sans jamais être confondu avec le nombre de dossiers.
+- Une semaine sans exception s’affiche comme une réussite explicite, pas comme
+  une page vide.
+- La page indique ce qu’elle ne couvre pas encore, et pourquoi : quatre des
+  neuf règles prévues attendent une donnée absente ou un chantier en amont.
+
 ## 2026-09-07 — Correction d’une entrée du 21 juillet 2026
 
 ### Corrigé

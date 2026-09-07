@@ -42,7 +42,7 @@ Dernière mise à jour : 2026-09-07.
 | 0.3, snapshots quotidiens | **en cours**, code livré et vérifié, attend deux passages du cron |
 | 0.4, fermer les routes admin | à faire |
 | 0.5, réparer ou retirer l'assistant IA | à faire |
-| 1.1, vue « à traiter cette semaine » | à faire, après 0.2 et 0.3 |
+| 1.1, vue « à traiter cette semaine » | **livré**, 5 règles sur 9, les 4 absentes affichées |
 | 1.2, préqualification d'urgence | à faire, en dernier |
 | 1.3, journal d'actions par projet | à faire |
 | 1.4, délai promis contre délai réel | à faire |
@@ -162,7 +162,11 @@ Relevé le 2026-09-07 sur `main`, commit `8ad425f`.
 
 Pour quelqu'un sans aucun contexte :
 
-1. **Clore le lot 0.3, qui demande une vérification en production.** Tout le code
+1. **Décider de la page d'accueil par rôle.** La vue `/a-traiter` est ouverte
+   aux cinq rôles dans le middleware, mais `homePathForRole` n'a PAS été
+   modifiée : rediriger l'accueil de tous les rôles avant que quiconque ait vu
+   la page une fois serait prématuré. À trancher avec Pablo, rôle par rôle.
+2. **Clore le lot 0.3, qui demande une vérification en production.** Tout le code
    est livré, commité et vérifié, mais le plan définit le lot comme fini quand
    deux jours consécutifs de snapshots existent en base pour les deux tables.
    Aucun test ne peut le prouver. Il faut, dans l'ordre : appliquer la migration
@@ -171,11 +175,11 @@ Pour quelqu'un sans aucun contexte :
    `30 8 * * *` ; contrôler que les deux tables portent deux dates métier
    distinctes et qu'un rejeu du même jour n'a rien dupliqué. Le détail est dans
    `docs/snapshots-verification.md`.
-2. **B4 est livré et mesuré**, voir la section 6 bis. Le calcul est prêt et
+3. **B4 est livré et mesuré**, voir la section 6 bis. Le calcul est prêt et
    testé, mais aucune vue ne le consomme : c'est le lot 1.1, « à traiter cette
    semaine », qui l'affichera. Le lecteur de jalons ne tourne aujourd'hui dans
    aucun cron, il est appelé à la demande.
-3. Ensuite les lots **A2**, **A3** et **D1** à **D4** de l'ordre d'exécution
+4. Ensuite les lots **A2**, **A3** et **D1** à **D4** de l'ordre d'exécution
    des arbitrages.
 
 ## 6 bis. Mesure B4 sur la production, 7 septembre 2026
@@ -256,6 +260,55 @@ l'inverse. Un entonnoir exclusif et un test de réconciliation corrigent cela.
 Le test vaut pour toutes les futures décompositions : dès qu'un écran annonce
 un total et ses motifs, la somme des motifs doit égaler le total, et un test
 doit l'imposer.
+
+## 6 quater. Périmètre du lot 1.1
+
+La vue `/a-traiter` applique **cinq règles sur les neuf** du plan. Les quatre
+absentes sont renvoyées par la route et affichées dans la page, avec leur motif.
+Une vue partielle qui le dit vaut mieux qu'une vue partielle silencieuse : c'est
+la raison d'être du lot 0.2.
+
+| Règle | État |
+| --- | --- |
+| Jalon en retard | livrée, regroupée par projet |
+| Projet démarré depuis plus de 30 jours sans mise en ligne | livrée |
+| Compte à trois tickets ou plus en sept jours | livrée |
+| Compte en ligne sans CSM | livrée |
+| Implémenteur au-dessus de son plafond | livrée |
+| Jalon dépassant le 75e centile de sa phase | dépend du lot 1.5, non livré |
+| Ticket au-delà du SLA de son urgence | dépend du lot 1.2, gardé en dernier |
+| Ticket rouvert dans les 7 jours | `reopenCount` lu chez Zoho, jamais persisté |
+| Compte dont la date de relance est dépassée | **arbitrage métier attendu**, voir plus bas |
+
+### Mesure sur `Next_FollowUp_due_date`, 7 septembre 2026
+
+Le champ existe et est demandable, mais il est inexploitable tel quel.
+
+Sur les 200 comptes clients les plus anciens, environ 90 % portent une date
+dépassée, avec un bloc de valeurs identiques manifestement importées :
+`2016-09-01` revient environ 25 fois, `2015-01-08` environ 6 fois. BEST WESTERN
+FRANCE porte une relance due au 10 novembre 2020. En parallèle, plus de
+200 comptes portent bien une date future.
+
+Le champ est donc maintenu sur le parc récent et pollué sur la traîne
+historique. Appliquée telle quelle, la règle remonterait la quasi-totalité du
+parc ancien et noierait les vrais signaux.
+
+Trois sorties possibles, aucune tranchée : ignorer les dates antérieures à un
+seuil ; exclure les valeurs d'import connues ; ou nettoyer dans Zoho avant
+d'activer la règle.
+
+### Défaut corrigé en revue
+
+Les règles « pic de tickets » et « compte en ligne sans CSM » clavaient le
+dossier sur deux clés différentes, le nom Desk pour l'une, l'identifiant CRM
+pour l'autre. Un compte cumulant les deux produisait DEUX lignes et gonflait le
+nombre de dossiers, ce que la vue doit précisément éviter. Les tickets sont
+désormais rattachés à leur compte CRM par égalité stricte de nom normalisé, et
+les comptes Desk sans correspondance sont comptés et signalés. Deux tests de
+non-régression.
+
+Les deux règles fonctionnaient isolément : c'est leur cohabitation qui mentait.
 
 ## 7. Backlog, avec conditions d'entrée
 
