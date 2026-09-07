@@ -88,3 +88,42 @@ export async function loadTicketCountsByAccountName(
 
   return counts
 }
+
+/**
+ * Tickets créés sur une fenêtre glissante de `windowDays` jours, par nom de
+ * compte Desk normalisé. Sert à la règle « rafale de tickets » de la vue
+ * hebdomadaire des exceptions.
+ */
+export async function loadRecentTicketCountsByAccountName(
+  referenceDate: string,
+  windowDays: number,
+  warnings: string[],
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>()
+
+  const [year, month, day] = referenceDate.split('-').map(Number)
+  const from = new Date(Date.UTC(year, month - 1, day))
+  from.setUTCDate(from.getUTCDate() - windowDays)
+
+  const { data, error } = await supabaseAdmin
+    .from('ticket_analytics')
+    .select('client_name,created_at')
+    .gte('created_at', from.toISOString())
+
+  if (error) {
+    if (isMissingTableError(error)) {
+      warnings.push('Table ticket_analytics absente : règle de rafale de tickets sans données.')
+      return new Map()
+    }
+    throw new Error(error.message)
+  }
+
+  for (const row of data ?? []) {
+    const clientName = (row as { client_name: string | null }).client_name
+    if (!clientName) continue
+    const key = normalizeAccountName(clientName)
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+
+  return counts
+}
