@@ -22,6 +22,7 @@ export type ExceptionRuleKey =
   | 'ticket_burst'
   | 'live_without_csm'
   | 'implementer_over_capacity'
+  | 'follow_up_due'
 
 export interface ExceptionReason {
   rule: ExceptionRuleKey
@@ -67,6 +68,14 @@ export interface WeeklyExceptionsResult {
      * dossier : à afficher plutôt qu'à taire.
      */
     ticketAccountsUnlinked: number
+    /**
+     * Entrées Desk écartées parce que leur libellé est une adresse e-mail et
+     * non un compte. Mesuré le 7 septembre 2026 : sur 45 entrées Desk portant
+     * des tickets récents, 34 sont des adresses, dont des boîtes internes
+     * D-EDGE. Les présenter comme des comptes clients en difficulté serait
+     * faux, et aucune correspondance de repli ne les rattacherait.
+     */
+    ticketAccountsIgnoredAsEmail: number
   }
 }
 
@@ -96,6 +105,8 @@ export const DAYS_STARTED_WITHOUT_GO_LIVE = 30
 /** Tickets créés sur 7 jours glissants à partir desquels un compte est signalé. */
 export const TICKET_BURST_THRESHOLD = 3
 export const TICKET_BURST_WINDOW_DAYS = 7
+/** Fenêtre de relance échue retenue, en jours. Au-delà, c'est de la dette, pas une action de la semaine. */
+export const FOLLOW_UP_WINDOW_DAYS = 14
 
 const RULE_KEYS: readonly ExceptionRuleKey[] = [
   'milestone_overdue',
@@ -103,6 +114,7 @@ const RULE_KEYS: readonly ExceptionRuleKey[] = [
   'ticket_burst',
   'live_without_csm',
   'implementer_over_capacity',
+  'follow_up_due',
 ]
 
 /**
@@ -253,9 +265,21 @@ export function computeWeeklyExceptions(input: WeeklyExceptionsInput): WeeklyExc
   }
 
   let ticketAccountsUnlinked = 0
+  let ticketAccountsIgnoredAsEmail = 0
 
   for (const [accountNameKey, recentCount] of recentTicketsByAccountName) {
     if (recentCount < TICKET_BURST_THRESHOLD) continue
+
+    // Le libellé de compte Desk vaut parfois une adresse e-mail : le ticket n'a
+    // alors pas de compte rattaché et Desk retombe sur l'expéditeur. Ce n'est
+    // pas un dossier client, et deux de ces adresses sont des boîtes internes.
+    // On les écarte en les comptant, plutôt que d'afficher la messagerie d'un
+    // collègue comme un compte en difficulté.
+    if (accountNameKey.includes('@')) {
+      ticketAccountsIgnoredAsEmail += 1
+      continue
+    }
+
     const matched = accountsByNormalizedName.get(accountNameKey) ?? null
     if (!matched) ticketAccountsUnlinked += 1
     builder.add({
@@ -334,6 +358,30 @@ export function computeWeeklyExceptions(input: WeeklyExceptionsInput): WeeklyExc
     })
   }
 
+  // Règle 6 : follow_up_due.
+  for (const account of csmAccounts) {
+    if (account.status !== 'client') continue
+    if (!account.nextFollowUpDate) continue
+
+    const ageDays = daysBetween(account.nextFollowUpDate, referenceDate)
+    if (ageDays <= 0) continue
+    if (ageDays > FOLLOW_UP_WINDOW_DAYS) continue
+
+    builder.add({
+      subjectKind: 'account',
+      subjectId: account.accountId,
+      subjectName: account.accountName,
+      ownerName: account.csmName,
+      actionUrl: null,
+      reason: {
+        rule: 'follow_up_due',
+        label: `Relance échue depuis ${ageDays} ${pluralize(ageDays, 'jour', 'jours')}`,
+        ageDays,
+        weight: 2,
+      },
+    })
+  }
+
   const rows = builder.build()
 
   const countsByRule = emptyCountsByRule()
@@ -359,10 +407,6 @@ export function computeWeeklyExceptions(input: WeeklyExceptionsInput): WeeklyExc
       rule: 'Ticket rouvert dans les 7 jours',
       reason: "le compteur de réouvertures n'est pas conservé en base",
     },
-    {
-      rule: 'Compte dont la date de relance est dépassée',
-      reason: "le champ est pollué par des valeurs d'import, en attente d'arbitrage métier",
-    },
   ]
 
   return {
@@ -371,6 +415,6 @@ export function computeWeeklyExceptions(input: WeeklyExceptionsInput): WeeklyExc
     reasonCount,
     countsByRule,
     uncoveredRules,
-    diagnostics: { ticketAccountsUnlinked },
+    diagnostics: { ticketAccountsUnlinked, ticketAccountsIgnoredAsEmail },
   }
 }

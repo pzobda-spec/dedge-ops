@@ -50,6 +50,8 @@ export interface CRMAccount {
   createdTime: string | null
   /** Noms des tags Zoho portés par le compte (ex. churn25). Tableau vide si aucun. */
   tags: string[]
+  /** Next_FollowUp_due_date, 'YYYY-MM-DD'. Date de relance prévue, souvent périmée sur le parc ancien. */
+  nextFollowUpDate: string | null
 }
 
 /** Accepte 'YYYY-MM-DD' ou une date ISO complète ; ne fabrique jamais de date à partir d'une valeur non reconnue. */
@@ -81,6 +83,7 @@ interface RawCRMAccount {
   Nombre_d_h_tels: number | null
   Created_Time: string | null
   Tag: Array<{ name: string; id: string }> | null
+  Next_FollowUp_due_date: string | null
 }
 
 function mapRaw(a: RawCRMAccount): CRMAccount {
@@ -103,11 +106,12 @@ function mapRaw(a: RawCRMAccount): CRMAccount {
     hotelCount: typeof a.Nombre_d_h_tels === 'number' && Number.isFinite(a.Nombre_d_h_tels) && a.Nombre_d_h_tels > 0 ? a.Nombre_d_h_tels : null,
     createdTime: toIsoDate(a.Created_Time),
     tags: (a.Tag ?? []).map(tag => tag.name).filter(name => name.trim() !== ''),
+    nextFollowUpDate: toIsoDate(a.Next_FollowUp_due_date),
   }
 }
 
 const FIELDS =
-  'Account_Name,MRR_Total,MRR_CSM_manual1,Plan,CSM,Billing_Country,LoungeUp_Client_ID,Parent_Account,Account_Type,Sub_Start_date,Date_de_passation,Nombre_d_h_tels,Created_Time,Tag'
+  'Account_Name,MRR_Total,MRR_CSM_manual1,Plan,CSM,Billing_Country,LoungeUp_Client_ID,Parent_Account,Account_Type,Sub_Start_date,Date_de_passation,Nombre_d_h_tels,Created_Time,Tag,Next_FollowUp_due_date'
 
 export async function fetchCRMAccounts(perPage = 200): Promise<CRMAccount[]> {
   const data = await crmFetch<{ data: RawCRMAccount[] }>(`/Accounts?fields=${FIELDS}&per_page=${perPage}`)

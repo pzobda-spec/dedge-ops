@@ -36,6 +36,7 @@ function makeAccount(overrides: Partial<CRMAccount> = {}): CRMAccount {
     handoverDate: null,
     hotelCount: null,
     createdTime: '2026-01-01',
+    nextFollowUpDate: null,
     tags: [],
     ...overrides,
   }

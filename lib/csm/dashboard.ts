@@ -49,6 +49,8 @@ export interface CsmAccountRow {
   tickets6m: number
   /** Faux si aucun compte Desk ne correspond exactement au nom. */
   ticketMatched: boolean
+  /** Next_FollowUp_due_date du compte CRM, reprise telle quelle. */
+  nextFollowUpDate: string | null
 }
 
 export interface CsmAccountRowsResult {
@@ -161,6 +163,7 @@ export function buildCsmAccountRows(input: CsmDashboardInput): CsmAccountRowsRes
       openTickets,
       tickets6m,
       ticketMatched,
+      nextFollowUpDate: account.nextFollowUpDate,
     })
   }
 

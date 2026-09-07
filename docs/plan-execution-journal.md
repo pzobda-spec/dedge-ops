@@ -162,10 +162,13 @@ Relevé le 2026-09-07 sur `main`, commit `8ad425f`.
 
 Pour quelqu'un sans aucun contexte :
 
-1. **Décider de la page d'accueil par rôle.** La vue `/a-traiter` est ouverte
-   aux cinq rôles dans le middleware, mais `homePathForRole` n'a PAS été
-   modifiée : rediriger l'accueil de tous les rôles avant que quiconque ait vu
-   la page une fois serait prématuré. À trancher avec Pablo, rôle par rôle.
+1. **Page d'accueil par rôle, en attente d'usage réel.** La vue `/a-traiter`
+   est ouverte aux cinq rôles dans le middleware, et `homePathForRole` reste
+   INTACTE, volontairement. Condition d'entrée posée par le métier : la page
+   doit avoir été utilisée **deux mardis de suite** avant de devenir l'accueil
+   de qui que ce soit. Une vue d'exceptions qui se révèle bruyante et qu'on a
+   imposée en page d'accueil est très difficile à faire redescendre. Le choix
+   des rôles concernés reviendra à Pablo.
 2. **Clore le lot 0.3, qui demande une vérification en production.** Tout le code
    est livré, commité et vérifié, mais le plan définit le lot comme fini quand
    deux jours consécutifs de snapshots existent en base pour les deux tables.
@@ -266,7 +269,7 @@ doit l'imposer.
 
 ## 6 quater. Périmètre du lot 1.1
 
-La vue `/a-traiter` applique **cinq règles sur les neuf** du plan. Les quatre
+La vue `/a-traiter` applique **six règles sur les neuf** du plan. Les quatre
 absentes sont renvoyées par la route et affichées dans la page, avec leur motif.
 Une vue partielle qui le dit vaut mieux qu'une vue partielle silencieuse : c'est
 la raison d'être du lot 0.2.
@@ -281,25 +284,54 @@ la raison d'être du lot 0.2.
 | Jalon dépassant le 75e centile de sa phase | dépend du lot 1.5, non livré |
 | Ticket au-delà du SLA de son urgence | dépend du lot 1.2, gardé en dernier |
 | Ticket rouvert dans les 7 jours | `reopenCount` lu chez Zoho, jamais persisté |
-| Compte dont la date de relance est dépassée | **arbitrage métier attendu**, voir plus bas |
+| Compte dont la relance est échue depuis moins de 14 jours | livrée, arbitrée le 7 septembre |
 
-### Mesure sur `Next_FollowUp_due_date`, 7 septembre 2026
+### `Next_FollowUp_due_date`, arbitré le 7 septembre 2026
 
-Le champ existe et est demandable, mais il est inexploitable tel quel.
+Le champ est maintenu sur le parc récent et pollué sur la traîne historique :
+sur les 200 comptes clients les plus anciens, environ 90 % portent une date
+dépassée, avec un bloc de valeurs importées, `2016-09-01` environ 25 fois,
+`2015-01-08` environ 6 fois. BEST WESTERN FRANCE porte une relance due au
+10 novembre 2020.
 
-Sur les 200 comptes clients les plus anciens, environ 90 % portent une date
-dépassée, avec un bloc de valeurs identiques manifestement importées :
-`2016-09-01` revient environ 25 fois, `2015-01-08` environ 6 fois. BEST WESTERN
-FRANCE porte une relance due au 10 novembre 2020. En parallèle, plus de
-200 comptes portent bien une date future.
+**Décision retenue : « échue dans les quatorze derniers jours »**, et non
+« dépassée ». Même principe que le plafond de 90 jours sur les jalons. Une
+relance due en 2020 n'est pas une action de la semaine, c'est de la dette. La
+borne fait tomber les valeurs d'import d'elles-mêmes, sans liste noire à
+maintenir ni nettoyage préalable dans Zoho.
 
-Le champ est donc maintenu sur le parc récent et pollué sur la traîne
-historique. Appliquée telle quelle, la règle remonterait la quasi-totalité du
-parc ancien et noierait les vrais signaux.
+Volumes mesurés avant câblage : 38 dossiers sur trente jours, **23 sur
+quatorze jours**. La fenêtre de quatorze jours a été retenue pour ne pas
+doubler la taille de la liste. Une vue qu'on renonce à ouvrir ne vaut pas mieux
+qu'une vue vide.
 
-Trois sorties possibles, aucune tranchée : ignorer les dates antérieures à un
-seuil ; exclure les valeurs d'import connues ; ou nettoyer dans Zoho avant
-d'activer la règle.
+Le nettoyage du champ dans Zoho devient un chantier de données séparé, sans
+caractère bloquant. Il reste en question ouverte.
+
+### Rattachement des tickets aux comptes, mesuré le 7 septembre 2026
+
+Réserve soulevée par le métier : l'égalité stricte de nom normalisé a sa propre
+zone d'échec, et produirait le même symptôme que le défaut qu'elle corrige,
+deux lignes pour un dossier.
+
+Mesuré : 45 entrées Desk portent des tickets récents, 38 n'ont aucune
+correspondance CRM. **Mais 34 de ces 38 sont des adresses e-mail**, et
+seulement 4 sont de vrais libellés de compte.
+
+L'appariement par nom n'est donc quasiment pas en cause. Quand un ticket n'a pas
+de compte Desk rattaché, `client_name` retombe sur l'expéditeur. Une
+correspondance de repli n'y changerait rien et risquerait d'apparier une adresse
+à un compte au hasard, ce qui serait pire que de ne pas apparier.
+
+Sur la règle du pic de tickets, 3 des 4 comptes remontés étaient des adresses,
+dont deux boîtes internes D-EDGE : la vue aurait affiché les messageries de
+collègues comme des comptes clients en difficulté. Les libellés contenant une
+arobase sont désormais écartés et comptés dans un diagnostic distinct.
+
+Restent 4 libellés réels non rattachés, dont un renommage
+(`HOTEL CABANE - EX 9 HOTEL MONTPARNASSE`) qui ne matchera jamais par égalité
+stricte. Volume assez faible pour documenter la limite plutôt que construire un
+repli approximatif.
 
 ### Défaut corrigé en revue
 

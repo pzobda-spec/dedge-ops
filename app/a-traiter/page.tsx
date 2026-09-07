@@ -14,6 +14,7 @@ type ExceptionRuleKey =
   | 'ticket_burst'
   | 'live_without_csm'
   | 'implementer_over_capacity'
+  | 'follow_up_due'
 
 interface ExceptionReason {
   rule: ExceptionRuleKey
@@ -59,6 +60,7 @@ const RULE_FILTER_LABELS: Record<ExceptionRuleKey, string> = {
   ticket_burst: 'Pic de tickets',
   live_without_csm: 'En ligne sans CSM',
   implementer_over_capacity: 'Implémenteur en surcharge',
+  follow_up_due: 'Relance échue',
 }
 
 const RULE_FILTER_ORDER: ExceptionRuleKey[] = [
@@ -67,6 +69,7 @@ const RULE_FILTER_ORDER: ExceptionRuleKey[] = [
   'ticket_burst',
   'live_without_csm',
   'implementer_over_capacity',
+  'follow_up_due',
 ]
 
 type RuleFilter = 'all' | ExceptionRuleKey

@@ -63,6 +63,7 @@ function makeProject(overrides: Partial<OnboardingProject> = {}): OnboardingProj
 
 function makeCsmAccount(overrides: Partial<CsmAccountRow> = {}): CsmAccountRow {
   return {
+    nextFollowUpDate: null,
     accountId: 'acc-1',
     accountName: 'Compte Test',
     csmName: null,
@@ -248,14 +249,17 @@ test('tri : score décroissant puis ancienneté', () => {
   assert.ok(rule2Index > milestoneRows.findIndex(row => row.subjectId === 'proj-high'))
 })
 
-test('uncoveredRules contient les quatre règles non couvertes', () => {
+test('uncoveredRules contient les trois règles non couvertes', () => {
+  // La règle de relance échue est passée de non couverte à couverte le
+  // 7 septembre 2026, bornée à quatorze jours. Ce test encodait l'état
+  // antérieur.
   const result = computeWeeklyExceptions(baseInput())
-  assert.equal(result.uncoveredRules.length, 4)
+  assert.equal(result.uncoveredRules.length, 3)
   const rules = result.uncoveredRules.map(entry => entry.rule)
   assert.ok(rules.includes('Jalon dépassant le 75e centile de sa phase'))
   assert.ok(rules.includes('Ticket au-delà du SLA de son urgence'))
   assert.ok(rules.includes('Ticket rouvert dans les 7 jours'))
-  assert.ok(rules.includes('Compte dont la date de relance est dépassée'))
+  assert.ok(!rules.some(rule => rule.toLowerCase().includes('relance')))
 })
 
 test('entrées vides : aucun plantage, compteurs à zéro', () => {
@@ -263,7 +267,7 @@ test('entrées vides : aucun plantage, compteurs à zéro', () => {
   assert.deepEqual(result.rows, [])
   assert.equal(result.subjectCount, 0)
   assert.equal(result.reasonCount, 0)
-  assert.equal(result.uncoveredRules.length, 4)
+  assert.equal(result.uncoveredRules.length, 3)
   for (const rule of Object.keys(result.countsByRule)) {
     assert.equal(result.countsByRule[rule as keyof typeof result.countsByRule], 0)
   }
@@ -310,4 +314,123 @@ test('un compte Desk sans correspondance CRM reste listé et compté comme non r
   assert.equal(result.subjectCount, 1)
   assert.equal(result.diagnostics.ticketAccountsUnlinked, 1)
   assert.equal(result.rows[0].subjectId, 'COMPTE DESK INCONNU')
+})
+
+test('une entrée Desk qui est une adresse e-mail n’est pas présentée comme un compte', () => {
+  // Mesuré le 7 septembre 2026 : sur 45 entrées Desk portant des tickets
+  // récents, 34 sont des adresses e-mail, dont des boîtes internes D-EDGE.
+  // Desk retombe sur l'expéditeur quand le ticket n'a pas de compte rattaché.
+  const result = computeWeeklyExceptions(
+    baseInput({
+      csmAccounts: [],
+      recentTicketsByAccountName: new Map([
+        ['SBENAMAR@D-EDGE.COM', 4],
+        ['HOTEL BEAU RIVAGE', 3],
+      ]),
+    }),
+  )
+
+  assert.equal(result.subjectCount, 1)
+  assert.equal(result.rows[0].subjectName, 'HOTEL BEAU RIVAGE')
+  assert.equal(result.diagnostics.ticketAccountsIgnoredAsEmail, 1)
+  assert.equal(result.diagnostics.ticketAccountsUnlinked, 1)
+})
+
+// ─── Règle 6, relance échue dans la fenêtre ─────────────────────────────────
+//
+// Bornée à quatorze jours par arbitrage métier du 7 septembre 2026. Mesuré sur
+// la production : trente jours produisaient 38 dossiers, quatorze en produisent
+// 23. Au-delà, une relance n'est pas une action de la semaine, c'est de la
+// dette. La borne fait aussi tomber d'elles-mêmes les valeurs d'import de 2015
+// et 2016, sans liste noire à maintenir.
+
+test('une relance échue depuis six jours fait entrer le compte', () => {
+  const result = computeWeeklyExceptions(
+    baseInput({
+      csmAccounts: [
+        makeCsmAccount({ accountId: 'acc-1', status: 'client', nextFollowUpDate: '2026-09-01' }),
+      ],
+    }),
+  )
+  assert.equal(result.subjectCount, 1)
+  const reason = result.rows[0].reasons.find(r => r.rule === 'follow_up_due')
+  assert.ok(reason)
+  assert.equal(reason?.label, 'Relance échue depuis 6 jours')
+  assert.equal(reason?.ageDays, 6)
+})
+
+test('une relance échue depuis un jour est libellée au singulier', () => {
+  const result = computeWeeklyExceptions(
+    baseInput({
+      csmAccounts: [
+        makeCsmAccount({ accountId: 'acc-1', status: 'client', nextFollowUpDate: '2026-09-06' }),
+      ],
+    }),
+  )
+  assert.equal(result.rows[0].reasons[0].label, 'Relance échue depuis 1 jour')
+})
+
+test('une relance échue depuis vingt jours reste hors de la vue', () => {
+  const result = computeWeeklyExceptions(
+    baseInput({
+      csmAccounts: [
+        makeCsmAccount({ accountId: 'acc-1', status: 'client', nextFollowUpDate: '2026-08-18' }),
+      ],
+    }),
+  )
+  assert.equal(result.subjectCount, 0)
+})
+
+test('une relance à venir ou absente ne fait pas entrer le compte', () => {
+  const future = computeWeeklyExceptions(
+    baseInput({
+      csmAccounts: [
+        makeCsmAccount({ accountId: 'acc-1', status: 'client', nextFollowUpDate: '2026-10-01' }),
+      ],
+    }),
+  )
+  assert.equal(future.subjectCount, 0)
+
+  const absent = computeWeeklyExceptions(
+    baseInput({
+      csmAccounts: [
+        makeCsmAccount({ accountId: 'acc-2', status: 'client', nextFollowUpDate: null }),
+      ],
+    }),
+  )
+  assert.equal(absent.subjectCount, 0)
+})
+
+test('un ancien client n’est pas relancé', () => {
+  const result = computeWeeklyExceptions(
+    baseInput({
+      csmAccounts: [
+        makeCsmAccount({ accountId: 'acc-1', status: 'former_client', nextFollowUpDate: '2026-09-01' }),
+      ],
+    }),
+  )
+  assert.equal(result.subjectCount, 0)
+})
+
+test('relance échue et absence de CSM ne produisent qu’une ligne', () => {
+  const result = computeWeeklyExceptions(
+    baseInput({
+      csmAccounts: [
+        makeCsmAccount({
+          accountId: 'acc-1',
+          accountName: 'Hotel Beau Rivage',
+          status: 'client',
+          live: true,
+          csmName: null,
+          nextFollowUpDate: '2026-09-01',
+        }),
+      ],
+    }),
+  )
+  assert.equal(result.subjectCount, 1)
+  assert.equal(result.reasonCount, 2)
+  assert.deepEqual(
+    result.rows[0].reasons.map(r => r.rule).sort(),
+    ['follow_up_due', 'live_without_csm'],
+  )
 })

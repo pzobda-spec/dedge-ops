@@ -6,6 +6,20 @@ Les entrées antérieures au 15 juillet 2026 ont été reconstituées à partir 
 l’historique Git ; elles synthétisent les changements fonctionnels encore
 pertinents plutôt que chaque correction intermédiaire.
 
+## 2026-09-07 — Relances échues et bruit du support écartés
+
+### Ajouté
+
+- Les comptes dont la relance est échue depuis moins de quatorze jours
+  remontent dans « À traiter cette semaine ». Au-delà, une relance n'est plus
+  une action de la semaine : elle relève de la dette et n'encombre pas la vue.
+
+### Corrigé
+
+- Le support remontait parfois des adresses e-mail à la place d'un compte,
+  y compris des boîtes internes, présentées comme des comptes clients en
+  difficulté. Elles sont désormais écartées et comptées à part.
+
 ## 2026-09-07 — Une page « À traiter cette semaine »
 
 ### Ajouté
