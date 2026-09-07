@@ -169,12 +169,15 @@ Pour quelqu'un sans aucun contexte :
 2. **Clore le lot 0.3, qui demande une vérification en production.** Tout le code
    est livré, commité et vérifié, mais le plan définit le lot comme fini quand
    deux jours consécutifs de snapshots existent en base pour les deux tables.
-   Aucun test ne peut le prouver. Il faut, dans l'ordre : appliquer la migration
-   par `supabase db push` ; vérifier que `CRON_SECRET` est défini en production ;
-   laisser passer deux exécutions du cron `sync-portfolio-snapshots`, programmé à
-   `30 8 * * *` ; contrôler que les deux tables portent deux dates métier
-   distinctes et qu'un rejeu du même jour n'a rien dupliqué. Le détail est dans
-   `docs/snapshots-verification.md`.
+   Aucun test ne peut le prouver. Il reste à : appliquer les migrations par
+   `supabase db push` ; laisser passer deux exécutions du cron
+   `sync-portfolio-snapshots`, programmé à `30 8 * * *` ; contrôler que les deux
+   tables portent deux dates métier distinctes et qu'un rejeu du même jour n'a
+   rien dupliqué. Le détail est dans `docs/snapshots-verification.md`.
+
+   **`CRON_SECRET` est acquis** : présent en production depuis cinquante-deux
+   jours, donc antérieur au déploiement courant. Ce point du critère de fin est
+   clos, il ne reste que les deux passages réels.
 3. **B4 est livré et mesuré**, voir la section 6 bis. Le calcul est prêt et
    testé, mais aucune vue ne le consomme : c'est le lot 1.1, « à traiter cette
    semaine », qui l'affichera. Le lecteur de jalons ne tourne aujourd'hui dans
@@ -309,6 +312,40 @@ les comptes Desk sans correspondance sont comptés et signalés. Deux tests de
 non-régression.
 
 Les deux règles fonctionnaient isolément : c'est leur cohabitation qui mentait.
+
+## 6 quinquies. Réconciliation des snapshots, 7 septembre 2026
+
+Complément au lot 0.3, issu de la documentation Vercel et absent du plan.
+
+**La livraison des crons est en « best effort ».** Vercel ne rejoue jamais une
+invocation échouée, et peut à l'inverse déclencher deux fois le même run. La
+documentation recommande donc des tâches idempotentes ET réconciliatrices.
+
+L'`upsert` sur `(snapshot_date, owner)` et `(snapshot_date, csm_name)` traitait
+le doublon. Il ne traitait pas le run manqué, qui laisse un trou définitif dans
+l'historique, c'est-à-dire exactement ce que ce lot existe pour éviter.
+
+Le cron comble désormais, à chaque passage, les dates absentes des sept derniers
+jours. Trois règles encadrent ce rattrapage.
+
+**Une date rattrapée est marquée.** Colonne `is_backfilled` sur les deux tables.
+Ses valeurs sont celles du moment de la collecte, pas celles du jour manqué, qui
+sont perdues sans recours. Une mesure reconstituée qui se présente comme une
+mesure directe est pire qu'un trou : un trou se voit, une reconstitution
+silencieuse se prend pour la réalité.
+
+**Sept jours est un plafond, pas un objectif.** Au-delà, un trou n'est plus un
+incident de livraison mais un cron arrêté, et cela se traite autrement qu'un
+rattrapage silencieux. Ces dates sortent en avertissement, non comblées.
+
+**Un rattrapage ne recalcule jamais une date existante.** Sur les dates
+comblées, l'écriture est un insert qui ne fait rien en cas de conflit, jamais un
+update. Écraser la mesure d'hier par celle d'aujourd'hui détruirait l'historique
+que ce lot cherche à constituer. Le chemin de la date du jour, lui, reste un
+upsert : un rejeu du même jour doit rafraîchir.
+
+**Avant le premier snapshot, une absence n'est pas un trou.** L'historique
+n'avait pas commencé, il n'y a rien à combler.
 
 ## 7. Backlog, avec conditions d'entrée
 

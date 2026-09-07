@@ -21,6 +21,34 @@ charge, `onConflict: 'snapshot_date,csm_name'` pour le portefeuille. Un rejeu le
 même jour écrase la ligne, il ne la duplique pas. `captured_at` est réécrit à
 chaque passage et trace le moment réel du calcul.
 
+## Réconciliation, et non simple idempotence
+
+La livraison des crons Vercel est en « best effort » : une invocation échouée
+n'est jamais rejouée, et un même run peut être déclenché deux fois. L'`upsert`
+traite le doublon, il ne traite pas le run manqué, qui laisse un trou définitif.
+
+À chaque passage, le cron comble donc les dates absentes des sept derniers
+jours, avec quatre garde-fous.
+
+**Une date comblée est marquée** par `is_backfilled`. Ses valeurs sont celles du
+moment de la collecte, pas celles du jour manqué, qui sont perdues sans recours.
+Une mesure reconstituée qui se présente comme une mesure directe est pire qu'un
+trou : un trou se voit.
+
+**Un rattrapage n'écrase jamais une date existante.** Deux chemins d'écriture
+strictement séparés : `upsert` pour la date du jour, afin qu'un rejeu la
+rafraîchisse ; `upsert` avec `ignoreDuplicates`, soit un `ON CONFLICT DO
+NOTHING`, pour les dates comblées. Écraser la mesure d'hier par celle
+d'aujourd'hui détruirait l'historique que ce lot constitue.
+
+**Sept jours est un plafond, pas un objectif.** Au-delà, les dates manquantes
+sortent en avertissement borné, jamais comblées : ce n'est plus un incident de
+livraison mais un cron arrêté.
+
+**Avant le premier snapshot, une absence n'est pas un trou.** L'historique
+n'avait pas commencé. Sans cette borne, le tout premier passage fabriquerait
+sept lignes reconstituées à partir de rien.
+
 ## Piège de date, traité
 
 Les crons Vercel tournent en UTC. La clé d'upsert porte la **date métier
@@ -110,7 +138,8 @@ existent en base pour les deux tables**. Cette condition ne peut pas être
 vérifiée par le code : elle demande deux passages réels du cron.
 
 1. Appliquer la migration, `supabase db push`.
-2. Vérifier que `CRON_SECRET` est bien défini dans l'environnement de production.
+2. `CRON_SECRET` est acquis : présent en production depuis cinquante-deux
+   jours, antérieur au déploiement courant. Rien à faire sur ce point.
 3. Laisser passer deux exécutions, ou déclencher manuellement deux fois à des
    dates métier différentes.
 4. Contrôler que `onboarding_workload_snapshots` et `csm_portfolio_snapshots`
