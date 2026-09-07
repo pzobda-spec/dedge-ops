@@ -39,7 +39,7 @@ Dernière mise à jour : 2026-09-07.
 | 0.0, reprise d'état | **livré** |
 | 0.1, nom du département Desk | à faire |
 | 0.2, couverture des données | à faire |
-| 0.3, snapshots quotidiens | à faire, priorité 2 de l'ordre d'exécution |
+| 0.3, snapshots quotidiens | **en cours**, code livré et vérifié, attend deux passages du cron |
 | 0.4, fermer les routes admin | à faire |
 | 0.5, réparer ou retirer l'assistant IA | à faire |
 | 1.1, vue « à traiter cette semaine » | à faire, après 0.2 et 0.3 |
@@ -99,6 +99,16 @@ Relevé le 2026-09-07 sur `main`, commit `8ad425f`.
   vont donc réellement diverger, et sans le dénominateur un pourcentage
   historique deviendrait illisible dès qu'un plafond change. Numériquement, rien
   ne change aujourd'hui : les trois implémenteurs actuels sont à 50.
+- **`charge_pct` nullable.** Un implémenteur absent ou en stop a une capacité
+  effective nulle : le pourcentage n'est pas calculable alors que sa charge peut
+  être non nulle. Stocker 0 masquerait la surcharge, une sentinelle mentirait.
+  `NULL` veut dire « non calculable », et la page nomme explicitement les
+  personnes concernées sous le graphique avec leur nombre de dossiers. Sans cet
+  affichage, le point disparaissait des courbes en silence, ce qui annulait
+  l'intérêt de la colonne nullable.
+- **Un zéro est une donnée.** Chaque implémenteur et chaque CSM du roster reçoit
+  une ligne de snapshot, même à portefeuille vide. Sans cela, un trou dans
+  l'historique serait indistinguable d'une absence de mesure.
 - **Graphique d'évolution de la charge, deux séries jamais mélangées.** Confirmé
   par Pablo. Les snapshots réels s'affichent en trait plein, l'estimation
   antérieure en pointillé grisé, avec la date de bascule annotée sur l'axe. Les
@@ -144,6 +154,11 @@ Relevé le 2026-09-07 sur `main`, commit `8ad425f`.
    prototype, à confirmer.
 6. **Seuil de santé de compte**, nombre de tickets ouverts à partir duquel un
    compte passe en alerte. Aucun seuil posé à ce jour, volontairement.
+7. **Indicateur annoncé mais jamais livré.** Le `CHANGELOG` du 21 juillet 2026
+   annonce, dans le pilotage, un « nombre de jours consécutifs au-dessus de
+   80 % de charge sur la période sélectionnée ». Cet indicateur n'existe dans
+   aucun fichier du code. Il devient calculable dès que les snapshots
+   s'accumulent : faut-il le construire, ou retirer la mention du CHANGELOG ?
 
 ---
 
@@ -151,17 +166,19 @@ Relevé le 2026-09-07 sur `main`, commit `8ad425f`.
 
 Pour quelqu'un sans aucun contexte :
 
-1. Lot **0.3**, les snapshots quotidiens. La migration
-   `20260907170000_portfolio_snapshots.sql` est écrite : elle crée
-   `csm_portfolio_snapshots` et ajoute la colonne `capacity` à
-   `onboarding_workload_snapshots`. Restent à faire, un cron quotidien
-   idempotent alimentant les deux tables, et le branchement du graphique
-   « Évolution de la charge » sur la table plutôt que sur le recalcul.
-   **Piège de date** : la clé d'upsert doit porter la date métier
-   `Europe/Paris` (`planChargeReferenceDate()`), pas la date UTC du
-   déclenchement. Les crons Vercel tournent en UTC : un cron exécuté après 22 h
-   heure de Paris écrirait sur le lendemain.
-2. Puis **B4**, le calcul du retard borné, qui conditionne le lot 1.1.
+1. **Clore le lot 0.3, qui demande une vérification en production.** Tout le code
+   est livré, commité et vérifié, mais le plan définit le lot comme fini quand
+   deux jours consécutifs de snapshots existent en base pour les deux tables.
+   Aucun test ne peut le prouver. Il faut, dans l'ordre : appliquer la migration
+   par `supabase db push` ; vérifier que `CRON_SECRET` est défini en production ;
+   laisser passer deux exécutions du cron `sync-portfolio-snapshots`, programmé à
+   `30 8 * * *` ; contrôler que les deux tables portent deux dates métier
+   distinctes et qu'un rejeu du même jour n'a rien dupliqué. Le détail est dans
+   `docs/snapshots-verification.md`.
+2. Puis **B4**, le calcul du retard borné, qui conditionne le lot 1.1. Filtre
+   obligatoire, exclure les projets au statut `Live` et borner le retard à
+   90 jours : sans filtre, 1 340 jalons en retard et un retard médian de
+   394 jours, inexploitable ; avec filtre, 128 jalons sur 40 projets.
 
 ## 6 bis. Incident résolu
 
@@ -172,7 +189,9 @@ a été levé par Pablo, les fichiers du lot A1 ont ensuite été commités.
 
 ---
 
-## 7. Fichiers du lot A1, commités le 2026-09-07
+## 7. Fichiers commités
+
+### Lot A1, commit `bfabe06` du 2026-09-07
 
 - `lib/onboarding/workload.ts` : `isActiveProject` corrigée, ajout de
   `isOpenProject` et `isPausedProject`.
@@ -188,7 +207,15 @@ Commités au même moment :
 - `docs/plan-execution-cockpit.md`, `docs/plan-execution-arbitrages.md` (avec la
   rectification de A1), `docs/plan-execution-journal.md`.
 
-En attente, rattaché au lot 0.3 et non commité avec A1 :
+### Lot 0.3, commité le 2026-09-07
 
-- `supabase/migrations/20260907170000_portfolio_snapshots.sql`, écrite et non
-  encore accompagnée de son cron. Le lot n'est pas déclaré livré.
+- `supabase/migrations/20260907170000_portfolio_snapshots.sql`
+- `lib/onboarding/snapshots.ts`
+- `app/api/cron/sync-portfolio-snapshots/route.ts`
+- `app/api/onboarding/workload-snapshots/route.ts`
+- `app/onboarding/pilotage/page.tsx`
+- `vercel.json`
+- `docs/snapshots-verification.md`
+
+Le code est livré et vérifié. Le lot reste `en cours` jusqu'à la vérification en
+production décrite en section 6.

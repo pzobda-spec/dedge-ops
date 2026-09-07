@@ -6,6 +6,24 @@ Les entrées antérieures au 15 juillet 2026 ont été reconstituées à partir 
 l’historique Git ; elles synthétisent les changements fonctionnels encore
 pertinents plutôt que chaque correction intermédiaire.
 
+## 2026-09-07 — L’historique de charge et de portefeuille commence à se constituer
+
+### Ajouté
+
+- Un relevé quotidien enregistre désormais, chaque matin, la charge de chaque
+  implémenteur et le portefeuille de chaque chargé de succès client : nombre de
+  comptes, comptes en ligne, revenu récurrent valorisé et comptes résiliés
+  cumulés. Sans ce relevé, aucune tendance ni aucun délai réel n’était
+  calculable, et chaque journée écoulée était perdue définitivement.
+- Le graphique d’évolution de la charge affiche les relevés réels dès qu’ils
+  existent, en trait plein, et conserve l’estimation reconstituée en pointillé
+  grisé pour les périodes antérieures, avec le début de l’historique réel
+  annoté. Les deux ne se comparent jamais terme à terme.
+- Quand un implémenteur absent porte encore des dossiers, sa charge n’est pas
+  calculable en pourcentage : la page le nomme explicitement sous le graphique,
+  avec le nombre de dossiers à réattribuer, au lieu de laisser le cas disparaître
+  des courbes.
+
 ## 2026-09-07 — La charge des implémenteurs ne compte plus les dossiers en pause
 
 ### Corrigé

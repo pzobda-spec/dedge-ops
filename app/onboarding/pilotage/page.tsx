@@ -94,6 +94,14 @@ interface SatisfactionRow {
   submitted_at: string
 }
 
+interface WorkloadSnapshotRow {
+  snapshotDate: string
+  owner: string
+  activeProjects: number
+  chargePct: number | null
+  capacity: number
+}
+
 interface ComparisonDisplay {
   text: string
   tone: ComparisonTone
@@ -139,6 +147,10 @@ export default function OnboardingPilotagePage() {
   const [satisfactionSyncing, setSatisfactionSyncing] = useState(false)
   const [syncMessage, setSyncMessage] = useState<string | null>(null)
   const [copyStatus, setCopyStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [workloadSnapshots, setWorkloadSnapshots] = useState<WorkloadSnapshotRow[]>([])
+  const [workloadSnapshotsAvailable, setWorkloadSnapshotsAvailable] = useState<boolean | null>(null)
+  const [workloadSnapshotsError, setWorkloadSnapshotsError] = useState<string | null>(null)
+  const [workloadSnapshotsFirstDate, setWorkloadSnapshotsFirstDate] = useState<string | null>(null)
 
   const [activeOwner, setActiveOwner] = useState('Tous')
   const [datePreset, setDatePreset] = useState<DatePreset>('all')
@@ -287,7 +299,54 @@ export default function OnboardingPilotagePage() {
   const perLanguage = useMemo(() => buildBreakdown(filteredProjects.map(project => project.implementationLanguage || 'Non renseignée')), [filteredProjects])
   const chartRange = useMemo(() => dateRange ?? rollingMonthRange(12), [dateRange])
   const monthly = useMemo(() => buildMonthlyData(dimensionFilteredProjects, chartRange, locale), [chartRange, dimensionFilteredProjects, locale])
-  const workloadTrend = useMemo(() => buildWorkloadTrend(dimensionFilteredProjects, chartRange, locale), [chartRange, dimensionFilteredProjects, locale])
+  // Capacité effective nulle (absent ou stop) alors que des dossiers sont
+  // encore portés : la charge n'est pas calculable en pourcentage, le point
+  // disparaît donc du graphique. Sans ce relevé explicite, la surcharge serait
+  // silencieuse, ce qui est exactement ce que la colonne nullable doit éviter.
+  const uncomputableWorkload = useMemo(() => {
+    const owners = new Map<string, number>()
+    for (const snapshot of workloadSnapshots) {
+      if (snapshot.chargePct !== null || snapshot.activeProjects <= 0) continue
+      const owner = resolveOwnerName(snapshot.owner)
+      owners.set(owner, Math.max(owners.get(owner) ?? 0, snapshot.activeProjects))
+    }
+    return [...owners.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], 'fr'))
+      .map(([owner, activeProjects]) => ({ owner, activeProjects }))
+  }, [workloadSnapshots])
+
+  const workloadTrend = useMemo(
+    () => buildCombinedWorkloadTrend(dimensionFilteredProjects, chartRange, locale, workloadSnapshots, workloadSnapshotsAvailable),
+    [chartRange, dimensionFilteredProjects, locale, workloadSnapshots, workloadSnapshotsAvailable],
+  )
+  const hasRealWorkloadHistory = workloadSnapshotsAvailable === true && workloadSnapshots.length > 0
+  const realWorkloadStartMonth = hasRealWorkloadHistory && workloadSnapshotsFirstDate ? workloadSnapshotsFirstDate.slice(0, 7) : null
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setWorkloadSnapshotsError(null)
+
+    fetch(`/api/onboarding/workload-snapshots?from=${chartRange.from}&to=${chartRange.to}`, { signal: controller.signal })
+      .then(response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        return response.json() as Promise<{ snapshots?: WorkloadSnapshotRow[]; firstSnapshotDate?: string | null; lastSnapshotDate?: string | null; tableAvailable?: boolean }>
+      })
+      .then(({ snapshots, firstSnapshotDate, tableAvailable }) => {
+        setWorkloadSnapshots(snapshots ?? [])
+        setWorkloadSnapshotsFirstDate(firstSnapshotDate ?? null)
+        setWorkloadSnapshotsAvailable(tableAvailable ?? null)
+      })
+      .catch(fetchError => {
+        if (isAbortError(fetchError)) return
+        console.error(fetchError)
+        setWorkloadSnapshots([])
+        setWorkloadSnapshotsAvailable(null)
+        setWorkloadSnapshotsFirstDate(null)
+        setWorkloadSnapshotsError(t('Historique réel de la charge indisponible ; estimation affichée.'))
+      })
+
+    return () => controller.abort()
+  }, [chartRange, t])
   const hasActiveFilters = activeOwner !== 'Tous' || datePreset !== 'all' || Boolean(productFilter || statusFilter || search) || attentionFilter !== 'all' || clientTypologyFilter !== 'all'
   const nonSatisfactionFiltersActive = Boolean(productFilter || statusFilter) || attentionFilter !== 'all' || clientTypologyFilter !== 'all'
   const canSyncSatisfaction = currentUser?.role === 'admin' || currentUser?.role === 'onboarder'
@@ -535,26 +594,75 @@ export default function OnboardingPilotagePage() {
 
                 <WorkloadSection rows={perPerson} overloaded={overloaded} />
 
-                <ChartCard title={t('Évolution de la charge')} subtitle={`${t('Estimation à partir des dates Zoho (démarrage / mise en ligne), pas un relevé quotidien exact.')} · ${formatRange(chartRange, locale)}`} wide>
+                <ChartCard title={t('Évolution de la charge')} subtitle={`${t('Trait plein : relevé réel. Pointillé : estimation à partir des dates Zoho.')} · ${formatRange(chartRange, locale)}`} wide>
                   {workloadTrend.data.length === 0 || workloadTrend.owners.length === 0 ? <EmptyChart /> : (
-                    <div className="h-full overflow-x-auto" role="img" aria-label={t('Évolution de la charge par chargé de projet')}>
-                      <div className="h-full" style={{ minWidth: Math.max(620, workloadTrend.data.length * 72) }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={workloadTrend.data} margin={{ top: 16, right: 16, left: -8, bottom: 12 }}>
-                            <CartesianGrid stroke="#ece8f0" strokeDasharray="3 3" vertical={false} />
-                            <XAxis dataKey="label" tick={{ fontSize: 11, fill: MUTED }} tickLine={false} axisLine={false} />
-                            <YAxis domain={[0, 200]} tickFormatter={value => `${value}%`} tick={{ fontSize: 11, fill: MUTED }} tickLine={false} axisLine={false} />
-                            <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(value, name) => [`${value}%`, name]} />
-                            <Legend wrapperStyle={{ fontSize: 11 }} />
-                            <ReferenceLine y={80} stroke="#d58b28" strokeDasharray="4 4" label={{ value: '80%', fontSize: 10, fill: '#84550e', position: 'insideTopRight' }} />
-                            <ReferenceLine y={100} stroke="#b7221b" strokeDasharray="4 4" label={{ value: '100%', fontSize: 10, fill: '#b7221b', position: 'insideTopRight' }} />
-                            {workloadTrend.owners.map((owner, index) => (
-                              <Line key={owner} type="monotone" dataKey={owner} name={owner} stroke={OWNER_COLORS[index % OWNER_COLORS.length]} strokeWidth={2} dot={{ r: 2 }} connectNulls />
-                            ))}
-                          </LineChart>
-                        </ResponsiveContainer>
+                    <>
+                      <div className="h-full overflow-x-auto" role="img" aria-label={t('Évolution de la charge par chargé de projet : trait plein pour les relevés réels, pointillé pour l’estimation reconstituée')}>
+                        <div className="h-full" style={{ minWidth: Math.max(620, workloadTrend.data.length * 72) }}>
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={workloadTrend.data} margin={{ top: 16, right: 16, left: -8, bottom: 12 }}>
+                              <CartesianGrid stroke="#ece8f0" strokeDasharray="3 3" vertical={false} />
+                              <XAxis dataKey="label" tick={{ fontSize: 11, fill: MUTED }} tickLine={false} axisLine={false} />
+                              <YAxis domain={[0, 200]} tickFormatter={value => `${value}%`} tick={{ fontSize: 11, fill: MUTED }} tickLine={false} axisLine={false} />
+                              <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(value, name) => [`${value}%`, name]} />
+                              <Legend wrapperStyle={{ fontSize: 11 }} />
+                              <ReferenceLine y={80} stroke="#d58b28" strokeDasharray="4 4" label={{ value: '80%', fontSize: 10, fill: '#84550e', position: 'insideTopRight' }} />
+                              <ReferenceLine y={100} stroke="#b7221b" strokeDasharray="4 4" label={{ value: '100%', fontSize: 10, fill: '#b7221b', position: 'insideTopRight' }} />
+                              {realWorkloadStartMonth && (
+                                <ReferenceLine
+                                  x={formatMonth(realWorkloadStartMonth, locale)}
+                                  stroke={MUTED}
+                                  strokeDasharray="2 2"
+                                  label={{ value: t('début de l’historique réel'), fontSize: 10, fill: MUTED, position: 'insideTopLeft' }}
+                                />
+                              )}
+                              {workloadTrend.owners.map((owner, index) => (
+                                <Line
+                                  key={owner}
+                                  type="monotone"
+                                  dataKey={owner}
+                                  name={owner}
+                                  stroke={OWNER_COLORS[index % OWNER_COLORS.length]}
+                                  strokeWidth={2}
+                                  dot={{ r: 2 }}
+                                  connectNulls={false}
+                                />
+                              ))}
+                              {workloadTrend.owners.map((owner, index) => (
+                                <Line
+                                  key={estimatedKey(owner)}
+                                  type="monotone"
+                                  dataKey={estimatedKey(owner)}
+                                  name={estimatedKey(owner)}
+                                  stroke={OWNER_COLORS[index % OWNER_COLORS.length]}
+                                  strokeOpacity={0.5}
+                                  strokeDasharray="4 4"
+                                  strokeWidth={1.5}
+                                  dot={{ r: 1.5 }}
+                                  connectNulls={false}
+                                />
+                              ))}
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
                       </div>
-                    </div>
+                      <p className="mt-2 text-[11px] text-[#8a8a8a]">
+                        {hasRealWorkloadHistory
+                          ? t('Le pointillé grisé est une estimation reconstituée à partir des dates de projet, faute d’historique réel avant le début du relevé quotidien ; les deux séries ne se comparent pas terme à terme.')
+                          : t('L’historique réel démarre au premier passage du relevé quotidien ; en attendant, seule l’estimation reconstituée à partir des dates de projet est affichée.')}
+                        {workloadSnapshotsError ? ` ${workloadSnapshotsError}` : ''}
+                      </p>
+                      {uncomputableWorkload.length > 0 && (
+                        <p className="mt-1 text-[11px] font-semibold text-[#b7221b]">
+                          {t('Charge non calculable, capacité nulle malgré des dossiers portés :')}{' '}
+                          {uncomputableWorkload
+                            .map(entry => `${entry.owner} (${entry.activeProjects})`)
+                            .join(', ')}
+                          {'. '}
+                          {t('Ces dossiers n’apparaissent sur aucune courbe et sont à réattribuer.')}
+                        </p>
+                      )}
+                    </>
                   )}
                 </ChartCard>
 
@@ -1213,7 +1321,69 @@ function buildMonthlyData(projects: OnboardingProject[], range: DateRange, local
 
 interface WorkloadTrend {
   owners: string[]
-  data: Array<Record<string, string | number>>
+  data: Array<Record<string, string | number | null>>
+}
+
+const ESTIMATED_SUFFIX = ' (estimé)'
+
+function estimatedKey(owner: string): string {
+  return `${owner}${ESTIMATED_SUFFIX}`
+}
+
+// Combines the reconstructed estimate (buildWorkloadTrend) with the real daily
+// snapshots recorded from onboarding_workload_snapshots. A given owner/month
+// carries either the real value or the estimated value, never both, so no
+// derived calculation (trend, average, delta) can ever mix the two natures.
+function buildCombinedWorkloadTrend(
+  projects: OnboardingProject[],
+  range: DateRange,
+  locale: Locale,
+  snapshots: WorkloadSnapshotRow[],
+  tableAvailable: boolean | null,
+): WorkloadTrend {
+  const estimate = buildWorkloadTrend(projects, range, locale)
+  const hasReal = tableAvailable === true && snapshots.length > 0
+
+  if (!hasReal) {
+    const data = estimate.data.map(row => {
+      const combinedRow: Record<string, string | number | null> = { month: row.month, label: row.label }
+      for (const owner of estimate.owners) combinedRow[estimatedKey(owner)] = row[owner]
+      return combinedRow
+    })
+    return { owners: estimate.owners, data }
+  }
+
+  // Keep the last snapshot of each month per owner (state at end of month, a
+  // stock value, not a flow to sum).
+  const lastSnapshotByOwnerMonth = new Map<string, WorkloadSnapshotRow>()
+  for (const snapshot of snapshots) {
+    const owner = resolveOwnerName(snapshot.owner)
+    const month = snapshot.snapshotDate.slice(0, 7)
+    const key = `${owner}::${month}`
+    const existing = lastSnapshotByOwnerMonth.get(key)
+    if (!existing || snapshot.snapshotDate >= existing.snapshotDate) {
+      lastSnapshotByOwnerMonth.set(key, snapshot)
+    }
+  }
+  const realOwners = [...new Set(snapshots.map(snapshot => resolveOwnerName(snapshot.owner)))]
+  const owners = [...new Set([...estimate.owners, ...realOwners])].sort((a, b) => a.localeCompare(b, 'fr'))
+
+  const data = estimate.data.map(row => {
+    const combinedRow: Record<string, string | number | null> = { month: row.month, label: row.label }
+    for (const owner of owners) {
+      const real = lastSnapshotByOwnerMonth.get(`${owner}::${row.month}`)
+      if (real) {
+        combinedRow[owner] = real.chargePct
+        combinedRow[estimatedKey(owner)] = null
+      } else {
+        combinedRow[owner] = null
+        combinedRow[estimatedKey(owner)] = owner in row ? row[owner] : null
+      }
+    }
+    return combinedRow
+  })
+
+  return { owners, data }
 }
 
 // Reconstructs an approximate historical charge per project owner from Zoho's
