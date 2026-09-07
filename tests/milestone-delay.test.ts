@@ -236,3 +236,28 @@ test('projectsConcerned compte les projets distincts, pas les jalons', () => {
 test('MILESTONE_DELAY_CAP_DAYS vaut 90 jours', () => {
   assert.equal(MILESTONE_DELAY_CAP_DAYS, 90)
 })
+
+test('la tenue de délai ne retient que la fenêtre glissante de douze mois', () => {
+  // Un jalon clôturé il y a plus de douze mois relève de la dette, pas de la
+  // performance : le laisser entrer tirerait la médiane vers le bas pour
+  // toujours et l'indicateur n'informerait plus aucune décision.
+  const result = computeMilestoneDelays({
+    milestones: [
+      // Dans la fenêtre, clôturé 10 jours après l'échéance.
+      makeMilestone({
+        id: 'recent', name: 'Connexion PMS', isClosed: true,
+        endDate: '2026-06-01', completedOn: '2026-06-11',
+      }),
+      // Hors fenêtre, clôturé bien plus tôt et bien plus en retard.
+      makeMilestone({
+        id: 'ancien', name: 'Connexion PMS', isClosed: true,
+        endDate: '2023-01-01', completedOn: '2023-06-01',
+      }),
+    ],
+    projects: [makeProject()],
+    referenceDate: REFERENCE_DATE,
+  })
+  assert.equal(result.closedLateStats.windowMonths, 12)
+  assert.equal(result.closedLateStats.closedLate, 1)
+  assert.equal(result.closedLateStats.medianDelayDays, 10)
+})

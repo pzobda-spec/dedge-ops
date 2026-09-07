@@ -42,6 +42,15 @@ async function projectsFetch<T>(path: string): Promise<T> {
   return res.json()
 }
 
+/** Nombre de tentatives sur limitation de débit, la première incluse. */
+const V3_RATE_LIMIT_MAX_ATTEMPTS = 3
+const V3_RATE_LIMIT_BASE_DELAY_MS = 1_000
+const V3_RATE_LIMIT_MAX_DELAY_MS = 30_000
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
 async function projectsV3Fetch<T>(path: string): Promise<T> {
   async function request(forceRefresh = false): Promise<Response> {
     const token = await getAccessToken(forceRefresh)
@@ -59,6 +68,29 @@ async function projectsV3Fetch<T>(path: string): Promise<T> {
   // Même logique de rafraîchissement que projectsFetch : un token peut expirer
   // entre la vérification locale et la requête.
   if (res.status === 401) res = await request(true)
+
+  // Repli sur limitation de débit. La pagination des jalons enchaîne une
+  // vingtaine d'appels séquentiels dans un cron quotidien : sans repli, un 429
+  // interrompt la collecte. On réessaie trois fois en attente exponentielle, en
+  // respectant l'en-tête Retry-After quand Zoho le fournit.
+  //
+  // Après trois échecs, on abandonne en levant : la mesure du jour est alors
+  // ABSENTE, jamais partielle. Une mesure absente est honnête, une mesure
+  // tronquée présentée comme complète ment.
+  for (let attempt = 1; attempt <= V3_RATE_LIMIT_MAX_ATTEMPTS && res.status === 429; attempt += 1) {
+    const retryAfterHeader = Number(res.headers.get('retry-after'))
+    const retryAfterMs = Number.isFinite(retryAfterHeader) && retryAfterHeader > 0
+      ? retryAfterHeader * 1000
+      : V3_RATE_LIMIT_BASE_DELAY_MS * 2 ** (attempt - 1)
+    await sleep(Math.min(retryAfterMs, V3_RATE_LIMIT_MAX_DELAY_MS))
+    res = await request()
+  }
+
+  if (res.status === 429) {
+    throw new Error(
+      `Zoho Projects API v3 rate limited after ${V3_RATE_LIMIT_MAX_ATTEMPTS} attempts: collecte abandonnée, aucune donnée partielle renvoyée`,
+    )
+  }
 
   if (!res.ok) {
     throw new Error(`Zoho Projects API v3 error ${res.status}: ${await res.text()}`)

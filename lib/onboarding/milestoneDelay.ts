@@ -58,7 +58,19 @@ export interface MilestoneDelayRow {
   delayDays: number // jours entiers de retard, > 0
 }
 
+/**
+ * Fenêtre glissante de l'indicateur de tenue de délai, en mois.
+ *
+ * La tenue de délai est une mesure de PERFORMANCE, pas de dette. Calculée sur
+ * tout l'historique, elle donne une médiane de 30 jours que les dossiers de
+ * 2023 tirent vers le bas pour toujours, et elle n'informe plus aucune
+ * décision. La dette, elle, garde son historique complet : c'est la vue `debt`.
+ */
+export const TIMELINESS_WINDOW_MONTHS = 12
+
 export interface ClosedLateStats {
+  /** Fenêtre retenue, en mois, pour que le chiffre soit lisible sans contexte. */
+  windowMonths: number
   /** Jalons clôturés après leur échéance. */
   closedLate: number
   /** Jalons clôturés à l'heure ou en avance. */
@@ -116,6 +128,17 @@ function compareRows(a: MilestoneDelayRow, b: MilestoneDelayRow): number {
   return a.projectName.localeCompare(b.projectName)
 }
 
+/** Décale une date 'YYYY-MM-DD' d'un nombre de mois, sans dépendance ni horloge. */
+function shiftMonths(date: string, months: number): string {
+  const [year, month, day] = date.split('-').map(Number)
+  const total = year * 12 + (month - 1) + months
+  const shiftedYear = Math.floor(total / 12)
+  const shiftedMonth = (total % 12 + 12) % 12 + 1
+  const lastDay = new Date(Date.UTC(shiftedYear, shiftedMonth, 0)).getUTCDate()
+  const safeDay = Math.min(day, lastDay)
+  return `${shiftedYear}-${String(shiftedMonth).padStart(2, '0')}-${String(safeDay).padStart(2, '0')}`
+}
+
 export function computeMilestoneDelays(input: {
   milestones: readonly ZohoMilestone[]
   projects: readonly OnboardingProject[]
@@ -139,6 +162,10 @@ export function computeMilestoneDelays(input: {
   let milestonesWithoutProject = 0
   let milestonesWithoutDueDate = 0
 
+  // Borne basse de la fenêtre glissante, sur la date de CLÔTURE : on mesure la
+  // performance récente, pas l'ancienneté de l'échéance.
+  const timelinessFrom = shiftMonths(referenceDate, -TIMELINESS_WINDOW_MONTHS)
+
   const closedLateDelays: number[] = []
   let closedLate = 0
   let closedOnTime = 0
@@ -157,7 +184,12 @@ export function computeMilestoneDelays(input: {
     // Notion DISTINCTE du retard à traiter : elle ne partage aucun chiffre
     // avec `actionable` ni `debt`.
     if (milestone.isClosed) {
-      if (milestone.completedOn && milestone.endDate && project) {
+      if (
+        milestone.completedOn &&
+        milestone.endDate &&
+        project &&
+        milestone.completedOn >= timelinessFrom
+      ) {
         const delay = daysBetween(milestone.endDate, milestone.completedOn)
         if (delay > 0) {
           closedLate += 1
@@ -249,6 +281,7 @@ export function computeMilestoneDelays(input: {
     actionable,
     debt,
     closedLateStats: {
+      windowMonths: TIMELINESS_WINDOW_MONTHS,
       closedLate,
       closedOnTime,
       medianDelayDays: median(closedLateDelays),

@@ -184,6 +184,9 @@ Faite avec le code livré, contre l'API Zoho Projects réelle, date de référen
 `2026-09-07`. Le document d'arbitrages n'est PAS modifié, conformément à la
 consigne.
 
+Complétée le même jour après deux corrections demandées : gestion du 429 sur la
+pagination, et fenêtre glissante de douze mois sur la tenue de délai.
+
 | Grandeur | Mesure |
 | --- | --- |
 | Jalons lus au portail | 3 416, lecture non tronquée |
@@ -210,6 +213,19 @@ différentes :
 Le chiffre du document précède donc la contrainte de filtrage par nom, il ne la
 contredit pas.
 
+### Tenue de délai, fenêtre de douze mois
+
+Mesurée sur la fenêtre glissante retenue, sur la date de clôture :
+487 jalons clôturés en retard, 466 à l'heure, médiane de 33 jours sur les seuls
+retards. Le taux de 51 % rejoint les 53 % du document.
+
+La médiane diverge en revanche : 33 jours contre 3. L'explication la plus
+probable est définitionnelle. La médiane livrée porte sur les SEULS jalons en
+retard ; une médiane calculée sur tous les jalons clôturés, dont 466 à l'heure
+sur 953, tomberait mécaniquement entre zéro et trois jours. Les deux mesures
+sont défendables, elles ne répondent pas à la même question. À trancher si le
+chiffre doit être publié.
+
 ### Un chiffre du document à relire
 
 Le document justifie le filtre de nom par « 590 jalons, soit 44 % du retard
@@ -220,6 +236,26 @@ retire que **38 sur 127, soit 30 %**.
 Les 590 comptent les jalons de ces noms sur TOUS les projets, projets Live
 compris, or l'exclusion des projets Live les retire déjà. Le filtre de nom reste
 justifié, mais son effet est de 30 points, pas de 44.
+
+## 6 ter. Motifs à réutiliser
+
+Deux réflexes issus du lot B4, valables pour tout le cockpit.
+
+**Sonder l'API réelle avant d'écrire un filtre par égalité littérale.** Les noms
+de jalons Zoho arrivent encodés, `Kickoff &amp;  Information Gathering`, entité
+HTML et double espace, là où la spécification écrivait `Kickoff & Information
+Gathering`. Un filtre littéral n'aurait rien matché et la vue serait née VIDE au
+lieu de polluée, ce qui est le pire des deux : une vue vide se lit comme
+« rien à traiter ». Une spécification ne contient jamais ce genre d'écart, seul
+un appel réel le révèle. Vaut pour n'importe quel champ, pas seulement les noms.
+
+**Un total et sa décomposition doivent se réconcilier.** Les compteurs
+d'exclusion de B4 s'incrémentaient indépendamment : leur somme dépassait le
+total et aucun chiffre n'était vérifiable, alors qu'un commentaire affirmait
+l'inverse. Un entonnoir exclusif et un test de réconciliation corrigent cela.
+Le test vaut pour toutes les futures décompositions : dès qu'un écran annonce
+un total et ses motifs, la somme des motifs doit égaler le total, et un test
+doit l'imposer.
 
 ## 7. Backlog, avec conditions d'entrée
 
