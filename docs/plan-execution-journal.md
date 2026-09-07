@@ -23,7 +23,7 @@ Dernière mise à jour : 2026-09-07.
 | B1, gabarit ramené à cinq jalons | à faire |
 | B2, dix jalons supprimés et occurrences closes | à faire |
 | B3, aucun jalon créé | sans objet, décision de ne rien faire |
-| B4, calcul du retard borné | à faire |
+| B4, calcul du retard borné | **livré**, mesuré sur la production le 7 septembre |
 | C1, contrat de passation généré | à faire, hors canal |
 | C2, bilan à 3 mois porté par le CSM | à faire |
 | C3, canal du contrat de passation | **bloqué, arbitrage métier attendu** |
@@ -171,10 +171,55 @@ Pour quelqu'un sans aucun contexte :
    `30 8 * * *` ; contrôler que les deux tables portent deux dates métier
    distinctes et qu'un rejeu du même jour n'a rien dupliqué. Le détail est dans
    `docs/snapshots-verification.md`.
-2. Puis **B4**, le calcul du retard borné, qui conditionne le lot 1.1. Filtre
-   obligatoire, exclure les projets au statut `Live` et borner le retard à
-   90 jours : sans filtre, 1 340 jalons en retard et un retard médian de
-   394 jours, inexploitable ; avec filtre, 128 jalons sur 40 projets.
+2. **B4 est livré et mesuré**, voir la section 6 bis. Le calcul est prêt et
+   testé, mais aucune vue ne le consomme : c'est le lot 1.1, « à traiter cette
+   semaine », qui l'affichera. Le lecteur de jalons ne tourne aujourd'hui dans
+   aucun cron, il est appelé à la demande.
+3. Ensuite les lots **A2**, **A3** et **D1** à **D4** de l'ordre d'exécution
+   des arbitrages.
+
+## 6 bis. Mesure B4 sur la production, 7 septembre 2026
+
+Faite avec le code livré, contre l'API Zoho Projects réelle, date de référence
+`2026-09-07`. Le document d'arbitrages n'est PAS modifié, conformément à la
+consigne.
+
+| Grandeur | Mesure |
+| --- | --- |
+| Jalons lus au portail | 3 416, lecture non tronquée |
+| Projets lus | 711 |
+| Jalons ouverts en retard | 1 345 |
+| dont projets Live | 799 |
+| dont au-delà de 90 jours, la dette | 419 |
+| dont nom hors gabarit conservé | 38 |
+| **À traiter** | **89 jalons sur 33 projets** |
+
+Les compteurs se réconcilient : `799 + 419 + 38 + 89 = 1345`. Un test le vérifie.
+
+### Pourquoi 89 et non les 128 du document
+
+Il n'y a pas de contradiction, les deux chiffres mesurent deux choses
+différentes :
+
+- ouverts, en retard, hors projets Live, sous le plafond de 90 jours, **sans**
+  filtre de nom : **127**. Le document annonce 128, mesuré la veille. L'écart
+  d'une unité s'explique par un jour de dérive.
+- les mêmes, **avec** le filtre des cinq noms conservés, demandé après coup :
+  **89**.
+
+Le chiffre du document précède donc la contrainte de filtrage par nom, il ne la
+contredit pas.
+
+### Un chiffre du document à relire
+
+Le document justifie le filtre de nom par « 590 jalons, soit 44 % du retard
+affiché ». Mesuré sur le périmètre réellement concerné, c'est-à-dire les jalons
+ouverts, en retard, hors projets Live et sous le plafond, le filtre de nom n'en
+retire que **38 sur 127, soit 30 %**.
+
+Les 590 comptent les jalons de ces noms sur TOUS les projets, projets Live
+compris, or l'exclusion des projets Live les retire déjà. Le filtre de nom reste
+justifié, mais son effet est de 30 points, pas de 44.
 
 ## 7. Backlog, avec conditions d'entrée
 
@@ -229,6 +274,15 @@ Commités au même moment :
 
 Le code est livré et vérifié. Le lot reste `en cours` jusqu'à la vérification en
 production décrite en section 6.
+
+### Lot B4, commité le 2026-09-07
+
+- `lib/zoho/constants.ts` : base d'API v3.
+- `lib/zoho/projectsClient.ts` : `projectsV3Fetch`, `ZohoMilestone`,
+  `fetchAllZohoMilestones`.
+- `lib/onboarding/milestoneDelay.ts` : calcul pur, trois notions séparées.
+- `tests/milestone-delay.test.ts` : 13 tests, dont la réconciliation des
+  compteurs d'exclusion.
 ## 9. Incident résolu
 
 Un `.git/index.lock` a bloqué tout commit le 7 septembre entre 16 h 23 et

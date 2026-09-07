@@ -4,6 +4,8 @@ export const ZOHO_DESK_AGENT_TICKET_BASE_URL = 'https://support.loungeup.com/age
 export const ZOHO_CRM_BASE_URL = 'https://www.zohoapis.eu/crm/v2'
 export const ZOHO_FORMS_BASE_URL = 'https://forms.zoho.eu/api/v1'
 export const ZOHO_PROJECTS_API_BASE_URL = 'https://projectsapi.zoho.eu/restapi'
+/** API v3 de Zoho Projects, seule à exposer les jalons à l'échelle du portail. */
+export const ZOHO_PROJECTS_API_V3_BASE_URL = 'https://projectsapi.zoho.eu/api/v3'
 
 export const ZOHO_SUPPORT_DEPARTMENT_ID = '5861000000007061'
 export const ZOHO_CSM_DEPARTMENT_ID = '5861000019985859'

@@ -1,9 +1,13 @@
-import { ZOHO_PROJECTS_API_BASE_URL } from './constants'
+import { ZOHO_PROJECTS_API_BASE_URL, ZOHO_PROJECTS_API_V3_BASE_URL } from './constants'
 import { createZohoTokenProvider } from './oauth'
 import { resolveOwnerName } from '@/lib/onboarding/constants'
 
 const PORTAL_ID = process.env.ZOHO_PROJECTS_PORTAL_ID!
 const BASE = `${ZOHO_PROJECTS_API_BASE_URL}/portal/${PORTAL_ID}`
+// La v2 (`BASE`) n'expose les jalons que projet par projet, soit 711 appels
+// sur le portail actuel. La v3 les expose à l'échelle du portail en une
+// pagination unique : seul endpoint praticable pour le calcul de retard.
+const BASE_V3 = `${ZOHO_PROJECTS_API_V3_BASE_URL}/portal/${PORTAL_ID}`
 
 const getAccessToken = createZohoTokenProvider({
   label: 'Zoho Projects',
@@ -34,6 +38,33 @@ async function projectsFetch<T>(path: string): Promise<T> {
 
   // Zoho returns an empty 204 response for a page past the last project.
   if (res.status === 204) return { projects: [] } as T
+
+  return res.json()
+}
+
+async function projectsV3Fetch<T>(path: string): Promise<T> {
+  async function request(forceRefresh = false): Promise<Response> {
+    const token = await getAccessToken(forceRefresh)
+    return fetch(`${BASE_V3}${path}`, {
+      headers: {
+        Authorization: `Zoho-oauthtoken ${token}`,
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(20_000),
+    })
+  }
+
+  let res = await request()
+  // Même logique de rafraîchissement que projectsFetch : un token peut expirer
+  // entre la vérification locale et la requête.
+  if (res.status === 401) res = await request(true)
+
+  if (!res.ok) {
+    throw new Error(`Zoho Projects API v3 error ${res.status}: ${await res.text()}`)
+  }
+
+  if (res.status === 204) return {} as T
 
   return res.json()
 }
@@ -327,4 +358,121 @@ export async function fetchProjects(options?: {
 
 export async function fetchAllZohoProjects(): Promise<OnboardingProject[]> {
   return fetchProjects()
+}
+
+// ---------------------------------------------------------------------------
+// Jalons (v3)
+// ---------------------------------------------------------------------------
+
+export interface ZohoMilestone {
+  id: string
+  /** Nom brut renvoyé par Zoho, entités HTML incluses. */
+  name: string
+  projectId: string
+  projectName: string
+  startDate: string | null
+  endDate: string | null
+  completedOn: string | null
+  isClosed: boolean
+  ownerName: string | null
+  ownerEmail: string | null
+}
+
+interface RawMilestoneOwner {
+  first_name?: string
+  last_name?: string
+  email?: string
+}
+
+interface RawMilestoneProject {
+  id?: number | string
+  name?: string
+}
+
+interface RawMilestoneStatus {
+  name?: string
+  is_closed?: boolean
+}
+
+interface RawMilestone {
+  id: number | string
+  name: string
+  start_date?: string
+  end_date?: string
+  completed_on?: string
+  status_type?: string
+  status?: RawMilestoneStatus
+  owner?: RawMilestoneOwner
+  project?: RawMilestoneProject
+}
+
+interface RawPageInfo {
+  has_next_page?: boolean
+}
+
+interface MilestonesResponse {
+  milestones?: RawMilestone[]
+  page_info?: RawPageInfo[]
+}
+
+function mapMilestone(raw: RawMilestone): ZohoMilestone {
+  const isClosed = raw.status_type
+    ? raw.status_type === 'closed'
+    : raw.status?.is_closed ?? false
+
+  const first = raw.owner?.first_name?.trim() ?? ''
+  const last = raw.owner?.last_name?.trim() ?? ''
+  const ownerName = first || last ? `${first} ${last}`.trim() : null
+
+  return {
+    id: String(raw.id),
+    name: raw.name,
+    projectId: raw.project?.id != null ? String(raw.project.id) : '',
+    projectName: raw.project?.name ?? '',
+    startDate: convertDate(raw.start_date),
+    endDate: convertDate(raw.end_date),
+    completedOn: convertDate(raw.completed_on),
+    isClosed,
+    ownerName,
+    ownerEmail: raw.owner?.email ?? null,
+  }
+}
+
+export async function fetchAllZohoMilestones(options?: { maxPages?: number }): Promise<{
+  milestones: ZohoMilestone[]
+  truncated: boolean
+}> {
+  const maxPages = options?.maxPages ?? 40
+  const perPage = 200
+  const milestones: ZohoMilestone[] = []
+
+  let page = 1
+  let pagesFetched = 0
+  let truncated = false
+
+  while (true) {
+    const query = new URLSearchParams({ page: String(page), per_page: String(perPage) })
+    const data = await projectsV3Fetch<MilestonesResponse>(`/milestones?${query}`)
+    const batch = data.milestones
+    if (!Array.isArray(batch)) {
+      throw new Error('Zoho Projects API v3 returned an invalid milestones payload')
+    }
+
+    for (const raw of batch) {
+      milestones.push(mapMilestone(raw))
+    }
+
+    pagesFetched += 1
+    const hasNextPage = data.page_info?.[0]?.has_next_page ?? false
+    if (!hasNextPage) break
+
+    if (pagesFetched >= maxPages) {
+      truncated = true
+      break
+    }
+
+    page += 1
+  }
+
+  return { milestones, truncated }
 }
