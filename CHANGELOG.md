@@ -6,6 +6,16 @@ Les entrées antérieures au 15 juillet 2026 ont été reconstituées à partir 
 l’historique Git ; elles synthétisent les changements fonctionnels encore
 pertinents plutôt que chaque correction intermédiaire.
 
+## 2026-09-08 — Correction du chargement de « À traiter »
+
+### Corrigé
+
+- La page plantait à réception des données : l’API omettait les diagnostics
+  de rapprochement des comptes support, pourtant lus par l’écran. La réponse
+  transmet désormais le résultat complet, avec un contrat TypeScript partagé
+  entre l’API et la page. Une réponse ancienne sans diagnostics affiche une
+  limite explicite au lieu de faire planter la vue.
+
 ## 2026-09-07 — Relances échues et bruit du support écartés
 
 ### Ajouté

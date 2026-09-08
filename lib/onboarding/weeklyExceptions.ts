@@ -79,6 +79,13 @@ export interface WeeklyExceptionsResult {
   }
 }
 
+/** Contrat partagé entre la route agrégée et la page « À traiter ». */
+export interface WeeklyExceptionsResponse extends WeeklyExceptionsResult {
+  referenceDate: string
+  warnings: string[]
+  milestonesTruncated: boolean
+}
+
 export interface WeeklyExceptionsInput {
   /** Sortie de `computeMilestoneDelays`, champ `actionable` uniquement. */
   overdueMilestones: readonly MilestoneDelayRow[]

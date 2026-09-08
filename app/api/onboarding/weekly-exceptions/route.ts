@@ -5,7 +5,7 @@ import { loadPlanChargeSources, planChargeMonths, planChargeReferenceDate } from
 import { computeMilestoneDelays, type MilestoneDelayRow } from '@/lib/onboarding/milestoneDelay'
 import { fetchAllZohoMilestones } from '@/lib/zoho/projectsClient'
 import { loadRecentTicketCountsByAccountName } from '@/lib/csm/ticketHealth'
-import { computeWeeklyExceptions, TICKET_BURST_WINDOW_DAYS } from '@/lib/onboarding/weeklyExceptions'
+import { computeWeeklyExceptions, TICKET_BURST_WINDOW_DAYS, type WeeklyExceptionsResponse } from '@/lib/onboarding/weeklyExceptions'
 
 export const dynamic = 'force-dynamic'
 
@@ -54,15 +54,11 @@ export async function GET(req: NextRequest) {
     })
 
     return NextResponse.json({
+      ...result,
       referenceDate,
-      subjectCount: result.subjectCount,
-      reasonCount: result.reasonCount,
-      countsByRule: result.countsByRule,
-      rows: result.rows,
-      uncoveredRules: result.uncoveredRules,
       warnings,
       milestonesTruncated,
-    })
+    } satisfies WeeklyExceptionsResponse)
   } catch (error) {
     return authErrorResponse(error) ?? NextResponse.json(
       { error: error instanceof Error ? error.message : String(error) },

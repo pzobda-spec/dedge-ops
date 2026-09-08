@@ -3,48 +3,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertCircle, TriangleAlert } from 'lucide-react'
 import { useLocale } from '@/lib/i18n/LocaleContext'
-
-// ─── Types ──────────────────────────────────────────────────────────────────
-
-type ExceptionSubjectKind = 'project' | 'account' | 'implementer'
-
-type ExceptionRuleKey =
-  | 'milestone_overdue'
-  | 'started_without_go_live'
-  | 'ticket_burst'
-  | 'live_without_csm'
-  | 'implementer_over_capacity'
-  | 'follow_up_due'
-
-interface ExceptionReason {
-  rule: ExceptionRuleKey
-  label: string
-  ageDays: number | null
-  weight: number
-}
-
-interface ExceptionRow {
-  subjectKind: ExceptionSubjectKind
-  subjectId: string
-  subjectName: string
-  ownerName: string | null
-  actionUrl: string | null
-  reasons: ExceptionReason[]
-  score: number
-  oldestAgeDays: number | null
-}
-
-interface WeeklyExceptionsResponse {
-  referenceDate: string
-  subjectCount: number
-  reasonCount: number
-  countsByRule: Record<string, number>
-  rows: ExceptionRow[]
-  uncoveredRules: { rule: string; reason: string }[]
-  diagnostics: { ticketAccountsUnlinked: number }
-  warnings: string[]
-  milestonesTruncated: boolean
-}
+import type {
+  ExceptionRow,
+  ExceptionRuleKey,
+  ExceptionSubjectKind,
+  WeeklyExceptionsResponse,
+} from '@/lib/onboarding/weeklyExceptions'
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -334,7 +298,11 @@ export default function ATraiterPage() {
         </ul>
       </section>
 
-      {data.diagnostics.ticketAccountsUnlinked > 0 && (
+      {!data.diagnostics ? (
+        <WarningBanner>
+          {t('Le rattachement des comptes support aux fiches CRM n’a pas pu être vérifié.')}
+        </WarningBanner>
+      ) : data.diagnostics.ticketAccountsUnlinked > 0 && (
         <p className="text-xs text-[#8a8a8a]">
           {data.diagnostics.ticketAccountsUnlinked}{' '}
           {t('compte(s) signalé(s) par un pic de tickets n’a/n’ont pas pu être rattaché(s) à une fiche CRM ; leur nom affiché est celui du support.')}
