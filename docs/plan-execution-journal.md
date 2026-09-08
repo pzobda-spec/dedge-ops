@@ -379,6 +379,23 @@ upsert : un rejeu du même jour doit rafraîchir.
 **Avant le premier snapshot, une absence n'est pas un trou.** L'historique
 n'avait pas commencé, il n'y a rien à combler.
 
+## 6 sexies. Manquement corrigé le 8 septembre 2026
+
+Le lot 1.1 a été déclaré livré alors que la page `/a-traiter` **n'était liée
+depuis aucune navigation**. La page existait, la route était ouverte dans le
+middleware, les droits étaient posés, mais aucune entrée de la barre latérale
+n'y menait : il fallait taper l'URL à la main. Pablo n'a donc vu aucune
+différence sur le cockpit, et il avait raison.
+
+Motif à retenir, au même titre que ceux de la section 6 ter : **une page sans
+lien n'est pas livrée**. Une route qui répond, des droits corrects et des
+vérifications vertes ne prouvent pas qu'une fonctionnalité est atteignable. Le
+critère de fin d'un lot d'interface doit inclure le chemin d'accès depuis
+l'écran d'accueil, pas seulement l'existence de la page.
+
+Entrée ajoutée en première position de la barre latérale, ouverte aux cinq
+rôles : c'est un point d'entrée de journée, il précède les vues d'état.
+
 ## 7. Backlog, avec conditions d'entrée
 
 ### Compteur de jours consécutifs au-dessus de 80 % de charge

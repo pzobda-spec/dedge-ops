@@ -22,6 +22,9 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
+  // Point d'entrée de la journée : liste de décisions, placée avant les vues
+  // d'état. Ouverte à tous les rôles, elle croise implémentation, support et CSM.
+  { href: '/a-traiter', label: 'À traiter', roles: ['admin', 'support', 'onboarder', 'commercial_readonly', 'csm_lead'] },
   { href: '/dashboard', label: 'Tableau de bord', roles: ['admin', 'support'] },
   { href: '/tickets', label: 'Tickets', roles: ['admin', 'support'] },
   { href: '/escalations', label: 'Bugs', roles: ['admin', 'support'] },
