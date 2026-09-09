@@ -6,6 +6,10 @@ Les entrées antérieures au 15 juillet 2026 ont été reconstituées à partir 
 l’historique Git ; elles synthétisent les changements fonctionnels encore
 pertinents plutôt que chaque correction intermédiaire.
 
+## 2026-09-09 — Résolution moyenne hors clôtures extrêmes
+
+- La résolution moyenne mensuelle exclut les délais strictement supérieurs à 90 jours calendaires. Le seuil et les nombres de clôtures retenues, exclues et non documentées sont visibles dans la tuile et la copie pour les slides. Le volume de tickets clôturés et le FCR restent inchangés.
+
 ## 2026-09-09 — Reporting mensuel pour les slides
 
 - Ajout d’une synthèse mensuelle Support CRM avec sélection du mois et copie des données : créations, clôtures indépendantes de la date de création, première réponse documentée, résolution calendaire, FCR explicitement estimé, principaux produits et jours de pic.

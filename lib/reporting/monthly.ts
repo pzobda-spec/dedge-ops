@@ -1,6 +1,8 @@
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 
 export const TIME_ZONE = 'Europe/Paris'
+// Au-delà de 90 jours calendaires, une clôture est exclue de la moyenne uniquement.
+export const MAX_RESOLUTION_DAYS = 90
 // Un appel génère en moyenne 2 tickets Phone (doublons de saisie).
 // Ratio à réviser si l'hypothèse change. Hypothèse non validée, jamais une mesure.
 // Les exports arbitraires sont interdits dans les route.ts de Next.js 14.
@@ -74,7 +76,8 @@ export function supportMetrics(rows: TicketRow[], from: Date, to: Date) {
     const ms = row.first_response_time_ms === null || row.first_response_time_ms === '' ? NaN : Number(row.first_response_time_ms)
     return Number.isFinite(ms) && ms >= 0 ? ms / 3_600_000 : duration(row.created_at, row.first_response_at)
   }).filter((value): value is number => value !== null)
-  const resolutions = closed.map(row => duration(row.created_at, row.resolved_at)).filter((value): value is number => value !== null)
+  const documentedResolutions = closed.map(row => duration(row.created_at, row.resolved_at)).filter((value): value is number => value !== null)
+  const resolutions = documentedResolutions.filter(hours => hours <= MAX_RESOLUTION_DAYS * 24)
   const fcr = closed.map(row => row.first_contact_resolution).filter((value): value is boolean => typeof value === 'boolean')
   function counts(selector: (row: TicketRow) => string) {
     const result = new Map<string, number>()
@@ -85,6 +88,9 @@ export function supportMetrics(rows: TicketRow[], from: Date, to: Date) {
     opened: created.length, closed: closed.length, closed_opened_pct: percent(closed.length, created.length),
     first_response_hours: average(replies), first_response_sample: replies.length,
     resolution_hours: average(resolutions), resolution_sample: resolutions.length,
+    resolution_max_days: MAX_RESOLUTION_DAYS,
+    resolution_excluded_count: documentedResolutions.length - resolutions.length,
+    resolution_missing_count: closed.length - documentedResolutions.length,
     fcr_estimate_pct: percent(fcr.filter(Boolean).length, fcr.length), fcr_sample: fcr.length,
     top_products: counts(row => row.product_area?.trim() || 'Autre').slice(0, 8),
     peak_days: counts(row => formatInTimeZone(row.created_at!, TIME_ZONE, 'yyyy-MM-dd')).slice(0, 5),

@@ -46,6 +46,37 @@ test('clôtures de tickets anciens incluses, données absentes exclues des moyen
   assert.equal(supportMetrics([], monthStart('2026-08'), monthStart('2026-09')).resolution_hours, null)
 })
 
+test('résolution limitée à 90 jours sans modifier les clôtures ni le FCR', () => {
+  const resolvedAt = '2026-08-15T12:00:00Z'
+  const atDuration = (seconds: number) => new Date(Date.parse(resolvedAt) - seconds * 1_000).toISOString()
+  const extreme = row({ created_at: atDuration(90 * 86_400 + 1), resolved_at: resolvedAt, first_contact_resolution: false })
+  const stats = supportMetrics([
+    row({ created_at: atDuration(90 * 86_400), resolved_at: resolvedAt, first_contact_resolution: true }),
+    extreme,
+    row({ created_at: resolvedAt, resolved_at: resolvedAt, first_contact_resolution: true }),
+    row({ resolved_at: resolvedAt, first_contact_resolution: false }),
+    row({ created_at: 'invalid', resolved_at: resolvedAt }),
+    row({ created_at: atDuration(-1), resolved_at: resolvedAt }),
+  ], monthStart('2026-08'), monthStart('2026-09'))
+  assert.equal(stats.resolution_max_days, 90)
+  assert.equal(stats.resolution_excluded_count, 1)
+  assert.equal(stats.resolution_missing_count, 3)
+  assert.equal(stats.resolution_sample, 2)
+  assert.equal(stats.resolution_hours, 1_080)
+  assert.equal(stats.closed, 6)
+  assert.equal(stats.fcr_sample, 4)
+  assert.equal(stats.fcr_estimate_pct, 50)
+
+  const extremes = supportMetrics([extreme], monthStart('2026-08'), monthStart('2026-09'))
+  assert.equal(extremes.resolution_hours, null)
+  assert.equal(extremes.resolution_sample, 0)
+  assert.equal(extremes.resolution_excluded_count, 1)
+  assert.equal(extremes.resolution_missing_count, 0)
+  assert.equal(extremes.closed, 1)
+  assert.equal(extremes.fcr_sample, 1)
+  assert.equal(extremes.fcr_estimate_pct, 0)
+})
+
 test('dates invalides rejetées, défaut glissant 24 mois et mois partiels', () => {
   for (const date of ['2026-02-30', '2026-02-30T12:00:00Z', '2026-08-01T12:00:00', 'invalid']) assert.throws(() => parseDate(date))
   assert.throws(() => channelRange(new URLSearchParams('from=2026-09-01&to=2026-08-01')))

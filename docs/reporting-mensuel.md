@@ -12,8 +12,11 @@ synchronisé et les projets d’onboarding ; ce n’est pas le global D-EDGE.
 - Première réponse : métrique Zoho `first_response_time_ms` lorsqu’elle existe,
   sinon écart `first_response_at - created_at`. La couverture est affichée.
   Ce n’est pas la première action et aucun SLA P1–P4 n’est déduit.
-- Résolution : temps calendaire création → clôture, sur les clôtures documentées.
-  Les vieux tickets peuvent fortement augmenter la moyenne.
+- Résolution : temps calendaire création → clôture, sur les clôtures documentées
+  dont le délai est inférieur ou égal à 90 jours. Les délais strictement supérieurs
+  sont exclus uniquement de cette moyenne ; le volume clôturé et le FCR restent
+  inchangés. Le seuil, le nombre retenu, les exclusions et les durées manquantes
+  sont affichés et copiés avec la synthèse. Aucune durée retenue : « — ».
 - FCR : estimation existante, sur les clôtures dont le booléen est renseigné.
 - Implémentation : dates de début Zoho (potentiellement planifiées), dates réelles
   de mise en production, délai sur les deux dates connues. Aucune assimilation aux

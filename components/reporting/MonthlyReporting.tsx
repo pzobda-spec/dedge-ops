@@ -67,7 +67,7 @@ export default function MonthlyReporting() {
       `Couverture : ${monthly.coverage.certified ? 'mois dans les bornes déclarées du backfill ; exhaustivité non vérifiée' : 'exhaustivité non certifiée'}${monthly.coverage.partial_month ? ' ; mois en cours' : ''}. Synchronisation tickets : ${syncLabel(monthly.coverage.last_synced_at)}.`,
       `Tickets créés : ${s.opened} ; clôturés : ${s.closed} ; clôturés / créés : ${number(s.closed_opened_pct, ' %')}.`,
       'Créations selon created_at ; clôtures selon resolved_at, y compris les tickets créés avant le mois. Ce sont les dates de clôture actuellement synchronisées, pas un historique de toutes les transitions.',
-      `Première réponse moyenne : ${number(s.first_response_hours, ' h')} (${s.first_response_sample}/${s.opened} tickets créés documentés). Résolution moyenne calendaire : ${number(s.resolution_hours, ' h')} (${s.resolution_sample}/${s.closed} clôtures documentées).`,
+      `Première réponse moyenne : ${number(s.first_response_hours, ' h')} (${s.first_response_sample}/${s.opened} tickets créés documentés). Résolution moyenne calendaire hors délais > ${s.resolution_max_days} jours : ${number(s.resolution_hours, ' h')} (${s.resolution_sample}/${s.closed} clôtures retenues ; ${s.resolution_excluded_count} exclues au-delà du seuil ; ${s.resolution_missing_count} durées manquantes ou invalides).`,
       `FCR estimé : ${number(s.fcr_estimate_pct, ' %')} (${s.fcr_sample}/${s.closed} clôtures documentées).`,
       `Produits les plus sollicités : ${s.top_products.map(v => `${v.name} : ${v.count}`).join(' ; ') || '—'}.`,
       `Jours les plus chargés (Paris) : ${s.peak_days.map(v => `${v.name} : ${v.count}`).join(' ; ') || '—'}. Aucune cause incident ou release déduite.`,
@@ -103,7 +103,7 @@ export default function MonthlyReporting() {
           <Kpi title="Tickets créés" value={number(monthly.support.opened)} detail="Créations pendant le mois, tous canaux." />
           <Kpi title="Tickets clôturés" value={number(monthly.support.closed)} detail={`Selon la date de clôture synchronisée, même si créés avant ce mois. Clôturés / créés : ${number(monthly.support.closed_opened_pct, ' %')}.`} />
           <Kpi title="Première réponse moyenne" value={number(monthly.support.first_response_hours, ' h')} detail={`${monthly.support.first_response_sample} / ${monthly.support.opened} créations documentées. Métrique Zoho, sinon écart entre horodatages ; ce n’est pas la première action.`} />
-          <Kpi title="Résolution moyenne" value={number(monthly.support.resolution_hours, ' h')} detail={`${monthly.support.resolution_sample} / ${monthly.support.closed} clôtures documentées. Temps calendaire création → clôture, pas un taux SLA.`} />
+          <Kpi title="Résolution moyenne" value={number(monthly.support.resolution_hours, ' h')} detail={`Hors délais > ${monthly.support.resolution_max_days} jours. ${monthly.support.resolution_sample} / ${monthly.support.closed} clôtures retenues ; ${monthly.support.resolution_excluded_count} exclues ; ${monthly.support.resolution_missing_count} durées manquantes ou invalides. Temps calendaire, pas un taux SLA.`} />
         </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <Kpi title="FCR estimé" value={number(monthly.support.fcr_estimate_pct, ' %')} detail={`${monthly.support.fcr_sample} clôtures documentées. Estimation selon les réouvertures / échanges disponibles.`} />
