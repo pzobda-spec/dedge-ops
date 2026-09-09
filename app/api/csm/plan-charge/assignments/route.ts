@@ -19,9 +19,12 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 export async function POST(req: NextRequest) {
   try {
-    await requireRole(req, ['admin', 'onboarder', 'csm_lead'])
+    const user = await requireRole(req, ['admin', 'onboarder', 'csm_lead'])
 
     const body = await req.json().catch(() => ({})) as Record<string, unknown>
+    if (user.role === 'csm_lead' && ['ob_owner', 'ob_locked', 'group_id'].some(key => Object.prototype.hasOwnProperty.call(body, key))) {
+      return NextResponse.json({ error: 'La team lead CSM ne peut pas modifier les attributions OB ni les groupes.' }, { status: 403 })
+    }
 
     const accountId = body.account_id
     if (typeof accountId !== 'string' || accountId.trim() === '') {
@@ -51,7 +54,7 @@ export async function POST(req: NextRequest) {
 
     const expectedGoLive = body.expected_go_live
     if (expectedGoLive !== undefined && expectedGoLive !== null) {
-      if (typeof expectedGoLive !== 'string' || !DATE_RE.test(expectedGoLive)) {
+      if (typeof expectedGoLive !== 'string' || !DATE_RE.test(expectedGoLive) || !Number.isFinite(Date.parse(expectedGoLive)) || new Date(expectedGoLive).toISOString().slice(0, 10) !== expectedGoLive) {
         return NextResponse.json(
           { error: 'expected_go_live doit être au format AAAA-MM-JJ.' },
           { status: 400 },

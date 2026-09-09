@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authErrorResponse, requireRole } from '@/lib/auth/roles'
 import { supabaseAdmin } from '@/lib/supabase/server'
+import { fetchAllPages } from '@/lib/supabase/pagination'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,16 +13,16 @@ export async function GET(req: NextRequest) {
 
     const from = req.nextUrl.searchParams.get('from') ?? ''
     const to = req.nextUrl.searchParams.get('to') ?? ''
-    if (!DATE_PATTERN.test(from) || !DATE_PATTERN.test(to)) {
+    if (!DATE_PATTERN.test(from) || !DATE_PATTERN.test(to) || from > to) {
       return NextResponse.json({ error: 'Paramètres from et to requis au format AAAA-MM-JJ.' }, { status: 400 })
     }
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await fetchAllPages((start, end) => supabaseAdmin
       .from('onboarding_workload_snapshots')
-      .select('snapshot_date, owner, active_projects, charge_pct, capacity')
+      .select('snapshot_date, owner, active_projects, charge_pct, capacity, is_backfilled, captured_at')
       .gte('snapshot_date', from)
       .lte('snapshot_date', to)
-      .order('snapshot_date', { ascending: true })
+      .order('snapshot_date', { ascending: true }).order('owner').range(start, end))
 
     if (error) {
       if (isMissingSnapshotsTable(error)) {
@@ -38,6 +39,8 @@ export async function GET(req: NextRequest) {
       activeProjects: row.active_projects,
       chargePct: row.charge_pct,
       capacity: row.capacity,
+      isBackfilled: row.is_backfilled,
+      capturedAt: row.captured_at,
     }))
 
     return NextResponse.json({
@@ -54,5 +57,5 @@ export async function GET(req: NextRequest) {
 }
 
 function isMissingSnapshotsTable(error: { code?: string; message?: string }) {
-  return error.code === '42P01' || /onboarding_workload_snapshots/i.test(error.message ?? '')
+  return error.code === '42P01' || error.code === 'PGRST205'
 }

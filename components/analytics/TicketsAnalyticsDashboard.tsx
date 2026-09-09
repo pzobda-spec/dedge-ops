@@ -26,6 +26,7 @@ import type {
   TicketAnalyticsResponse,
 } from '@/lib/zoho/ticketAnalyticsTypes'
 import type { SupportCockpitResponse } from '@/lib/support/cockpitTypes'
+import SupportBacklog from './SupportBacklog'
 import { ZOHO_DESK_AGENT_TICKET_BASE_URL } from '@/lib/zoho/constants'
 
 const PRIMARY = '#59319f'
@@ -368,7 +369,7 @@ export default function TicketsAnalyticsDashboard() {
         {!data && loading ? <DashboardSkeleton /> : data && (
           <>
             <section aria-label="Indicateurs clés" className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-              <KpiCard label="Tickets ouverts" value={formatNumber(data.open)} subtitle="Open + Pending" />
+              <KpiCard label="Ouverts de la période" value={formatNumber(data.open)} subtitle="Créés sur la période · Open + Pending" />
               <KpiCard
                 label={hasFacetFilters ? 'Volume filtré' : 'Volume période'}
                 value={formatNumber(data.total)}
@@ -394,6 +395,7 @@ export default function TicketsAnalyticsDashboard() {
               />
             </section>
 
+            <SupportBacklog />
             <ShadowUrgencyPanel cockpit={cockpit} onRefresh={() => setCockpitRefreshKey(value => value + 1)} />
 
             {data.meta.source_truncated && (

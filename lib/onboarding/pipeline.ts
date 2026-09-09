@@ -26,9 +26,11 @@ import {
 } from '@/lib/onboarding/capacityModel'
 import type { PipelineAccount } from '@/lib/onboarding/assignmentEngine'
 import { resolveCsmName, type CsmDirectoryEntry } from '@/lib/onboarding/csmDirectory'
+import { isOpenProject } from '@/lib/onboarding/workload'
 
 /** Override manuel persisté, image d'une ligne d'`account_assignments`. */
 export interface AccountAssignmentOverride {
+  expectedGoLive?: string | null
   accountId: string
   obOwner: string | null
   obLocked: boolean
@@ -53,6 +55,8 @@ export type SignedDateSource = 'deal' | 'account_created' | 'unknown'
 
 /** Un compte du pipeline, enrichi des informations de traçabilité. */
 export interface PlanChargePipelineEntry {
+  expectedGoLiveDate: string
+  goLiveDateSource: 'manual' | 'subscription'
   /** Compte du moteur, consommé tel quel par `assignmentEngine`. */
   account: PipelineAccount
   signedDateSource: SignedDateSource
@@ -64,6 +68,7 @@ export interface PlanChargePipelineEntry {
 
 /** Diagnostics de construction du pipeline, jamais de valeur devinée. */
 export interface PlanChargeDiagnostics {
+  undatedOpenAccounts: { accountId: string; accountName: string; expectedGoLiveDate: string | null; goLiveDateSource: 'manual' | 'subscription'; projectIds: string[] }[]
   totalAccounts: number
   clientAccounts: number
   withFutureSubStart: number
@@ -296,7 +301,8 @@ export function buildPlanChargePipeline(input: PlanChargePipelineInput): PlanCha
     const isClient = (account.accountType ?? '').trim().toLowerCase() === 'client'
     if (isClient) clientAccounts += 1
 
-    const hasFutureSubStart = Boolean(account.subStartDate) && account.subStartDate! > referenceDate
+    const effectiveDate = overridesByAccountId.get(account.id)?.expectedGoLive ?? account.subStartDate
+    const hasFutureSubStart = Boolean(effectiveDate) && effectiveDate! > referenceDate
     if (isClient && hasFutureSubStart) withFutureSubStart += 1
 
     if (!isClient || !hasFutureSubStart) continue
@@ -407,7 +413,8 @@ export function buildPlanChargePipeline(input: PlanChargePipelineInput): PlanCha
       deriveAccountShape(account, childrenByParentId)
     if (isFallback) hotelsFromFallback += 1
 
-    const expectedGoLiveMonth = account.subStartDate!.slice(0, 7)
+    const expectedGoLiveDate = overridesByAccountId.get(account.id)?.expectedGoLive ?? account.subStartDate!
+    const expectedGoLiveMonth = expectedGoLiveDate.slice(0, 7)
 
     const matchedDeal = dealForAccountId.get(account.id) ?? null
     let signedDate: string
@@ -436,6 +443,8 @@ export function buildPlanChargePipeline(input: PlanChargePipelineInput): PlanCha
     }
 
     entries.push({
+      expectedGoLiveDate,
+      goLiveDateSource: override?.expectedGoLive ? 'manual' : 'subscription',
       account: {
         id: account.id,
         name: account.name,
@@ -523,7 +532,21 @@ export function buildPlanChargePipeline(input: PlanChargePipelineInput): PlanCha
     return a.account.id < b.account.id ? -1 : a.account.id > b.account.id ? 1 : 0
   })
 
+  const replanCandidates = indexProjectsByAccount(accounts, projects.filter(isOpenProject)).byAccountId
+  // An explicit planned date is itself evidence of a pending handover. Once
+  // it passes, keep the account visible even if no project could be linked.
+  for (const override of overrides) {
+    if (override.expectedGoLive && override.expectedGoLive <= referenceDate && accountsById.has(override.accountId) && !replanCandidates.has(override.accountId)) replanCandidates.set(override.accountId, [])
+  }
   const diagnostics: PlanChargeDiagnostics = {
+    // Only evidenced open implementations, never all historical CRM clients.
+    undatedOpenAccounts: [...replanCandidates.entries()]
+      .flatMap(([accountId, linkedProjects]) => {
+        const account = accounts.find(row => row.id === accountId)!
+        const date = overridesByAccountId.get(accountId)?.expectedGoLive ?? account.subStartDate
+        if ((account.accountType ?? '').trim().toLowerCase() !== 'client' || liveAccountIds.has(accountId) || (date && date > referenceDate)) return []
+        return [{ accountId, accountName: account.name, expectedGoLiveDate: date, goLiveDateSource: overridesByAccountId.get(accountId)?.expectedGoLive ? 'manual' as const : 'subscription' as const, projectIds: linkedProjects.map(project => project.id) }]
+      }),
     totalAccounts: accounts.length,
     clientAccounts,
     withFutureSubStart,

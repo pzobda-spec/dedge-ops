@@ -8,6 +8,7 @@
  */
 
 import { supabaseAdmin } from '@/lib/supabase/server'
+import { fetchAllPages } from '@/lib/supabase/pagination'
 import { loadPlanChargeSources } from '@/lib/onboarding/planChargeSources'
 import { countActiveProjectsByOwner, CAPACITY_THRESHOLD } from '@/lib/onboarding/workload'
 import { effectiveCapacity } from '@/lib/onboarding/capacityModel'
@@ -137,10 +138,9 @@ function chunk<T>(items: T[], size: number): T[][] {
 /** Charge les dates déjà présentes sur la fenêtre élargie et la plus ancienne jamais écrite. */
 async function loadExistingDates(
   table: string,
-  windowStart: string,
 ): Promise<{ existingDates: string[]; firstEverDate: string | null }> {
   const [windowResult, firstResult] = await Promise.all([
-    supabaseAdmin.from(table).select('snapshot_date').gte('snapshot_date', windowStart),
+    fetchAllPages((from, to) => supabaseAdmin.from(table).select('snapshot_date').order('snapshot_date').order(table === WORKLOAD_TABLE ? 'owner' : 'csm_name').range(from, to)),
     supabaseAdmin.from(table).select('snapshot_date').order('snapshot_date', { ascending: true }).limit(1),
   ])
 
@@ -176,11 +176,9 @@ export async function persistDailySnapshots(referenceDate: string): Promise<Dail
   const sources = await loadPlanChargeSources()
   const warnings = [...sources.warnings]
 
-  const windowStart = shiftDate(referenceDate, -SNAPSHOT_BACKFILL_WINDOW_DAYS)
-
   const [workloadExisting, portfolioExisting] = await Promise.all([
-    loadExistingDates(WORKLOAD_TABLE, windowStart),
-    loadExistingDates(PORTFOLIO_TABLE, windowStart),
+    loadExistingDates(WORKLOAD_TABLE),
+    loadExistingDates(PORTFOLIO_TABLE),
   ])
 
   const workloadReconciliation = reconcileSnapshotDates({

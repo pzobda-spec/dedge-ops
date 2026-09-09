@@ -1,4 +1,5 @@
 import { revalidateTag } from 'next/cache'
+import { authErrorResponse, requireRole } from '@/lib/auth/roles'
 import { NextRequest, NextResponse } from 'next/server'
 import { fetchTickets, updateTicket } from '@/lib/zoho/client'
 import { OPENAI_CHAT_MODEL, openai } from '@/lib/openai/client'
@@ -87,6 +88,7 @@ ${batch.map(t => `id=${t.id} | client="${t.client}" | subject="${t.subject}"`).j
 
 export async function POST(_req: NextRequest) {
   try {
+    await requireRole(_req, ['admin'])
     // Fetch up to MAX_TICKETS tickets paginated (Zoho max 100/page)
     const PAGE_SIZE = 100
     const allRaw: Awaited<ReturnType<typeof fetchTickets>>['data'] = []
@@ -155,6 +157,6 @@ export async function POST(_req: NextRequest) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[admin/normalize-tickets]', msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return authErrorResponse(err) ?? NextResponse.json({ error: msg }, { status: 500 })
   }
 }

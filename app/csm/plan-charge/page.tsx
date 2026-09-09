@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useId, useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { AlertCircle, Link2, Lock } from 'lucide-react'
 import {
@@ -16,8 +16,10 @@ import {
 } from 'recharts'
 import { useLocale } from '@/lib/i18n/LocaleContext'
 import type { Locale } from '@/lib/i18n/locale'
+import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
 
 const MUTED = '#696969'
+const PlanPermissions = createContext({ ob: false, csm: false })
 const GRID = '#e2e2e2'
 const TOOLTIP_STYLE = {
   backgroundColor: '#fff',
@@ -44,10 +46,13 @@ const OB_ROLE_ELIGIBILITY: Record<ObRole, string> = {
 type Tier = 'Bronze' | 'Silver' | 'Gold' | 'Key'
 type Availability = 'full' | 'relache' | 'absent' | 'stop'
 type ObRole = 'senior' | 'junior' | 'alternant' | 'stagiaire'
-type ObSource = 'override' | 'auto' | null
+type ObSource = 'override' | 'auto' | 'existing' | null
 type CsmSource = 'override' | 'continuity' | 'auto' | null
 
 interface AccountRow {
+  additionalObProjects: number
+  expectedGoLiveDate: string
+  goLiveDateSource: 'manual' | 'subscription'
   accountId: string
   accountName: string
   groupId: string | null
@@ -117,12 +122,15 @@ interface PlanChargeResponse {
   groupContinuity: Record<string, string>
   weightRules: WeightRule[]
   unassigned: string[]
-  diagnostics: Record<string, unknown>
+  diagnostics: { undatedOpenAccounts?: { accountId: string; accountName: string; expectedGoLiveDate: string | null; goLiveDateSource: 'manual' | 'subscription'; projectIds: string[] }[] }
   dealsTruncated: boolean
   warnings: string[]
 }
 
 export default function PlanChargePage() {
+  const { user } = useCurrentUser()
+  const canEditOb = user?.role === 'admin' || user?.role === 'onboarder'
+  const canEditCsm = canEditOb || user?.role === 'csm_lead'
   const { locale, t } = useLocale()
   const [data, setData] = useState<PlanChargeResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -198,10 +206,15 @@ export default function PlanChargePage() {
   async function postRoster(body: Record<string, unknown>) {
     setActionError(null)
     try {
+      const member = body.kind === 'ob' ? data?.obRoster.find(row => row.name === body.name) : data?.csmRoster.find(row => row.name === body.name)
+      if (!member) throw new Error(t('Membre introuvable. Rechargez la page.'))
+      const completeBody = 'maxProjects' in member
+        ? { role: member.role, max_projects: member.maxProjects, availability: member.availability, ...body }
+        : { monthly_capacity_points: member.monthlyCapacityPoints, availability: member.availability, ...body }
       const response = await fetch('/api/csm/plan-charge/roster', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify(completeBody),
       })
       if (!response.ok) throw new Error(await readApiError(response))
       await reload()
@@ -218,7 +231,7 @@ export default function PlanChargePage() {
   const overloadedObNames = useMemo(() => new Set(data?.obOverloads.map(entry => entry.name) ?? []).size, [data])
 
   return (
-    <main className="min-h-screen" style={{ backgroundColor: 'var(--bg-canvas)', color: 'var(--fg1)' }} aria-busy={loading}>
+    <PlanPermissions.Provider value={{ ob: canEditOb, csm: canEditCsm }}><main className="min-h-screen" style={{ backgroundColor: 'var(--bg-canvas)', color: 'var(--fg1)' }} aria-busy={loading}>
       <header className="border-b border-[#e2e2e2] bg-white px-4 py-5 sm:px-6 lg:px-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
@@ -264,10 +277,12 @@ export default function PlanChargePage() {
             </section>
 
             <AttributionSection data={data} onAssign={postAssignment} />
+            {(data.diagnostics.undatedOpenAccounts?.length ?? 0) > 0 && <section className="rounded-xl border border-amber-300 bg-amber-50 p-4"><h2 className="font-semibold">{t('Reprises à dater ou replanifier')} ({data.diagnostics.undatedOpenAccounts!.length})</h2><p className="mt-1 text-sm">{t('Ces comptes ont une implémentation ouverte ou une date arbitrée échue, mais aucune date future. Ils ne sont pas absorbés par les prévisions ci-dessous : leur absence ne signifie pas une passation réalisée.')}</p><ul className="mt-3 space-y-3">{data.diagnostics.undatedOpenAccounts!.map(account => <li key={account.accountId} className="flex flex-wrap items-center justify-between gap-3 border-t border-amber-200 pt-2"><Link className="text-sm underline" href={account.projectIds.length ? `/onboarding/${encodeURIComponent(account.projectIds[0])}` : '/csm/pilotage'}>{account.accountName}</Link><GoLiveDateEditor account={{ ...account, expectedGoLiveDate: account.expectedGoLiveDate ?? '' }} onAssign={postAssignment} /></li>)}</ul></section>}
+            <p className="text-sm text-[#696969]">{t('Les attributions sont des pré-attributions du cockpit : elles ne modifient pas Zoho et ne constituent pas une passation confirmée.')}</p>
 
             <section className="grid grid-cols-1 gap-5 lg:grid-cols-2" aria-label={t('Équipes et disponibilité')}>
-              <ObRosterSection roster={data.obRoster} onUpdate={postRoster} />
-              <CsmRosterSection roster={data.csmRoster} onUpdate={postRoster} />
+              <fieldset disabled={!canEditOb} className="min-w-0"><ObRosterSection roster={data.obRoster} onUpdate={postRoster} /></fieldset>
+              <fieldset disabled={!canEditCsm} className="min-w-0"><CsmRosterSection roster={data.csmRoster} onUpdate={postRoster} /></fieldset>
             </section>
 
             <ProjectionSection data={data} />
@@ -276,7 +291,7 @@ export default function PlanChargePage() {
           </>
         )}
       </div>
-    </main>
+    </main></PlanPermissions.Provider>
   )
 }
 
@@ -350,6 +365,7 @@ function AttributionSection({
                     <td className="px-4 py-3 text-center text-[#4a4a4a]">{account.isGroup ? t('Groupe') : t('Indiv')}{account.dmbookOnly ? ' · DMB' : ''}</td>
                     <td className="px-4 py-3 text-center tabular-nums text-[#4a4a4a]">
                       {account.hotels}
+                      {account.additionalObProjects < account.hotels && <span className="block text-[10px] text-[#696969]">{account.additionalObProjects} {t('nouveaux slots OB ; le reste est déjà actif')}</span>}
                       {account.hotelsSource !== 'zoho_field' && (
                         <span className="ml-1 text-[10px] font-normal text-[#8a8a8a]" title={t('Nombre d’hôtels reconstitué, pas issu du champ Zoho dédié.')}>
                           ({t(hotelsSourceLabel(account.hotelsSource))})
@@ -357,9 +373,10 @@ function AttributionSection({
                       )}
                     </td>
                     <td className="px-4 py-3 text-center tabular-nums text-[#4a4a4a]">{account.weight}</td>
-                    <td className="px-4 py-3 text-center text-[#4a4a4a]">{formatMonth(account.goLiveMonth, locale)}</td>
+                    <td className="px-4 py-3 text-center text-[#4a4a4a]"><GoLiveDateEditor account={account} onAssign={onAssign} /></td>
                     <td className="px-4 py-3">
                       <AssignmentCell
+                        kind="ob"
                         value={account.obOwner}
                         source={account.obSource}
                         locked={account.obLocked}
@@ -376,8 +393,6 @@ function AttributionSection({
                           group_id: account.groupId,
                           ob_owner: value,
                           ob_locked: true,
-                          csm_name: account.csmName,
-                          csm_locked: account.csmLocked,
                         })}
                         onUnlock={() => onAssign({
                           account_id: account.accountId,
@@ -385,13 +400,12 @@ function AttributionSection({
                           group_id: account.groupId,
                           ob_owner: null,
                           ob_locked: false,
-                          csm_name: account.csmName,
-                          csm_locked: account.csmLocked,
                         })}
                       />
                     </td>
                     <td className="px-4 py-3">
                       <AssignmentCell
+                        kind="csm"
                         value={account.csmName}
                         source={account.csmSource}
                         locked={account.csmLocked}
@@ -405,18 +419,12 @@ function AttributionSection({
                         onChange={value => onAssign({
                           account_id: account.accountId,
                           account_name: account.accountName,
-                          group_id: account.groupId,
-                          ob_owner: account.obOwner,
-                          ob_locked: account.obLocked,
                           csm_name: value,
                           csm_locked: true,
                         })}
                         onUnlock={() => onAssign({
                           account_id: account.accountId,
                           account_name: account.accountName,
-                          group_id: account.groupId,
-                          ob_owner: account.obOwner,
-                          ob_locked: account.obLocked,
                           csm_name: null,
                           csm_locked: false,
                         })}
@@ -438,10 +446,12 @@ function AttributionSection({
                     {tierLabel(account.tier)} · {account.isGroup ? t('Groupe') : t('Indiv')}{account.dmbookOnly ? ' · DMB' : ''} · {account.hotels} {t('hôtels')} · {t('poids')} {account.weight} · {formatMonth(account.goLiveMonth, locale)}
                   </p>
                   {account.rawCsm && !account.resolvedCsm && <p className="mt-0.5 text-xs font-semibold text-[#b7221b]">{t('CSM Zoho non résolu')}</p>}
+                  <GoLiveDateEditor account={account} onAssign={onAssign} />
                 </div>
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-[#8a8a8a]">{t('Implémenteur')}</p>
                   <AssignmentCell
+                    kind="ob"
                     value={account.obOwner}
                     source={account.obSource}
                     locked={account.obLocked}
@@ -458,8 +468,6 @@ function AttributionSection({
                       group_id: account.groupId,
                       ob_owner: value,
                       ob_locked: true,
-                      csm_name: account.csmName,
-                      csm_locked: account.csmLocked,
                     })}
                     onUnlock={() => onAssign({
                       account_id: account.accountId,
@@ -467,14 +475,13 @@ function AttributionSection({
                       group_id: account.groupId,
                       ob_owner: null,
                       ob_locked: false,
-                      csm_name: account.csmName,
-                      csm_locked: account.csmLocked,
                     })}
                   />
                 </div>
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-[#8a8a8a]">CSM</p>
                   <AssignmentCell
+                    kind="csm"
                     value={account.csmName}
                     source={account.csmSource}
                     locked={account.csmLocked}
@@ -488,18 +495,12 @@ function AttributionSection({
                     onChange={value => onAssign({
                       account_id: account.accountId,
                       account_name: account.accountName,
-                      group_id: account.groupId,
-                      ob_owner: account.obOwner,
-                      ob_locked: account.obLocked,
                       csm_name: value,
                       csm_locked: true,
                     })}
                     onUnlock={() => onAssign({
                       account_id: account.accountId,
                       account_name: account.accountName,
-                      group_id: account.groupId,
-                      ob_owner: account.obOwner,
-                      ob_locked: account.obLocked,
                       csm_name: null,
                       csm_locked: false,
                     })}
@@ -521,7 +522,17 @@ interface AssignmentOption {
   suffix: string
 }
 
+function GoLiveDateEditor({ account, onAssign }: { account: Pick<AccountRow, 'accountId' | 'accountName' | 'expectedGoLiveDate' | 'goLiveDateSource'>; onAssign: (body: Record<string, unknown>) => Promise<void> }) {
+  const permissions = useContext(PlanPermissions)
+  const { t } = useLocale()
+  const canEdit = permissions.csm
+  const [date, setDate] = useState(account.expectedGoLiveDate)
+  useEffect(() => setDate(account.expectedGoLiveDate), [account.expectedGoLiveDate])
+  return <div className="space-y-1"><label className="text-xs"><span className="sr-only">{t('Date de reprise prévue')} — {account.accountName}</span><input type="date" disabled={!canEdit} value={date} onChange={event => setDate(event.target.value)} className="rounded border p-1" /></label><p className="text-[10px] text-[#696969]">{t(account.goLiveDateSource === 'manual' ? 'Date arbitrée dans le cockpit' : 'Estimation : début d’abonnement CRM')}</p>{canEdit && date && date !== account.expectedGoLiveDate && <button type="button" className="text-xs underline" onClick={() => onAssign({ account_id: account.accountId, expected_go_live: date })}>{t('Enregistrer la date')}</button>}{canEdit && account.goLiveDateSource === 'manual' && <button type="button" className="block text-xs underline" onClick={() => onAssign({ account_id: account.accountId, expected_go_live: null })}>{t('Revenir à la date CRM')}</button>}</div>
+}
+
 function AssignmentCell({
+  kind,
   value,
   source,
   locked,
@@ -530,6 +541,7 @@ function AssignmentCell({
   onChange,
   onUnlock,
 }: {
+  kind: 'ob' | 'csm'
   value: string | null
   source: ObSource | CsmSource
   locked: boolean
@@ -539,13 +551,19 @@ function AssignmentCell({
   onUnlock: () => void
 }) {
   const { t } = useLocale()
+  const permissions = useContext(PlanPermissions)
+  const canEdit = permissions[kind]
+  const controlId = useId()
+  if (source === 'existing') return <span className="text-xs">{value} · {t('déjà porté dans Zoho')}</span>
   if (!value) {
     return <span className="text-xs font-semibold text-[#b7221b]">{emptyLabel}</span>
   }
   return (
     <div className="flex items-center gap-1.5">
-      <label className="sr-only" htmlFor={`assign-${value}`}>{t('Attribution')}</label>
+      <label className="sr-only" htmlFor={controlId}>{t('Attribution')} {kind.toUpperCase()}</label>
       <select
+        id={controlId}
+        disabled={!canEdit}
         value={value}
         onChange={event => onChange(event.target.value)}
         className="min-w-[130px] rounded-lg border border-[#d8d8d8] bg-white px-2 py-1.5 text-xs text-[#1a1a1a] outline-none focus:border-[#8064b3] focus:ring-1 focus:ring-[#8064b3]"
@@ -560,7 +578,7 @@ function AssignmentCell({
           <Link2 aria-hidden="true" size={13} className="text-[#3b72d1]" />
         </span>
       )}
-      {locked && (
+      {locked && canEdit && (
         <button type="button" onClick={onUnlock} className="shrink-0 rounded-md border border-[#d8d8d8] px-1.5 py-1 text-[10px] font-semibold text-[#696969] hover:bg-[#f7f7f7] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8064b3]">
           {t('Lever')}
         </button>
@@ -728,11 +746,11 @@ function ProjectionSection({ data }: { data: PlanChargeResponse }) {
   const csmNames = useMemo(() => data.csmRoster.filter(member => member.availability !== 'absent' && member.effectiveCapacity > 0).map(member => member.name), [data.csmRoster])
   const obCapLine = useMemo(() => {
     const capacities = data.obRoster.filter(member => member.availability !== 'absent' && member.effectiveCapacity > 0).map(member => member.effectiveCapacity)
-    return capacities.length > 0 ? Math.min(...capacities) : null
+    return capacities.length > 0 && new Set(capacities).size === 1 ? capacities[0] : null
   }, [data.obRoster])
   const csmCapLine = useMemo(() => {
-    const capacities = data.csmRoster.filter(member => member.availability !== 'absent' && member.effectiveCapacity > 0).map(member => member.monthlyCapacityPoints)
-    return capacities.length > 0 ? Math.min(...capacities) : null
+    const capacities = data.csmRoster.filter(member => member.availability !== 'absent' && member.effectiveCapacity > 0).map(member => member.effectiveCapacity)
+    return capacities.length > 0 && new Set(capacities).size === 1 ? capacities[0] : null
   }, [data.csmRoster])
 
   const obChartData = useMemo(
@@ -777,7 +795,7 @@ function ProjectionSection({ data }: { data: PlanChargeResponse }) {
 
       <article className="rounded-xl border border-[#e2e2e2] bg-white p-4 shadow-[0_4px_10px_rgba(36,25,55,0.05)] sm:p-5">
         <h2 className="text-sm font-bold text-[#1a1a1a]">{t('Points CSM par mois')}</h2>
-        <p className="mt-0.5 text-xs text-[#8a8a8a]">{t('Points repris par mois et par CSM, intake à la date de go-live.')}</p>
+        <p className="mt-0.5 text-xs text-[#8a8a8a]">{t('Capacité d’accueil des reprises, pas charge totale du portefeuille CSM. La date d’abonnement reste une estimation tant qu’aucune date n’est arbitrée. La base du mois utilise la passation CRM, à défaut la mise en ligne, puis le début d’abonnement.')}</p>
         <div className="mt-3 h-[300px] w-full" role="img" aria-label={t('Graphique des points CSM projetés par mois')}>
           {csmNames.length === 0 ? <EmptyChart /> : (
             <ResponsiveContainer width="100%" height="100%">
@@ -793,7 +811,18 @@ function ProjectionSection({ data }: { data: PlanChargeResponse }) {
             </ResponsiveContainer>
           )}
         </div>
-        <OverloadNote overloads={data.csmOverloads} emptyMessage={t('Montée en charge CSM absorbable avec l’effectif disponible actuel.')} unit={t('points')} locale={locale} />
+        <p className="my-3 text-xs text-[#696969]">{t('Charge / capacité effective par personne. Les mois vides du pipeline ne prouvent pas une absence de demande future.')}</p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <caption className="sr-only">{t('Capacité mensuelle CSM')}</caption>
+            <thead><tr><th className="p-2 text-left">CSM</th>{data.months.map(month => <th key={month} className="p-2">{formatMonth(month, locale)}</th>)}</tr></thead>
+            <tbody>{data.csmRoster.map(member => <tr key={member.name} className="border-t"><th className="p-2 text-left">{member.name}</th>{data.months.map(month => {
+              const load = data.csmLoadByMonth[member.name]?.[month] ?? 0
+              return <td key={month} className={`p-2 text-center tabular-nums ${load > member.effectiveCapacity ? 'bg-red-50 text-red-800 font-semibold' : ''}`}>{load} / {member.effectiveCapacity}</td>
+            })}</tr>)}</tbody>
+          </table>
+        </div>
+        <OverloadNote overloads={data.csmOverloads} emptyMessage={t('Pas de dépassement calculé sur les comptes actuellement datés.')} unit={t('points')} locale={locale} />
       </article>
     </section>
   )

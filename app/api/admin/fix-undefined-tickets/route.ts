@@ -1,4 +1,5 @@
 import { revalidateTag } from 'next/cache'
+import { authErrorResponse, requireRole } from '@/lib/auth/roles'
 import { NextResponse } from 'next/server'
 import { fetchTickets, fetchAccount, updateTicket } from '@/lib/zoho/client'
 import { OPENAI_CHAT_MODEL, openai } from '@/lib/openai/client'
@@ -57,8 +58,9 @@ ${batch.map(t => `id=${t.id} | client="${t.accountName}" | subject="${t.subject}
   }))
 }
 
-export async function POST() {
+export async function POST(req: Request) {
   try {
+    await requireRole(req, ['admin'])
     // Fetch pages until we have MAX_PER_RUN candidates (early exit to avoid timeout)
     const candidates: Awaited<ReturnType<typeof fetchTickets>>['data'] = []
     let from = 0
@@ -154,6 +156,6 @@ export async function POST() {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[admin/fix-undefined-tickets]', msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return authErrorResponse(err) ?? NextResponse.json({ error: msg }, { status: 500 })
   }
 }

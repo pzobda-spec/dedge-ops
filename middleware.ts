@@ -34,7 +34,7 @@ const RESTRICTED_ROUTES: Array<{ prefixes: string[]; roles: Role[] }> = [
   // CSM, elle est donc ouverte à tous les rôles applicatifs. Le périmètre des
   // données reste porté par la route elle-même.
   {
-    prefixes: ['/a-traiter'],
+    prefixes: ['/a-traiter', '/api/onboarding/weekly-exceptions', '/api/onboarding/workload-snapshots'],
     roles: ['admin', 'support', 'onboarder', 'commercial_readonly', 'csm_lead'],
   },
   // Onboarding scope: admin + onboarder + commercial_readonly + csm_lead.

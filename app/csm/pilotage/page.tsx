@@ -1115,8 +1115,8 @@ function CsmAccountsTable({ rows, diagnostics, locale }: { rows: CsmAccountRow[]
                     <td className="px-4 py-3 text-center text-[#4a4a4a]">{row.isGroup ? t('Groupe') : t('Indiv')}</td>
                     <td className="px-4 py-3 text-center tabular-nums text-[#4a4a4a]">{formatEuros(row.mrr)}</td>
                     <td className="px-4 py-3 text-center text-[#4a4a4a]">{row.churnVintages.length > 0 ? row.churnVintages.join(', ') : '—'}</td>
-                    <td className={`px-4 py-3 text-center font-semibold tabular-nums ${row.openTickets > 0 ? 'text-[#b7221b]' : 'text-[#878787]'}`}>{formatNumber(row.openTickets, locale)}</td>
-                    <td className="px-4 py-3 text-center tabular-nums text-[#4a4a4a]">{formatNumber(row.tickets6m, locale)}</td>
+                    <td className={`px-4 py-3 text-center font-semibold tabular-nums ${row.openTickets > 0 ? 'text-[#b7221b]' : 'text-[#878787]'}`}>{row.ticketMatched ? formatNumber(row.openTickets, locale) : '—'}</td>
+                    <td className="px-4 py-3 text-center tabular-nums text-[#4a4a4a]">{row.ticketMatched ? formatNumber(row.tickets6m, locale) : '—'}</td>
                   </tr>
                 ))}
               </tbody>

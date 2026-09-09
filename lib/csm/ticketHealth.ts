@@ -5,6 +5,7 @@
  */
 
 import { supabaseAdmin } from '@/lib/supabase/server'
+import { fetchAllPages } from '@/lib/supabase/pagination'
 
 export interface TicketHealthCounts {
   open: number
@@ -46,11 +47,11 @@ export async function loadTicketCountsByAccountName(
   const counts = new Map<string, TicketHealthCounts>()
 
   const [openResult, recentResult] = await Promise.all([
-    supabaseAdmin.from('ticket_analytics').select('client_name,status,created_at').in('status', OPEN_STATUSES),
-    supabaseAdmin
+    fetchAllPages((from, to) => supabaseAdmin.from('ticket_analytics').select('client_name,status,created_at').in('status', OPEN_STATUSES).order('id').range(from, to)),
+    fetchAllPages((from, to) => supabaseAdmin
       .from('ticket_analytics')
       .select('client_name,status,created_at')
-      .gte('created_at', sixMonthsBefore(referenceDate)),
+      .gte('created_at', sixMonthsBefore(referenceDate)).order('id').range(from, to)),
   ])
 
   if (openResult.error) {
@@ -105,10 +106,10 @@ export async function loadRecentTicketCountsByAccountName(
   const from = new Date(Date.UTC(year, month - 1, day))
   from.setUTCDate(from.getUTCDate() - windowDays)
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await fetchAllPages((start, end) => supabaseAdmin
     .from('ticket_analytics')
     .select('client_name,created_at')
-    .gte('created_at', from.toISOString())
+    .gte('created_at', from.toISOString()).order('id').range(start, end))
 
   if (error) {
     if (isMissingTableError(error)) {

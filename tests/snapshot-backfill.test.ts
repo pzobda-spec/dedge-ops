@@ -2,6 +2,11 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { reconcileSnapshotDates, SNAPSHOT_BACKFILL_WINDOW_DAYS } from '@/lib/onboarding/snapshots'
 
+test('des dates anciennes existantes ne sont pas des trous hors fenêtre', () => {
+  const result = reconcileSnapshotDates({ referenceDate: '2026-09-08', firstEverDate: '2026-08-29', existingDates: ['2026-08-29', '2026-08-31'] })
+  assert.deepEqual(result.beyondWindow, ['2026-08-30'])
+})
+
 test('trou d\'un jour rattrapé', () => {
   const result = reconcileSnapshotDates({
     referenceDate: '2026-09-07',

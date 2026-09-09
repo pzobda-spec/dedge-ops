@@ -6,6 +6,31 @@ Les entrées antérieures au 15 juillet 2026 ont été reconstituées à partir 
 l’historique Git ; elles synthétisent les changements fonctionnels encore
 pertinents plutôt que chaque correction intermédiaire.
 
+## 2026-09-09 — Cockpit décisionnel : fiabilité et parcours de pilotage
+
+### Ajouté
+
+- Support : stock Open/Pending historisé, toutes dates de création, séparé de la cohorte filtrée ; ancienneté, répartition par produit et avertissement de synchronisation ancienne. Uniquement des agrégats, aucune action de traitement ajoutée.
+- Formations : vue « 4 semaines à venir », synthèse thème/langue des heures prévues, inscriptions, sessions vides et remplissage sur capacités connues. Une inscription à une session passée n’est plus présentée comme une présence confirmée.
+- À traiter : recherche, filtre propriétaire, état vide filtré, suivi des prochaines actions projet échues/à sept jours/sans date, couverture de saisie et pauses par implémenteur.
+- Plan de charge : dates de reprise arbitrables dans le cockpit, provenance explicite, comptes à dater/replanifier conservés hors prévision, tableau des charges/capacités effectives par CSM. Les pré-attributions ne sont pas des passations confirmées et ne modifient pas Zoho.
+
+### Corrigé
+
+- Compteurs de tickets CSM et hebdomadaires paginés : suppression du plafond silencieux de 1 000 lignes ; une erreur tardive ne renvoie pas de succès partiel.
+- Compte déjà actif dans le pipeline : seuls les slots OB supplémentaires sont ajoutés à la base réelle. Les porteurs des projets déjà comptés restent ceux de Zoho ; les points CSM restent inchangés.
+- Les dates manuelles enregistrées sont désormais relues et utilisées par la projection. Une date arbitrée échue ne disparaît pas silencieusement, même sans projet rattaché.
+- La team lead modifie le CSM mais pas l’OB, côté API et interface ; le commercial reste en lecture seule. Les éditeurs d’équipe transmettent les champs requis par l’API, et les changements CSM ne renvoient plus les champs OB.
+- Accès support aux API de la vue hebdomadaire et des snapshots ; lecture de la timeline pour le commercial. Protection admin ajoutée directement dans les deux handlers de normalisation des tickets.
+- Snapshots : lecture paginée des dates historiques pour éviter les faux trous hors fenêtre ; provenance des rattrapages exposée, mesures rattrapées exclues de la courbe réelle.
+- Les dates et motifs de pause des produits sont restitués au rechargement de la fiche projet. Les compteurs tickets sans rapprochement Desk affichent « — » dans la table des comptes CSM.
+- Aucun état « tout va bien » lorsque la vue hebdomadaire signale une source incomplète. Aucun plafond commun trompeur lorsque les capacités individuelles diffèrent.
+
+### Périmètre
+
+- Publication via la branche de production `main`. Aucune migration, écriture Zoho, notification de passation ni activation du worker support.
+- Recette et limites : `docs/recette-cockpit-decisionnel-2026-09-09.md`.
+
 ## 2026-09-08 — Correction du chargement de « À traiter »
 
 ### Corrigé

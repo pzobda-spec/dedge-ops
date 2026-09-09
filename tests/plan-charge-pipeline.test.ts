@@ -18,6 +18,32 @@ import { runAssignmentEngine } from '@/lib/onboarding/assignmentEngine'
 import { DEFAULT_WEIGHT_RULES } from '@/lib/onboarding/capacityModel'
 import { computeCsmPortfolios } from '@/lib/onboarding/csmAnalytics'
 
+test('date arbitrée prioritaire : une reprise reportée reste projetée après sa date CRM', () => {
+  const result = buildPlanChargePipeline({
+    accounts: [makeAccount({ subStartDate: '2026-09-01' })], projects: [], csmDirectory: [], referenceDate: '2026-09-08',
+    overrides: [{ accountId: 'acc-1', obOwner: null, obLocked: false, csmName: null, csmLocked: false, expectedGoLive: '2026-11-15' }],
+  })
+  assert.equal(result.pipeline[0].expectedGoLiveMonth, '2026-11')
+  assert.equal(result.entries[0].goLiveDateSource, 'manual')
+  assert.equal(result.entries[0].expectedGoLiveDate, '2026-11-15')
+})
+
+test('une date arbitrée échue reste à replanifier même sans projet rattaché', () => {
+  const result = buildPlanChargePipeline({ accounts: [makeAccount()], projects: [], csmDirectory: [], referenceDate: '2026-09-08', overrides: [{ accountId: 'acc-1', obOwner: null, obLocked: false, csmName: null, csmLocked: false, expectedGoLive: '2026-09-07' }] })
+  assert.equal(result.pipeline.length, 0)
+  assert.equal(result.diagnostics.undatedOpenAccounts.length, 1)
+  assert.equal(result.diagnostics.undatedOpenAccounts[0].goLiveDateSource, 'manual')
+})
+
+test('date dépassée sans live : visible à replanifier si une implémentation ouverte est prouvée', () => {
+  const account = makeAccount({ subStartDate: '2026-09-08' })
+  const result = buildPlanChargePipeline({ accounts: [account], projects: [makeProject({ accountCRMId: account.id })], csmDirectory: [], referenceDate: '2026-09-08' })
+  assert.equal(result.pipeline.length, 0)
+  assert.equal(result.diagnostics.undatedOpenAccounts.length, 1)
+  const historical = buildPlanChargePipeline({ accounts: [account], projects: [], csmDirectory: [], referenceDate: '2026-09-08' })
+  assert.equal(historical.diagnostics.undatedOpenAccounts.length, 0)
+})
+
 function makeAccount(overrides: Partial<CRMAccount> = {}): CRMAccount {
   return {
     id: 'acc-1',

@@ -95,6 +95,8 @@ interface SatisfactionRow {
 }
 
 interface WorkloadSnapshotRow {
+  isBackfilled: boolean
+  capturedAt: string | null
   snapshotDate: string
   owner: string
   activeProjects: number
@@ -332,8 +334,11 @@ export default function OnboardingPilotagePage() {
         return response.json() as Promise<{ snapshots?: WorkloadSnapshotRow[]; firstSnapshotDate?: string | null; lastSnapshotDate?: string | null; tableAvailable?: boolean }>
       })
       .then(({ snapshots, firstSnapshotDate, tableAvailable }) => {
-        setWorkloadSnapshots(snapshots ?? [])
-        setWorkloadSnapshotsFirstDate(firstSnapshotDate ?? null)
+        // A catch-up copies today's measurement; it is not observed history.
+        const observed = (snapshots ?? []).filter(row => row.isBackfilled === false)
+        setWorkloadSnapshots(observed)
+        setWorkloadSnapshotsFirstDate(observed[0]?.snapshotDate ?? null)
+        if (observed.length < (snapshots ?? []).length) setWorkloadSnapshotsError(t('Les dates rattrapées sont exclues de l’historique réel : leurs valeurs ont été mesurées après coup.'))
         setWorkloadSnapshotsAvailable(tableAvailable ?? null)
       })
       .catch(fetchError => {

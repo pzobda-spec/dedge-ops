@@ -37,7 +37,7 @@ import {
 export type BalanceMode = 'absolute' | 'utilization'
 
 /** Origine de l'attribution OB retenue pour un compte. */
-export type ObAssignmentSource = 'override' | 'auto'
+export type ObAssignmentSource = 'override' | 'auto' | 'existing'
 
 /** Origine de l'attribution CSM retenue pour un compte. */
 export type CsmAssignmentSource = 'override' | 'continuity' | 'auto'
@@ -67,6 +67,8 @@ export interface CsmMember {
 
 /** Un compte du pipeline de signatures à attribuer. */
 export interface PipelineAccount {
+  /** Slots already included in currentActiveProjects; do not add them twice. */
+  existingObProjectsByOwner?: Record<string, number>
   id: string
   name: string
   groupId: string | null
@@ -99,6 +101,7 @@ export interface AssignmentEngineInput {
 
 /** Résultat d'attribution pour un compte du pipeline. */
 export interface AccountAssignment {
+  additionalObProjects: number
   accountId: string
   accountName: string
   weight: number
@@ -205,6 +208,8 @@ export function runAssignmentEngine(input: AssignmentEngineInput): AssignmentEng
       dmbookOnly: account.dmbookOnly,
     }
     const weight = weightForAccount(weightRules, shape)
+    const existingObProjects = Object.values(account.existingObProjectsByOwner ?? {}).reduce((sum, count) => sum + count, 0)
+    const additionalObProjects = Math.max(0, account.hotels - existingObProjects)
 
     // --- Attribution OB ---
     const obEligibles = input.obRoster.filter(
@@ -215,7 +220,10 @@ export function runAssignmentEngine(input: AssignmentEngineInput): AssignmentEng
     let obOwner: string | null = null
     let obSource: ObAssignmentSource | null = null
 
-    if (account.obOverride && input.obRoster.some(member => member.name === account.obOverride)) {
+    if (additionalObProjects === 0 && existingObProjects > 0) {
+      obOwner = Object.keys(account.existingObProjectsByOwner!).sort().join(' / ')
+      obSource = 'existing'
+    } else if (account.obOverride && input.obRoster.some(member => member.name === account.obOverride)) {
       obOwner = account.obOverride
       obSource = 'override'
     } else {
@@ -233,8 +241,8 @@ export function runAssignmentEngine(input: AssignmentEngineInput): AssignmentEng
       if (obOwner !== null) obSource = 'auto'
     }
 
-    if (obOwner !== null) {
-      obLoad[obOwner] = (obLoad[obOwner] ?? 0) + account.hotels
+    if (obOwner !== null && additionalObProjects > 0) {
+      obLoad[obOwner] = (obLoad[obOwner] ?? 0) + additionalObProjects
     }
 
     // --- Attribution CSM ---
@@ -286,6 +294,7 @@ export function runAssignmentEngine(input: AssignmentEngineInput): AssignmentEng
     }
 
     assignments.push({
+      additionalObProjects,
       accountId: account.id,
       accountName: account.name,
       weight,
@@ -315,7 +324,7 @@ export function runAssignmentEngine(input: AssignmentEngineInput): AssignmentEng
   }
   ordered.forEach((account, index) => {
     const owner = assignments[index].obOwner
-    if (owner === null) return
+    if (owner === null || assignments[index].additionalObProjects === 0) return
     const goLiveMonth = account.expectedGoLiveMonth
     // Garde-fou : une date de signature postérieure au go-live (donnée Zoho
     // incohérente, ou date de signature en repli) donnerait une fenêtre vide,
@@ -329,7 +338,7 @@ export function runAssignmentEngine(input: AssignmentEngineInput): AssignmentEng
     }
     for (const month of months) {
       if (month >= signedMonth && month <= goLiveMonth) {
-        obLoadByMonth[owner][month] += account.hotels
+        obLoadByMonth[owner][month] += assignments[index].additionalObProjects
       }
     }
   })

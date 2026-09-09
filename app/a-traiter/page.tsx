@@ -111,7 +111,7 @@ function SuccessState({ referenceDate }: { referenceDate: string }) {
   const { t } = useLocale()
   return (
     <div className="rounded-xl border border-[#bfe6d2] bg-[#eafaf1] px-5 py-10 text-center">
-      <p className="text-sm font-semibold text-[#1c6437]">{t('Aucun dossier ne demande d’arbitrage cette semaine.')}</p>
+      <p className="text-sm font-semibold text-[#1c6437]">{t('Aucun signal détecté dans le périmètre couvert cette semaine.')}</p>
       <p className="mt-1 text-xs text-[#3c7a5a]">
         {t('Référence')} : {referenceDate}
       </p>
@@ -166,6 +166,8 @@ export default function ATraiterPage() {
   const [error, setError] = useState<string | null>(null)
   const [requestKey, setRequestKey] = useState(0)
   const [ruleFilter, setRuleFilter] = useState<RuleFilter>('all')
+  const [ownerFilter, setOwnerFilter] = useState('all')
+  const [search, setSearch] = useState('')
 
   useEffect(() => {
     const controller = new AbortController()
@@ -193,9 +195,12 @@ export default function ATraiterPage() {
 
   const filteredRows = useMemo(() => {
     if (!data) return []
-    if (ruleFilter === 'all') return data.rows
-    return data.rows.filter(row => row.reasons.some(reason => reason.rule === ruleFilter))
-  }, [data, ruleFilter])
+    return data.rows.filter(row =>
+      (ruleFilter === 'all' || row.reasons.some(reason => reason.rule === ruleFilter)) &&
+      (ownerFilter === 'all' || (row.ownerName ?? '') === ownerFilter) &&
+      `${row.subjectName} ${row.reasons.map(reason => reason.label).join(' ')}`.toLocaleLowerCase('fr').includes(search.trim().toLocaleLowerCase('fr')),
+    )
+  }, [data, ruleFilter, ownerFilter, search])
 
   const projectCount = useMemo(
     () => (data ? data.rows.filter(row => row.subjectKind === 'project').length : 0),
@@ -277,8 +282,17 @@ export default function ATraiterPage() {
         ))}
       </div>
 
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="text-sm">{t('Propriétaire')}<select className="ml-2 rounded border p-2" value={ownerFilter} onChange={event => setOwnerFilter(event.target.value)}><option value="all">{t('Tous')}</option>{Array.from(new Set([...data.rows.map(row => row.ownerName ?? ''), ...(data.projectFollowThrough?.actions.map(action => action.owner) ?? [])])).sort().map(owner => <option key={owner} value={owner}>{owner || t('Non assigné')}</option>)}</select></label>
+        <label className="text-sm">{t('Rechercher')}<input className="ml-2 rounded border p-2" type="search" value={search} onChange={event => setSearch(event.target.value)} /></label>
+        <p className="text-xs text-[#696969]" aria-live="polite">{filteredRows.length} / {data.rows.length} {t('dossiers')}</p>
+      </div>
       {data.rows.length === 0 ? (
-        <SuccessState referenceDate={data.referenceDate} />
+        data.warnings.length > 0 || data.milestonesTruncated || !data.diagnostics
+          ? <WarningBanner>{t('Aucun signal remonté, mais les données sont incomplètes : impossible de conclure à une absence de dossiers à traiter.')}</WarningBanner>
+          : <SuccessState referenceDate={data.referenceDate} />
+      ) : filteredRows.length === 0 ? (
+        <p className="rounded border p-5 text-sm">{t('Aucun dossier ne correspond aux filtres.')} <button type="button" className="underline" onClick={() => { setRuleFilter('all'); setOwnerFilter('all'); setSearch('') }}>{t('Réinitialiser')}</button></p>
       ) : (
         <ul className="space-y-3">
           {filteredRows.map(row => (
@@ -286,6 +300,15 @@ export default function ATraiterPage() {
           ))}
         </ul>
       )}
+
+      <section className="rounded-xl border border-[#e2e2e2] bg-[#fafafa] p-4 sm:p-5">
+        <h2 className="text-sm font-semibold">{t('Suivi des décisions projet — échéance sous 7 jours ou à préciser')}</h2>
+        {!data.projectFollowThrough ? <p className="mt-2 text-sm text-amber-800">{t('Suivi des prochaines actions indisponible.')}</p> : <>
+          <p className="mt-2 text-sm text-[#696969]">{data.projectFollowThrough.withoutNextAction} / {data.projectFollowThrough.openProjects} {t('projets ouverts sans prochaine action renseignée. À compléter dans le pilotage de la fiche projet ; aucune action n’est déduite automatiquement.')}</p>
+          <ul className="mt-3 space-y-3">{data.projectFollowThrough.actions.filter(action => (ownerFilter === 'all' || action.owner === ownerFilter) && `${action.projectName} ${action.action}`.toLocaleLowerCase('fr').includes(search.trim().toLocaleLowerCase('fr'))).map(action => <li key={action.projectId} className="rounded border bg-white p-3 text-sm"><a className="font-semibold underline" href={action.projectUrl} target="_blank" rel="noopener noreferrer">{action.projectName}</a><p>{action.action}</p><p className="mt-1 text-xs">{action.owner} · {action.due ?? t('Échéance à préciser')}</p>{action.blocker && <p className="mt-1 text-xs text-amber-800">{t('Blocage')} : {action.blocker}</p>}</li>)}</ul>
+          <p className="mt-4 text-xs text-[#696969]">{t('Projets en pause, exclus de la charge active mais à conserver en revue')} : {data.projectFollowThrough.pausedByOwner.map(row => `${row.owner} (${row.count})`).join(' · ') || '0'}</p>
+        </>}
+      </section>
 
       <section className="rounded-xl border border-[#e2e2e2] bg-[#fafafa] p-4 sm:p-5">
         <h2 className="text-sm font-semibold text-[#1a1a1a]">{t('Ce que cette vue ne couvre pas encore')}</h2>

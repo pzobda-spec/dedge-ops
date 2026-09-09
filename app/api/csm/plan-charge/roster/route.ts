@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   try {
-    await requireRole(req, ['admin', 'onboarder', 'csm_lead'])
+    const user = await requireRole(req, ['admin', 'onboarder', 'csm_lead'])
 
     const body = await req.json().catch(() => ({})) as Record<string, unknown>
 
@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (kind === 'ob') {
+      if (user.role === 'csm_lead') return NextResponse.json({ error: 'Le roster OB est en lecture seule pour la team lead CSM.' }, { status: 403 })
       const role = body.role
       if (!isObRole(role)) {
         return NextResponse.json({ error: 'role invalide.' }, { status: 400 })

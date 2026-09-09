@@ -79,7 +79,7 @@ async function loadCockpit(projectId: string) {
       .select('id,resource_key,label,category,required,status,note,received_at,validated_at,updated_by,updated_at')
       .eq('project_id', projectId).order('category').order('label'),
     supabaseAdmin.from('project_product_updates')
-      .select('product_key,status,comment,owner_email,target_date,started_at,completed_at,updated_by,updated_at')
+      .select('product_key,status,comment,owner_email,target_date,started_at,completed_at,paused_until,pause_reason,updated_by,updated_at')
       .eq('project_id', projectId).order('product_key'),
     supabaseAdmin.from('project_implementation_milestones')
       .select('milestone_key,label,planned_date,actual_date,status,updated_at')

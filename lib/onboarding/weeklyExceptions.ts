@@ -81,6 +81,7 @@ export interface WeeklyExceptionsResult {
 
 /** Contrat partagé entre la route agrégée et la page « À traiter ». */
 export interface WeeklyExceptionsResponse extends WeeklyExceptionsResult {
+  projectFollowThrough?: import('./followThrough').ProjectFollowThrough
   referenceDate: string
   warnings: string[]
   milestonesTruncated: boolean

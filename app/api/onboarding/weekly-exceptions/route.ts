@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { supabaseAdmin } from '@/lib/supabase/server'
+import { fetchAllPages } from '@/lib/supabase/pagination'
+import { buildProjectFollowThrough } from '@/lib/onboarding/followThrough'
 import { authErrorResponse, requireRole } from '@/lib/auth/roles'
 import { computePlanCharge } from '@/lib/onboarding/planCharge'
 import { loadPlanChargeSources, planChargeMonths, planChargeReferenceDate } from '@/lib/onboarding/planChargeSources'
@@ -19,6 +22,15 @@ export async function GET(req: NextRequest) {
     const plan = computePlanCharge(sources, { referenceDate, months })
 
     const warnings = [...plan.warnings]
+    let projectFollowThrough: ReturnType<typeof buildProjectFollowThrough> | undefined
+    try {
+      const { data, error } = await fetchAllPages((from, to) => supabaseAdmin.from('onboarding_projects')
+        .select('id,zoho_project_id,next_action,next_action_due,next_action_owner,current_blocker').order('id').range(from, to))
+      if (error) throw new Error(error.message)
+      projectFollowThrough = buildProjectFollowThrough(sources.projects, data ?? [], referenceDate)
+    } catch {
+      warnings.push('Prochaines actions des projets indisponibles : leur absence dans cette vue ne signifie pas qu’elles sont réalisées.')
+    }
 
     // Les jalons en retard viennent d'un appel Zoho distinct, potentiellement
     // limité en débit : sa perte ne doit pas faire échouer toute la vue.
@@ -58,6 +70,7 @@ export async function GET(req: NextRequest) {
       referenceDate,
       warnings,
       milestonesTruncated,
+      projectFollowThrough,
     } satisfies WeeklyExceptionsResponse)
   } catch (error) {
     return authErrorResponse(error) ?? NextResponse.json(

@@ -181,7 +181,7 @@ async function loadCsmRosterAndDirectory(
 async function loadOverrides(warnings: string[]): Promise<AccountAssignmentOverride[]> {
   const { data, error } = await supabaseAdmin
     .from('account_assignments')
-    .select('account_id, ob_owner, ob_locked, csm_name, csm_locked')
+    .select('account_id, ob_owner, ob_locked, csm_name, csm_locked, expected_go_live')
 
   if (error) {
     if (isMissingTableError(error)) {
@@ -193,6 +193,7 @@ async function loadOverrides(warnings: string[]): Promise<AccountAssignmentOverr
 
   return (data ?? []).map(row => ({
     accountId: row.account_id,
+    expectedGoLive: row.expected_go_live,
     obOwner: row.ob_owner,
     obLocked: row.ob_locked,
     csmName: row.csm_name,

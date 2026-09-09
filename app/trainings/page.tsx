@@ -3,13 +3,14 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import Badge from '@/components/ui/Badge'
 import type { AcuitySession } from '@/lib/acuity/client'
+import TrainingPlanning from '@/components/analytics/TrainingPlanning'
 
 type TrainingSession = AcuitySession & {
   id?: string
   totalNoShow?: number
 }
 
-type Period = 'week' | '3m' | '6m' | 'all'
+type Period = 'week' | 'upcoming' | '3m' | '6m' | 'all'
 type LanguageFilter = 'all' | AcuitySession['language']
 type StatusFilter = 'all' | AcuitySession['status']
 type ParticipantStatus = AcuitySession['participants'][number]['status']
@@ -33,6 +34,7 @@ interface SessionStats {
 }
 
 const periodOptions: Array<{ value: Period; label: string }> = [
+  { value: 'upcoming', label: '4 semaines à venir' },
   { value: 'week', label: 'Vue hebdomadaire' },
   { value: '3m', label: 'Depuis 3 mois' },
   { value: '6m', label: 'Depuis 6 mois' },
@@ -121,6 +123,12 @@ function formatWeekDate(iso: string): string {
 }
 
 function buildSessionsUrl(period: Period): string {
+  if (period === 'upcoming') {
+    const today = new Date()
+    const end = new Date(today)
+    end.setDate(end.getDate() + 27)
+    return `/api/acuity/sessions?minDate=${localIsoDate(today)}&maxDate=${localIsoDate(end)}`
+  }
   if (period === 'week') {
     const { previousMonday, thisSunday } = getWeekDateRange()
     return `/api/acuity/sessions?minDate=${previousMonday}&maxDate=${thisSunday}`
@@ -811,6 +819,7 @@ export default function TrainingsPage() {
 
         {!loading && !error && (
           <>
+            {period === 'upcoming' && <TrainingPlanning sessions={filteredSessions} />}
             <section aria-label="Indicateurs formations" className="grid grid-cols-2 gap-3 lg:grid-cols-5">
               <KpiCard
                 label={period === 'week' ? 'Sessions · 2 semaines' : 'Total sessions'}

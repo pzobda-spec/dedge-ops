@@ -56,6 +56,22 @@ function shape(overrides: Partial<AccountShape> = {}): AccountShape {
   return { tier: 'Silver', isGroup: false, hotels: 1, dmbookOnly: false, ...overrides }
 }
 
+test('un compte déjà actif ne double pas la charge OB mais conserve ses points CSM', () => {
+  const result = runAssignmentEngine({ pipeline: [makeAccount({ existingObProjectsByOwner: { Alice: 1 } })], obRoster: [makeOb({ name: 'Alice', currentActiveProjects: 1 })], csmRoster: [makeCsm()], months: ['2026-09', '2026-10'], currentMonth: '2026-09' })
+  assert.equal(result.obLoad.Alice, 1)
+  assert.equal(result.obLoadByMonth.Alice['2026-09'], 1)
+  assert.equal(result.assignments[0].additionalObProjects, 0)
+  assert.equal(result.assignments[0].obSource, 'existing')
+  assert.ok(result.csmLoadByMonth['CSM-Test']['2026-09'] > 0)
+})
+
+test('groupe partiellement démarré : seuls les slots restants sont ajoutés', () => {
+  const result = runAssignmentEngine({ pipeline: [makeAccount({ hotels: 5, isGroup: true, existingObProjectsByOwner: { Alice: 2 } })], obRoster: [makeOb({ name: 'Alice', currentActiveProjects: 2 })], csmRoster: [makeCsm()], months: ['2026-09'], currentMonth: '2026-09' })
+  assert.equal(result.obLoad.Alice, 5)
+  assert.equal(result.obLoadByMonth.Alice['2026-09'], 5)
+  assert.equal(result.assignments[0].additionalObProjects, 3)
+})
+
 test('barème : poids de référence pour chaque tier', () => {
   assert.equal(weightForAccount(DEFAULT_WEIGHT_RULES, shape({ tier: 'Bronze', dmbookOnly: true })), 1)
   assert.equal(weightForAccount(DEFAULT_WEIGHT_RULES, shape({ tier: 'Bronze', isGroup: false })), 2)

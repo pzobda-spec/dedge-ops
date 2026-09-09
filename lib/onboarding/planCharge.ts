@@ -12,6 +12,7 @@
 
 import {
   buildPlanChargePipeline,
+  indexProjectsByAccount,
   computeCurrentMonthBasePoints,
   type CurrentMonthBasePointsResult,
   type PlanChargePipelineResult,
@@ -23,7 +24,8 @@ import {
   type CsmMember,
   type ObMember,
 } from '@/lib/onboarding/assignmentEngine'
-import { countActiveProjectsByOwner } from '@/lib/onboarding/workload'
+import { countActiveProjectsByOwner, isActiveProject } from '@/lib/onboarding/workload'
+import { isExcludedOnboardingOwner, resolveOwnerName } from '@/lib/onboarding/constants'
 import { computeCsmPortfolios, type CsmPortfolioResult } from '@/lib/onboarding/csmAnalytics'
 import type { PlanChargeSources } from '@/lib/onboarding/planChargeSources'
 import { buildCsmAccountRows, type CsmAccountRowsResult } from '@/lib/csm/dashboard'
@@ -113,6 +115,19 @@ export function computePlanCharge(
     warnings.push(
       `Projets actifs portés par des personnes absentes du roster OB, non comptés dans la capacité : ${orphanOwners.join(', ')}.`,
     )
+  }
+
+  // Count only projects that actually contribute to the roster's base load.
+  const linkedActive = indexProjectsByAccount(sources.accounts, sources.projects.filter(isActiveProject))
+  for (const account of pipeline.pipeline) {
+    const existing: Record<string, number> = {}
+    for (const project of linkedActive.byAccountId.get(account.id) ?? []) {
+      if (isExcludedOnboardingOwner(project.ownerShort)) continue
+      const owner = resolveOwnerName(project.ownerShort || project.ownerName, project.ownerEmail)
+      if (!obRoster.some(member => member.name === owner)) continue
+      existing[owner] = (existing[owner] ?? 0) + 1
+    }
+    account.existingObProjectsByOwner = existing
   }
 
   const engine = runAssignmentEngine({
