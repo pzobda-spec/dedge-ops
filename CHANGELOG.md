@@ -6,6 +6,14 @@ Les entrées antérieures au 15 juillet 2026 ont été reconstituées à partir 
 l’historique Git ; elles synthétisent les changements fonctionnels encore
 pertinents plutôt que chaque correction intermédiaire.
 
+## 2026-09-09 — Reporting mensuel pour les slides
+
+- Ajout d’une synthèse mensuelle Support CRM avec sélection du mois et copie des données : créations, clôtures indépendantes de la date de création, première réponse documentée, résolution calendaire, FCR explicitement estimé, principaux produits et jours de pic.
+- Implémentation : dates de début et mises en production issues de Zoho Projects synchronisé, délai sur dates connues, couverture de saisie et portefeuille actuel agrégé. Les catégories Welcome / Setup, la qualité, les SLA et les commentaires projets sans source exploitable restent explicitement indisponibles.
+- Historique de 24 mois par canal brut (`ticket_analytics.source`) : barres empilées, tableau mensuel, indicateurs Phone et rupture de mars–avril 2026. Les appels estimés utilisent un ratio centralisé non validé de 0,5 ; ils ne remplacent jamais les mesures réelles de téléphonie.
+- Routes `/api/reporting/monthly` et `/api/reporting/channels` paginées par 1 000 lignes, agrégats uniquement, dates en Europe/Paris, couverture déclarée distinguée de l’exhaustivité. Les mois à volume atypiquement faible sont signalés sans modifier leurs compteurs.
+- Vérification : TypeScript, lint, build, tests des bornes Paris et des cohortes ; lecture Supabase réelle et parcours navigateur local. Aucun changement de schéma, de product roll-up ni de route Zoho.
+
 ## 2026-09-09 — Cockpit décisionnel : fiabilité et parcours de pilotage
 
 ### Ajouté

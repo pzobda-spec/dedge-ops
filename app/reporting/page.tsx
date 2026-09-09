@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import MonthlyReporting from '@/components/reporting/MonthlyReporting'
 import {
   Bar,
   BarChart,
@@ -364,8 +365,8 @@ export default function ReportingPage() {
         <div className="mx-auto flex max-w-[1600px] flex-col gap-4 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#8064b3]">Analyse support</p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight">Reporting trimestriel</h1>
-            <p className="mt-1 text-sm text-[#696969]">Supabase · comparaison T-1 et même trimestre N-1 · détection de patterns</p>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight">Reporting</h1>
+            <p className="mt-1 text-sm text-[#696969]">Synthèse mensuelle pour les slides · historique et comparaisons trimestrielles</p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -404,6 +405,9 @@ export default function ReportingPage() {
       </header>
 
       <div className="mx-auto max-w-[1600px] space-y-6 px-4 py-6 sm:px-6 lg:px-8">
+        <MonthlyReporting />
+        <h2 className="text-xl font-bold">Analyse trimestrielle du support</h2>
+        <p className="text-xs text-[#696969]">Les comparaisons globales incluant mars–avril 2026 doivent être lues avec la rupture de prise d’appels décrite ci-dessus ; elles ne mesurent pas seules l’évolution de la demande client.</p>
         {loading && (
           <div className="flex items-center gap-2 py-16 text-sm text-[#696969]">
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#e2e2e2] border-t-[#59319f]" />
