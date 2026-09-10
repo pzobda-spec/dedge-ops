@@ -47,7 +47,7 @@ export async function readImplementation(from: Date, to: Date) {
   const rows: ReportingProject[] = []
   for (let offset = 0; ; offset += PAGE_SIZE) {
     const { data, error } = await supabaseAdmin.from('onboarding_projects')
-      .select('id,zoho_project_id,actual_go_live,zoho_status,last_synced_at').not('zoho_project_id', 'is', null)
+      .select('id,zoho_project_id,actual_go_live,zoho_status,start_date,product,last_synced_at').not('zoho_project_id', 'is', null)
       .order('id').range(offset, offset + PAGE_SIZE - 1)
     if (error || !data) throw new Error('Les données Zoho Projects synchronisées sont indisponibles.')
     rows.push(...data as ReportingProject[])

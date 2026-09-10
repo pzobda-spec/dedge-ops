@@ -20,6 +20,18 @@ test('nouveaux démarrages : Non démarré uniquement, reprises et imports exclu
   assert.equal(result.project_count, 4)
 })
 
+test('lancements officiels : date de démarrage Zoho Projects ventilée CRM / Dmbook', () => {
+  const result = aggregate([
+    project('crm', { start_date: '2026-08-05', product: 'LoungeUp' }),
+    project('dmbook', { start_date: '2026-08-21', product: 'Dmbook Pro' }),
+    project('old', { start_date: '2026-07-31', product: 'LoungeUp' }),
+  ], [])
+  assert.equal(result.official_starts, 2)
+  assert.equal(result.official_starts_crm, 1)
+  assert.equal(result.official_starts_dmbook, 1)
+  assert.equal(result.status_transition_starts, 0)
+})
+
 test('Live : date métier prioritaire, observation en repli, imports sans date exclus', () => {
   const result = aggregate([
     project('a', { actual_go_live: '2026-08-01', zoho_status: 'live' }),

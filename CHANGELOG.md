@@ -10,6 +10,10 @@ pertinents plutôt que chaque correction intermédiaire.
 
 - Le reporting mensuel compare désormais chaque mois au même mois de l’année précédente, y compris pour les mois de 2025. Les volumes sont affichés en évolution relative ; les taux de conformité en points de pourcentage. Une référence absente ou nulle reste « — ».
 
+## 2026-09-10 — Historique de clôtures Zoho Analytics
+
+- Ajout d’un cron filtré sur le département Support et `Ticket Closed Time` vers `ticket_analytics`. La vue REST vérifiée retourne 257 clôtures pour août 2025 ; la source Desk seule n’en conservait aucune.
+
 ## 2026-09-10 — Pilotage Support par conformité SLA
 
 - Ajout des taux de conformité de première réponse et de résolution, cible 90 %, ventilés par priorité avec volumes mesurés, conformes, sans mesure et non classés. Le profil CRM et tous ses seuils sont centralisés dans `lib/reporting/slaProfiles.ts`.

@@ -17,6 +17,10 @@
       "schedule": "15 8 * * *"
     },
     {
+      "path": "/api/cron/sync-ticket-analytics-history",
+      "schedule": "20 8 * * *"
+    },
+    {
       "path": "/api/cron/sync-linear-analytics",
       "schedule": "0 8 * * *"
     },

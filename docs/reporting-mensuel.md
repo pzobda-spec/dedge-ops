@@ -42,13 +42,12 @@ synchronisé et les projets d’onboarding ; ce n’est pas le global D-EDGE.
   y compris lorsqu’un mois de 2025 est sélectionné. Les volumes (créés, clôturés)
   sont exprimés en pourcentage relatif ; les taux de conformité en points de
   pourcentage. Une référence absente ou nulle affiche « — ».
-- Implémentation : nouveaux démarrages uniquement sur événement `status_changed`
-  avec `from=not_started` et `to=in_progress`. Les retours de Pending/pause/autre
-  sont exclus, ainsi que les imports déjà In Progress. Un projet compte une fois
-  par mois. La date de l’événement est celle de la détection par la synchronisation
-  quotidienne ; des transitions peuvent manquer entre deux lectures ou avant le
-  début du suivi. La migration depuis une opportunité gagnée et la date de début
-  planifiée ne valent pas démarrage.
+- Implémentation : les lancements officiels utilisent `start_date` renseigné dans
+  Zoho Projects, ventilés CRM et Dmbook ; un projet compte une fois par mois. Les
+  transitions `status_changed` Non démarré → In Progress restent un signal observé
+  séparé, soumis au démarrage du suivi quotidien. Les reprises et imports ne sont
+  pas assimilés à un lancement. La migration depuis une opportunité gagnée seule
+  ne vaut pas lancement tant qu’aucune date de démarrage n’est renseignée.
 - Live : champ métier `Live date` courant (prioritaire sur un ancien événement),
   sinon événement `go_live` issu d’un changement réel de statut. Un import déjà
   Live sans date métier n’est pas compté. Les remises en Live successives ne sont
@@ -58,6 +57,13 @@ synchronisé et les projets d’onboarding ; ce n’est pas le global D-EDGE.
   de fin de mois ni le tableau des décisions des trois équipes.
 
 ## Canaux et limites
+
+L’historique des clôtures est synchronisé par `/api/cron/sync-ticket-analytics-history`
+depuis la table Zoho Analytics `Tickets (Zoho Desk)`, avec le scope OAuth
+`ZohoAnalytics.data.read`. La route filtre le département Support et `Ticket Closed Time`,
+puis écrit dans `ticket_analytics`; aucun détail individuel n’est exposé au navigateur.
+Une reprise complète peut être lancée avec `?from=2018-01-01&to=2026-09-11`, puis le cron
+quotidien couvre les 24 derniers mois.
 
 `/api/reporting/channels?from=2024-09-01&to=2026-09-01` utilise une borne de début
 incluse et une borne de fin exclue. Les dates seules commencent à minuit à Paris ;
