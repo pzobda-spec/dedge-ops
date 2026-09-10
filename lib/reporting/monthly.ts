@@ -10,6 +10,7 @@ export const RATIO_APPELS_PAR_TICKET = 0.5
 export const PHONE_BREAK_NOTE = 'À partir de mars–avril 2026, l’équipe a arrêté de répondre au téléphone. La baisse du canal Phone reflète cet arrêt de la prise d’appels, pas une baisse de la demande client. Aucune variation n’est calculée à travers cette rupture.'
 
 export interface TicketRow {
+  id?: string
   created_at: string | null
   resolved_at: string | null
   source: string | null
@@ -69,6 +70,16 @@ function duration(from: string | null, to: string | null): number | null {
   const hours = (Date.parse(to) - Date.parse(from)) / 3_600_000
   return Number.isFinite(hours) && hours >= 0 ? hours : null
 }
+export function resolutionMetrics(rows: TicketRow[]) {
+  const documented = rows.map(row => duration(row.created_at, row.resolved_at)).filter((value): value is number => value !== null)
+  const retained = documented.filter(hours => hours <= MAX_RESOLUTION_DAYS * 24)
+  return {
+    resolution_hours: average(retained), resolution_sample: retained.length,
+    resolution_max_days: MAX_RESOLUTION_DAYS,
+    resolution_excluded_count: documented.length - retained.length,
+    resolution_missing_count: rows.length - documented.length,
+  }
+}
 export function supportMetrics(rows: TicketRow[], from: Date, to: Date) {
   const created = rows.filter(row => inRange(row.created_at, from, to))
   const closed = rows.filter(row => inRange(row.resolved_at, from, to))
@@ -76,8 +87,6 @@ export function supportMetrics(rows: TicketRow[], from: Date, to: Date) {
     const ms = row.first_response_time_ms === null || row.first_response_time_ms === '' ? NaN : Number(row.first_response_time_ms)
     return Number.isFinite(ms) && ms >= 0 ? ms / 3_600_000 : duration(row.created_at, row.first_response_at)
   }).filter((value): value is number => value !== null)
-  const documentedResolutions = closed.map(row => duration(row.created_at, row.resolved_at)).filter((value): value is number => value !== null)
-  const resolutions = documentedResolutions.filter(hours => hours <= MAX_RESOLUTION_DAYS * 24)
   const fcr = closed.map(row => row.first_contact_resolution).filter((value): value is boolean => typeof value === 'boolean')
   function counts(selector: (row: TicketRow) => string) {
     const result = new Map<string, number>()
@@ -87,10 +96,7 @@ export function supportMetrics(rows: TicketRow[], from: Date, to: Date) {
   return {
     opened: created.length, closed: closed.length, closed_opened_pct: percent(closed.length, created.length),
     first_response_hours: average(replies), first_response_sample: replies.length,
-    resolution_hours: average(resolutions), resolution_sample: resolutions.length,
-    resolution_max_days: MAX_RESOLUTION_DAYS,
-    resolution_excluded_count: documentedResolutions.length - resolutions.length,
-    resolution_missing_count: closed.length - documentedResolutions.length,
+    ...resolutionMetrics(closed),
     fcr_estimate_pct: percent(fcr.filter(Boolean).length, fcr.length), fcr_sample: fcr.length,
     top_products: counts(row => row.product_area?.trim() || 'Autre').slice(0, 8),
     peak_days: counts(row => formatInTimeZone(row.created_at!, TIME_ZONE, 'yyyy-MM-dd')).slice(0, 5),

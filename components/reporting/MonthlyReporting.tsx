@@ -5,6 +5,9 @@ import { Bar, BarChart, CartesianGrid, Legend, ReferenceArea, ResponsiveContaine
 import { monthKey, shiftMonth, PHONE_BREAK_NOTE } from '@/lib/reporting/monthly'
 import type { channelMetrics, supportMetrics } from '@/lib/reporting/monthly'
 import type { readCoverage, readImplementation } from '@/lib/reporting/source'
+import type { supportLevelMetrics } from '@/lib/reporting/supportLevels'
+
+type Levels = ReturnType<typeof supportLevelMetrics> & { month: string; note: string; coverage: { oldest_checked_at: string | null; cache_minutes: number } }
 
 type Coverage = Awaited<ReturnType<typeof readCoverage>> & { tickets_read: number; certified: boolean; partial_month: boolean }
 type Monthly = {
@@ -34,6 +37,9 @@ export default function MonthlyReporting() {
   const [month, setMonth] = useState(() => shiftMonth(monthKey(new Date()), -1))
   const [monthly, setMonthly] = useState<Monthly | null>(null)
   const [channels, setChannels] = useState<Channels | null>(null)
+  const [levels, setLevels] = useState<Levels | null>(null)
+  const [levelsError, setLevelsError] = useState('')
+  const [levelsLoading, setLevelsLoading] = useState(true)
   const [error, setError] = useState('')
   const [channelError, setChannelError] = useState('')
   const [copyStatus, setCopyStatus] = useState('')
@@ -43,6 +49,7 @@ export default function MonthlyReporting() {
   useEffect(() => {
     const controller = new AbortController()
     setMonthly(null); setChannels(null); setError(''); setChannelError(''); setCopyStatus('')
+    setLevels(null); setLevelsError(''); setLevelsLoading(true)
     setLoading(true); setChannelLoading(true)
     async function load<T>(url: string, save: (value: T) => void, fail: (value: string) => void, done: () => void) {
       try {
@@ -55,6 +62,7 @@ export default function MonthlyReporting() {
       } finally { if (!controller.signal.aborted) done() }
     }
     void load<Monthly>(`/api/reporting/monthly?month=${month}`, setMonthly, setError, () => setLoading(false))
+    void load<Levels>(`/api/reporting/support-levels?month=${month}`, setLevels, setLevelsError, () => setLevelsLoading(false))
     void load<Channels>(`/api/reporting/channels?from=${shiftMonth(month, -23)}-01&to=${shiftMonth(month, 1)}-01`, setChannels, setChannelError, () => setChannelLoading(false))
     return () => controller.abort()
   }, [month])
@@ -71,12 +79,18 @@ export default function MonthlyReporting() {
       `FCR estimé : ${number(s.fcr_estimate_pct, ' %')} (${s.fcr_sample}/${s.closed} clôtures documentées).`,
       `Produits les plus sollicités : ${s.top_products.map(v => `${v.name} : ${v.count}`).join(' ; ') || '—'}.`,
       `Jours les plus chargés (Paris) : ${s.peak_days.map(v => `${v.name} : ${v.count}`).join(' ; ') || '—'}. Aucune cause incident ou release déduite.`,
-      ...(p ? [`Implémentation — dates de début de projet renseignées dans le mois (potentiellement planifiées) : ${p.started} ; mises en production : ${p.went_live} ; délai début → production : ${number(p.average_start_to_live_days, ' j')} (${p.duration_sample} projets documentés).`,
-        `Dates de début absentes : ${p.missing_start_dates} ; projets en production sans date : ${p.missing_live_dates}. Synchronisation projets : ${syncLabel(p.last_synced_at)}.`,
+      ...(p ? [`Implémentation — nouveaux projets démarrés (Non démarré → In Progress) : ${number(p.in_progress)} ; ${p.in_progress_resumed_or_other} reprises ou autres transitions exclues ; passés Live : ${p.went_live}.`,
+        `Live : ${p.live_dated} selon Live date, ${p.live_observed_without_date} transitions observées sans date métier. ${p.live_without_usable_date} projets actuellement Live sans date exploitable pour ce mois. ${p.imported_in_progress_without_transition} imports déjà In Progress sans transition prouvée pendant le mois. Début du suivi : ${syncLabel(p.tracking_started_at)}. Synchronisation projets : ${syncLabel(p.last_synced_at)}.`,
         `Portefeuille actuel (${p.project_count} projets, non historique) : ${p.current_statuses.map(v => `${v.name} : ${v.count}`).join(' ; ')}.`] : [monthly.implementation.error || 'Implémentation indisponible.']),
       ...Object.values(monthly.unavailable), PHONE_BREAK_NOTE,
     ]
     const selected = channels?.months.find(row => row.key === month)
+    if (levels) {
+      for (const [name, group] of [['L1 sans lien Linear', levels.l1], ['L2 avec lien Linear', levels.l2], ['Niveau non déterminé', levels.unknown]] as const) {
+        lines.push(`${name} — résolution moyenne : ${number(group.resolution_hours == null ? null : group.resolution_hours / 24, ' j')} (${number(group.resolution_hours, ' h')}) ; ${group.resolution_sample}/${group.closed} clôtures retenues ; ${group.resolution_excluded_count} délais > ${group.resolution_max_days} jours exclus ; ${group.resolution_missing_count} durées manquantes.`)
+      }
+      lines.push(levels.note, `Liens vérifiés depuis ${syncLabel(levels.coverage.oldest_checked_at)} ; cache ${levels.coverage.cache_minutes} minutes.`)
+    } else lines.push('Résolution L1 / L2 : indisponible. ' + levelsError)
     if (selected?.sparse_history) lines.push('Attention : volume mensuel atypiquement faible par rapport aux six derniers mois complets affichés ; historique à vérifier avant utilisation dans les slides.')
     if (selected) lines.push(`Canaux du mois — courriel : ${selected.email} ; téléphone (tickets) : ${selected.phone} ; web : ${selected.web} ; messagerie instantanée : ${selected.chat} ; autre : ${selected.autre}. Part Phone : ${number(selected.phone_share_pct, ' %')}.`)
     try { await navigator.clipboard.writeText(lines.join('\n')); setCopyStatus('Synthèse copiée.') } catch { setCopyStatus('Copie impossible dans ce navigateur. Vous pouvez sélectionner le tableau.') }
@@ -89,7 +103,7 @@ export default function MonthlyReporting() {
       <div><h2 id="monthly-report-title" className="text-xl font-bold">Synthèse mensuelle pour les slides</h2><p className="mt-1 text-sm text-[#696969]">Support CRM, implémentation et portefeuille projets. Le périmètre global D-EDGE n’est pas disponible ici.</p></div>
       <div className="flex flex-wrap items-end gap-3">
         <label className="text-xs font-semibold">Mois du reporting<input aria-label="Mois du reporting" type="month" min="2000-01" max={monthKey(new Date())} value={month} onChange={event => { if (/^20\d{2}-(0[1-9]|1[0-2])$/.test(event.target.value)) setMonth(event.target.value) }} className="mt-1 block rounded-lg border border-[#ded8e8] bg-white px-3 py-2 text-sm" /></label>
-        <button type="button" onClick={copy} disabled={!monthly || loading} className="rounded-lg bg-[#59319f] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">Copier les données des slides</button>
+        <button type="button" onClick={copy} disabled={!monthly || loading || levelsLoading} className="rounded-lg bg-[#59319f] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">Copier les données des slides</button>
       </div>
     </div>
     {copyStatus && <p role="status" className="text-sm">{copyStatus}</p>}
@@ -103,7 +117,18 @@ export default function MonthlyReporting() {
           <Kpi title="Tickets créés" value={number(monthly.support.opened)} detail="Créations pendant le mois, tous canaux." />
           <Kpi title="Tickets clôturés" value={number(monthly.support.closed)} detail={`Selon la date de clôture synchronisée, même si créés avant ce mois. Clôturés / créés : ${number(monthly.support.closed_opened_pct, ' %')}.`} />
           <Kpi title="Première réponse moyenne" value={number(monthly.support.first_response_hours, ' h')} detail={`${monthly.support.first_response_sample} / ${monthly.support.opened} créations documentées. Métrique Zoho, sinon écart entre horodatages ; ce n’est pas la première action.`} />
-          <Kpi title="Résolution moyenne" value={number(monthly.support.resolution_hours, ' h')} detail={`Hors délais > ${monthly.support.resolution_max_days} jours. ${monthly.support.resolution_sample} / ${monthly.support.closed} clôtures retenues ; ${monthly.support.resolution_excluded_count} exclues ; ${monthly.support.resolution_missing_count} durées manquantes ou invalides. Temps calendaire, pas un taux SLA.`} />
+          <Kpi title="Résolution moyenne globale" value={number(monthly.support.resolution_hours == null ? null : monthly.support.resolution_hours / 24, ' j')} detail={`Hors délais > ${monthly.support.resolution_max_days} jours. ${monthly.support.resolution_sample} / ${monthly.support.closed} clôtures retenues ; ${monthly.support.resolution_excluded_count} exclues ; ${monthly.support.resolution_missing_count} durées manquantes ou invalides. Temps calendaire, pas un taux SLA.`} />
+        </div>
+        <div className="space-y-3" aria-labelledby="support-levels-title">
+          <h4 id="support-levels-title" className="text-sm font-bold">Résolution moyenne par niveau de support</h4>
+          {levelsLoading && <p role="status" className="text-xs text-[#696969]">Vérification des liens Linear dans Zoho Desk…</p>}
+          {levelsError && <p role="alert" className={note}>{levelsError}</p>}
+          {!levels && <div className="grid gap-3 sm:grid-cols-2"><Kpi title="L1 — sans lien Linear" value="—" /><Kpi title="L2 — avec lien Linear" value="—" /></div>}
+          {levels && <>
+            <div className="grid gap-3 sm:grid-cols-2">{([{ title: 'L1 — sans lien Linear', group: levels.l1 }, { title: 'L2 — avec lien Linear', group: levels.l2 }]).map(({ title, group }) => <Kpi key={title} title={title} value={number(group.resolution_hours == null ? null : group.resolution_hours / 24, ' j')} detail={`${number(group.resolution_hours, ' h')} · ${group.resolution_sample} / ${group.closed} clôtures retenues ; ${group.resolution_excluded_count} délais > ${group.resolution_max_days} jours exclus ; ${group.resolution_missing_count} durées manquantes.`} />)}</div>
+            <p className="text-xs leading-5 text-[#696969]">{levels.note} Liens vérifiés depuis {syncLabel(levels.coverage.oldest_checked_at)} ; cache de {levels.coverage.cache_minutes} minutes.</p>
+            {levels.unknown.closed > 0 && <p className={note}>{levels.unknown.closed} tickets de niveau non déterminé, exclus de la ventilation L1 / L2 : {levels.unknown.resolution_sample} délais retenus, {levels.unknown.resolution_excluded_count} supérieurs à 90 jours, {levels.unknown.resolution_missing_count} manquants. La couverture est partielle.</p>}
+          </>}
         </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <Kpi title="FCR estimé" value={number(monthly.support.fcr_estimate_pct, ' %')} detail={`${monthly.support.fcr_sample} clôtures documentées. Estimation selon les réouvertures / échanges disponibles.`} />
@@ -118,10 +143,11 @@ export default function MonthlyReporting() {
       <section className={`${panel} space-y-4`} aria-labelledby="monthly-implementation-title">
         <h3 id="monthly-implementation-title" className="font-bold">Implémentation | CRM — {label(month)}</h3>
         {monthly.implementation.data ? <>
-          <div className="grid gap-3 sm:grid-cols-3"><Kpi title="Dates de début de projet" value={number(monthly.implementation.data.started)} detail="Date de début renseignée dans Zoho Projects pendant le mois." /><Kpi title="Mises en production" value={number(monthly.implementation.data.went_live)} detail="Date réelle de mise en production pendant le mois." /><Kpi title="Délai début → production" value={number(monthly.implementation.data.average_start_to_live_days, ' j')} detail={`${monthly.implementation.data.duration_sample} mises en production avec les deux dates. Jours calendaires.`} /></div>
-          <p className="text-xs text-[#696969]">Source : Zoho Projects synchronisé · {monthly.implementation.data.project_count} projets · {monthly.implementation.data.missing_start_dates} dates de début absentes · {monthly.implementation.data.missing_live_dates} projets en production sans date · synchronisation : {syncLabel(monthly.implementation.data.last_synced_at)}. La date de début peut être planifiée ; elle ne prouve pas un démarrage effectif. Exhaustivité historique non certifiée.</p>
+          <div className="grid gap-3 sm:grid-cols-2"><Kpi title="Nouveaux projets démarrés" value={number(monthly.implementation.data.in_progress)} detail={`Non démarré → In Progress pendant le mois. ${monthly.implementation.data.in_progress_resumed_or_other} reprises depuis une attente, une pause ou un autre statut exclues.`} /><Kpi title="Projets passés Live" value={number(monthly.implementation.data.went_live)} detail={`${monthly.implementation.data.live_dated} selon Live date ; ${monthly.implementation.data.live_observed_without_date} transitions observées sans date métier. Chaque projet compte une fois par mois.`} /></div>
+          <p className="text-xs text-[#696969]">Parcours : opportunité gagnée → projet migré dans Zoho Projects → In Progress → Live. La migration et la date de début planifiée ne sont pas des passages In Progress.</p>
+          <p className="text-xs text-[#696969]">Source : Zoho Projects synchronisé et journal de transitions · {monthly.implementation.data.project_count} projets · suivi enregistré depuis {syncLabel(monthly.implementation.data.tracking_started_at)} · synchronisation : {syncLabel(monthly.implementation.data.last_synced_at)}. {monthly.implementation.data.imported_in_progress_without_transition} imports déjà In Progress sans transition prouvée ce mois ; {monthly.implementation.data.live_without_usable_date} projets actuellement Live sans date exploitable pour ce mois.</p>
+          {!monthly.implementation.data.tracking_covers_month && <p className={note}>Le mois sélectionné précède le début du suivi ou n’est couvert qu’en partie. L’historique In Progress est incomplet.</p>}
         </> : <p role="alert" className={note}>{monthly.implementation.error}</p>}
-        <div className="overflow-x-auto"><table className="w-full min-w-[540px] text-sm"><thead><tr><th className="py-2 text-left">Catégorie des slides</th>{['Ouverts', 'Clôturés', 'Clôturés / ouverts', 'Âge moyen'].map(h => <th key={h} className={cell}>{h}</th>)}</tr></thead><tbody>{['Accueil (Welcome)', 'Configuration (Setup)'].map(name => <tr key={name} className="border-t border-[#eeeaf3]"><td className="py-2">{name}</td>{[0, 1, 2, 3].map(key => <td key={key} className={cell}>—</td>)}</tr>)}</tbody></table></div>
         <p className={note}>{monthly.unavailable.implementation} {monthly.unavailable.quality}</p>
       </section>
       <section className={`${panel} space-y-3`} aria-labelledby="monthly-projects-title"><h3 id="monthly-projects-title" className="font-bold">Projets — portefeuille actuel d’onboarding</h3><p className="text-xs leading-5 text-[#696969]">{monthly.unavailable.projects}</p>{monthly.implementation.data && <div className="flex flex-wrap gap-2">{monthly.implementation.data.current_statuses.map(item => <span key={item.name} className="rounded-lg bg-[#f7f3fc] px-3 py-2 text-sm">{item.name} : <strong>{item.count}</strong></span>)}</div>}</section>

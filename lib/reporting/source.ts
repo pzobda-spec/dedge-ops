@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '@/lib/supabase/server'
 import { monthKey, type TicketRow } from './monthly'
+import { implementationMetrics, type ReportingProject, type ReportingProjectEvent } from './implementation'
 
 const PAGE_SIZE = 1_000
 
@@ -7,7 +8,7 @@ export async function readTickets(from: Date, to: Date, channelsOnly = false): P
   const rows: TicketRow[] = []
   for (let offset = 0; ; offset += PAGE_SIZE) {
     let query = supabaseAdmin.from('ticket_analytics')
-      .select(channelsOnly ? 'created_at,source' : 'created_at,resolved_at,source,product_area,first_response_at,first_response_time_ms,first_contact_resolution')
+      .select(channelsOnly ? 'created_at,source' : 'id,created_at,resolved_at,source,product_area,first_response_at,first_response_time_ms,first_contact_resolution')
     query = channelsOnly ? query.gte('created_at', from.toISOString()).lt('created_at', to.toISOString())
       : query.or(`and(created_at.gte.${from.toISOString()},created_at.lt.${to.toISOString()}),and(resolved_at.gte.${from.toISOString()},resolved_at.lt.${to.toISOString()})`)
     const { data, error } = await query.order('id', { ascending: true }).range(offset, offset + PAGE_SIZE - 1)
@@ -43,36 +44,29 @@ export function certifiedPeriod(coverage: Awaited<ReturnType<typeof readCoverage
 }
 
 export async function readImplementation(from: Date, to: Date) {
-  interface Row { start_date: string | null; actual_go_live: string | null; zoho_status: string | null; last_synced_at: string | null }
-  const rows: Row[] = []
+  const rows: ReportingProject[] = []
   for (let offset = 0; ; offset += PAGE_SIZE) {
     const { data, error } = await supabaseAdmin.from('onboarding_projects')
-      .select('start_date,actual_go_live,zoho_status,last_synced_at').not('zoho_project_id', 'is', null)
+      .select('id,zoho_project_id,actual_go_live,zoho_status,last_synced_at').not('zoho_project_id', 'is', null)
       .order('id').range(offset, offset + PAGE_SIZE - 1)
     if (error || !data) throw new Error('Les données Zoho Projects synchronisées sont indisponibles.')
-    rows.push(...data as Row[])
+    rows.push(...data as ReportingProject[])
     if (data.length < PAGE_SIZE) break
   }
-  // Zoho Projects fournit des dates calendaires, sans fuseau.
-  const firstDay = `${monthKey(from)}-01`
-  const nextDay = `${monthKey(to)}-01`
-  const during = (value: string | null) => !!value && value.slice(0, 10) >= firstDay && value.slice(0, 10) < nextDay
-  const live = rows.filter(row => during(row.actual_go_live))
-  const durations = live.flatMap(row => {
-    if (!row.start_date || !row.actual_go_live) return []
-    const days = (Date.parse(row.actual_go_live.slice(0, 10)) - Date.parse(row.start_date.slice(0, 10))) / 86_400_000
-    return Number.isFinite(days) && days >= 0 ? [days] : []
-  })
-  const labels: Record<string, string> = { not_started: 'Non démarré', in_progress: 'En cours', pending_client: 'En attente client', live: 'En production', blocked: 'Bloqué', standby: 'En pause', other: 'Autre' }
-  const statuses = new Map<string, number>()
-  rows.forEach(row => { const label = labels[row.zoho_status ?? ''] ?? 'Non renseigné'; statuses.set(label, (statuses.get(label) ?? 0) + 1) })
-  return {
-    started: rows.filter(row => during(row.start_date)).length, went_live: live.length,
-    average_start_to_live_days: durations.length ? durations.reduce((a, b) => a + b, 0) / durations.length : null,
-    duration_sample: durations.length, project_count: rows.length,
-    missing_start_dates: rows.filter(row => !row.start_date).length,
-    missing_live_dates: rows.filter(row => row.zoho_status === 'live' && !row.actual_go_live).length,
-    last_synced_at: rows.map(row => row.last_synced_at).filter((value): value is string => !!value).sort().at(-1) ?? null,
-    current_statuses: [...statuses].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
+  const events: ReportingProjectEvent[] = []
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const { data, error } = await supabaseAdmin.from('onboarding_events')
+      .select('project_id,event_type,occurred_at,metadata')
+      .in('event_type', ['status_changed', 'go_live', 'project_created'])
+      .gte('occurred_at', from.toISOString()).lt('occurred_at', to.toISOString())
+      .order('id').range(offset, offset + PAGE_SIZE - 1)
+    if (error || !data) throw new Error('Historique des statuts Zoho Projects indisponible.')
+    events.push(...data as ReportingProjectEvent[])
+    if (data.length < PAGE_SIZE) break
   }
+  // Date d'insertion, pas occurred_at : les événements Live peuvent être antidatés.
+  const first = await supabaseAdmin.from('onboarding_events').select('created_at')
+    .in('event_type', ['status_changed', 'go_live', 'project_created']).order('created_at').limit(1)
+  if (first.error) throw new Error('Couverture de l’historique projet indisponible.')
+  return implementationMetrics(rows, events, from, to, first.data?.[0]?.created_at ?? null)
 }

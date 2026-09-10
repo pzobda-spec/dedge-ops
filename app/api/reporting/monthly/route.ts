@@ -29,11 +29,11 @@ export async function GET(request: NextRequest) {
         sla: 'Première action et SLA P1–P4 : la première réponse n’est pas la première action. Priorités normalisées et calendrier de service insuffisants pour appliquer les seuils des slides.',
         cancellation: 'Exclusion des annulations non garantie : le statut brut n’est pas conservé. Les volumes incluent tous les tickets synchronisés.',
         phone: 'Appels entrants, appels manqués et décrochés en moins de 30 s : journal de téléphonie non connecté au cockpit. Les tickets Phone ne permettent pas ces mesures.',
-        implementation: 'Accueil (Welcome) et configuration (Setup) : correspondance avec les tâches Zoho Projects non définie ; volumes, clôtures et âge moyen indisponibles. Les démarrages et mises en production ci-dessous sont des projets.',
+        implementation: 'Les nouveaux démarrages comptent uniquement les transitions Non démarré → In Progress, détectées pendant le mois par la synchronisation quotidienne. Les reprises depuis Pending, une pause ou un autre statut sont exclues. Un import déjà In Progress ne prouve pas un nouveau démarrage. Les dates de détection peuvent différer du jour exact dans Zoho ; les transitions entre deux synchronisations et avant le début du suivi ne sont pas reconstituées. Live utilise le champ Live date renseigné, sinon une transition observée ; les remises en Live successives ne sont pas toutes historisées.',
         projects: 'Projets transverses Support / Implémentation / CSM : prochaines étapes et décisions à renseigner dans les slides. Le portefeuille ci-dessous reflète les statuts actuels des projets d’onboarding, pas une situation historique de fin de mois.',
       },
       phone_break_note: PHONE_BREAK_NOTE,
-      meta: { from: from.toISOString(), to: to.toISOString(), source: 'Supabase · ticket_analytics et onboarding_projects (Zoho Projects synchronisé)', generated_at: new Date().toISOString() },
+      meta: { from: from.toISOString(), to: to.toISOString(), source: 'Supabase · ticket_analytics, onboarding_projects et onboarding_events (Zoho Projects synchronisé)', generated_at: new Date().toISOString() },
     })
   } catch {
     return NextResponse.json({ error: 'La synthèse mensuelle est temporairement indisponible.' }, { status: 502 })

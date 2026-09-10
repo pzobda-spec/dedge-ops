@@ -18,9 +18,29 @@ synchronisé et les projets d’onboarding ; ce n’est pas le global D-EDGE.
   inchangés. Le seuil, le nombre retenu, les exclusions et les durées manquantes
   sont affichés et copiés avec la synthèse. Aucune durée retenue : « — ».
 - FCR : estimation existante, sur les clôtures dont le booléen est renseigné.
-- Implémentation : dates de début Zoho (potentiellement planifiées), dates réelles
-  de mise en production, délai sur les deux dates connues. Aucune assimilation aux
-  catégories Welcome / Setup tant que leur correspondance métier est inconnue.
+- Résolution L1/L2 : `cf_linear_issue_url` lu dans le détail Zoho via le fournisseur
+  OAuth existant. Champ présent et vide = L1 ; URL d’issue Linear = L2 ; champ absent,
+  valeur invalide ou erreur = niveau non déterminé. Les cohortes utilisent les clôtures
+  du mois et le même seuil de 90 jours, avec effectifs et exclusions par niveau.
+  Le lien est celui actuellement enregistré, pas un état historisé à la clôture.
+  L2 reste le délai total du ticket, pas le seul temps passé chez les développeurs.
+  La route `/api/reporting/support-levels` charge séparément cette ventilation : cache
+  compact de 15 minutes par instance serveur, huit lectures simultanées maximum,
+  lancement des lectures borné à 30 secondes. Les lectures non réalisées restent
+  inconnues ; aucun ticket n’est classé L1 par défaut. Les routes Zoho existantes
+  et le schéma ne sont pas modifiés.
+- Implémentation : nouveaux démarrages uniquement sur événement `status_changed`
+  avec `from=not_started` et `to=in_progress`. Les retours de Pending/pause/autre
+  sont exclus, ainsi que les imports déjà In Progress. Un projet compte une fois
+  par mois. La date de l’événement est celle de la détection par la synchronisation
+  quotidienne ; des transitions peuvent manquer entre deux lectures ou avant le
+  début du suivi. La migration depuis une opportunité gagnée et la date de début
+  planifiée ne valent pas démarrage.
+- Live : champ métier `Live date` courant (prioritaire sur un ancien événement),
+  sinon événement `go_live` issu d’un changement réel de statut. Un import déjà
+  Live sans date métier n’est pas compté. Les remises en Live successives ne sont
+  pas toutes historisées par le journal canonique. Les catégories Welcome / Setup
+  ne s’appliquent pas au processus CRM et sont retirées.
 - Portefeuille : statuts actuels des projets synchronisés, pas le stock historique
   de fin de mois ni le tableau des décisions des trois équipes.
 

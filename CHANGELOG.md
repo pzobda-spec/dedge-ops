@@ -6,6 +6,12 @@ Les entrées antérieures au 15 juillet 2026 ont été reconstituées à partir 
 l’historique Git ; elles synthétisent les changements fonctionnels encore
 pertinents plutôt que chaque correction intermédiaire.
 
+## 2026-09-10 — Démarrages Zoho Projects et résolution L1 / L2
+
+- Implémentation CRM : suppression des catégories Welcome / Setup et des dates planifiées comme mesure de démarrage. Nouveaux projets comptés sur les transitions Non démarré → In Progress uniquement, sans les reprises Pending/pause ; passages Live selon la date métier ou une transition observée. Déduplication par projet et limites du suivi quotidien affichées.
+- Support : moyennes de résolution L1 sans lien Linear et L2 avec lien Linear, fondées sur le champ réel `cf_linear_issue_url`. Lectures non déterminées isolées, seuil de 90 jours et effectifs par groupe, copie des slides mise à jour. Chargement séparé et cache serveur compact de 15 minutes ; aucun changement de schéma ni de route Zoho.
+- Résolution globale affichée en jours calendaires pour éviter l’ambiguïté du volume d’heures.
+
 ## 2026-09-09 — Résolution moyenne hors clôtures extrêmes
 
 - La résolution moyenne mensuelle exclut les délais strictement supérieurs à 90 jours calendaires. Le seuil et les nombres de clôtures retenues, exclues et non documentées sont visibles dans la tuile et la copie pour les slides. Le volume de tickets clôturés et le FCR restent inchangés.
