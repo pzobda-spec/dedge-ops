@@ -6,6 +6,10 @@ Les entrées antérieures au 15 juillet 2026 ont été reconstituées à partir 
 l’historique Git ; elles synthétisent les changements fonctionnels encore
 pertinents plutôt que chaque correction intermédiaire.
 
+## 2026-09-10 — Moyenne téléphonique conditionnée à la couverture
+
+- Suppression de la moyenne mensuelle estimée lorsque la période contient des mois incomplets, non certifiés, atypiquement faibles ou traverse l’arrêt de la prise d’appels. La tuile affiche « — » avec la raison ; aucun chiffre mensuel n’est rebaptisé journalier.
+
 ## 2026-09-10 — Démarrages Zoho Projects et résolution L1 / L2
 
 - Implémentation CRM : suppression des catégories Welcome / Setup et des dates planifiées comme mesure de démarrage. Nouveaux projets comptés sur les transitions Non démarré → In Progress uniquement, sans les reprises Pending/pause ; passages Live selon la date métier ou une transition observée. Déduplication par projet et limites du suivi quotidien affichées.

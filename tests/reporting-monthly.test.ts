@@ -100,3 +100,43 @@ test('historique clairsemé signalé sans modifier les compteurs', () => {
   assert.equal(stats.months[1].sparse_history, false)
   assert.equal(stats.totals.total, 600)
 })
+
+test('moyenne appels indisponible sur une rupture ou un mois de transition', () => {
+  const now = new Date('2027-01-01T12:00:00Z')
+  const rows = ['02', '03', '04', '05'].map(month => row({ created_at: `2026-${month}-15T12:00:00Z`, source: 'Phone' }))
+  const crossing = channelMetrics(rows, monthStart('2026-02'), monthStart('2026-06'), now)
+  assert.deepEqual(crossing.months.map(month => month.phone_regime), ['before', 'transition', 'transition', 'after'])
+  assert.equal(crossing.totals.average_estimated_calls_per_month, null)
+  assert.equal(crossing.totals.estimated_calls, 4 * RATIO_APPELS_PAR_TICKET)
+  for (const [from, to] of [['2026-03', '2026-04'], ['2026-04', '2026-05']]) {
+    const transition = channelMetrics(rows, monthStart(from), monthStart(to), now)
+    assert.equal(transition.months[0].partial_period, false)
+    assert.equal(transition.totals.average_estimated_calls_per_month, null)
+  }
+})
+
+test('moyenne appels réservée aux mois complets comparables avant ou après rupture', () => {
+  const now = new Date('2027-01-01T12:00:00Z')
+  for (const [first, second, end] of [['2026-01', '2026-02', '2026-03'], ['2026-07', '2026-08', '2026-09']]) {
+    const rows = [first, second, second].map(month => row({ created_at: `${month}-15T12:00:00Z`, source: 'Phone' }))
+    const complete = channelMetrics(rows, monthStart(first), monthStart(end), now)
+    assert.equal(complete.totals.average_estimated_calls_per_month, 3 * RATIO_APPELS_PAR_TICKET / 2)
+    for (const partial of [
+      channelMetrics(rows, new Date(`${first}-10T12:00:00Z`), monthStart(end), now),
+      channelMetrics(rows, monthStart(first), new Date(`${second}-20T12:00:00Z`), now),
+      channelMetrics(rows, monthStart(first), monthStart(end), new Date(`${second}-20T12:00:00Z`)),
+    ]) {
+      assert.equal(partial.months.some(month => month.partial_period), true)
+      assert.equal(partial.totals.average_estimated_calls_per_month, null)
+    }
+  }
+})
+
+test('mois clairsemé invalide la moyenne appels même après rupture', () => {
+  const rows = ['2026-06', '2026-07', '2026-08'].flatMap(month => Array.from({ length: 100 }, () => row({ created_at: `${month}-15T12:00:00Z`, source: 'Phone' })))
+  const stats = channelMetrics(rows, monthStart('2026-05'), monthStart('2026-09'), new Date('2027-01-01T12:00:00Z'))
+  assert.equal(stats.months.every(month => month.phone_regime === 'after' && !month.partial_period), true)
+  assert.equal(stats.months[0].sparse_history, true)
+  assert.equal(stats.totals.average_estimated_calls_per_month, null)
+  assert.equal(stats.totals.estimated_calls, 300 * RATIO_APPELS_PAR_TICKET)
+})

@@ -103,6 +103,17 @@ export function supportMetrics(rows: TicketRow[], from: Date, to: Date) {
   }
 }
 
+export function estimatedCallAverage(months: { phone: number; phone_regime: string; partial_period: boolean; sparse_history: boolean; certified?: boolean }[]) {
+  const reasons: string[] = []
+  if (!months.length) reasons.push('aucun mois disponible')
+  if (months.some(month => month.partial_period || month.sparse_history || month.certified === false)) reasons.push('historique incomplet ou à vérifier')
+  if (months.some(month => month.phone_regime === 'transition') || new Set(months.map(month => month.phone_regime)).size > 1) reasons.push('période traversant l’arrêt de la prise d’appels')
+  return {
+    average_estimated_calls_per_month: reasons.length ? null : months.reduce((sum, month) => sum + month.phone, 0) * RATIO_APPELS_PAR_TICKET / months.length,
+    average_unavailable_reason: reasons.length ? `Moyenne non calculée : ${reasons.join(' ; ')}.` : null,
+  }
+}
+
 export function channelMetrics(rows: Pick<TicketRow, 'created_at' | 'source'>[], from: Date, to: Date, now = new Date()) {
   const byMonth = new Map<string, { email: number; phone: number; web: number; chat: number; autre: number }>()
   for (const row of rows) {
@@ -127,6 +138,7 @@ export function channelMetrics(rows: Pick<TicketRow, 'created_at' | 'source'>[],
   // Signal de qualité, pas une preuve d'absence ou une correction des volumes.
   const recent = months.filter(row => !row.partial_period).slice(-6).map(row => row.total).sort((a, b) => a - b)
   const baseline = recent.length >= 3 ? recent[Math.floor(recent.length / 2)] : 0
-  return { months: months.map(row => ({ ...row, sparse_history: !row.partial_period && baseline >= 50 && row.total < baseline * 0.2 })), totals: { total, phone, phone_share_pct: percent(phone, total), estimated_calls: phone * RATIO_APPELS_PAR_TICKET,
-    average_estimated_calls_per_month: months.length ? phone * RATIO_APPELS_PAR_TICKET / months.length : null }, ratio: RATIO_APPELS_PAR_TICKET }
+  const qualifiedMonths = months.map(row => ({ ...row, sparse_history: !row.partial_period && baseline >= 50 && row.total < baseline * 0.2 }))
+  return { months: qualifiedMonths, totals: { total, phone, phone_share_pct: percent(phone, total), estimated_calls: phone * RATIO_APPELS_PAR_TICKET,
+    ...estimatedCallAverage(qualifiedMonths) }, ratio: RATIO_APPELS_PAR_TICKET }
 }

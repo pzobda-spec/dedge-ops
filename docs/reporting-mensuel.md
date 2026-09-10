@@ -59,7 +59,10 @@ par identifiant, sans renvoyer d’identifiant ou de ticket individuel au naviga
 `RATIO_APPELS_PAR_TICKET` est exporté depuis `lib/reporting/monthly.ts` : Next.js 14
 n’autorise pas d’export arbitraire dans un `route.ts`. Toute estimation utilise cette
 constante. L’hypothèse de 2 tickets par appel n’est pas validée. La moyenne mensuelle
-estimée inclut tous les mois affichés, même partiels ou non certifiés. Les mesures
+estimée n’est calculée que pour des mois complets, certifiés, sans signal d’historique
+clairsemé et situés tous avant ou tous après l’arrêt de la prise d’appels. Une période
+comprenant mars–avril 2026, traversant la rupture ou comportant des mois incomplets
+affiche « — » avec la raison. Aucun remplacement par une moyenne journalière. Les mesures
 réelles des slides (entrants, manqués, décrochés <30 s) restent indisponibles.
 
 La zone grisée commence en mars 2026, avec mars–avril comme transition. La baisse
