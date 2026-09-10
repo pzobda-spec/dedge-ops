@@ -20,12 +20,13 @@ export async function GET(request: NextRequest) {
   try {
     const yearAgoMonth = shiftMonth(month, -12)
     const yearAgoFrom = monthStart(yearAgoMonth)
+    const yearAgoTo = monthStart(shiftMonth(yearAgoMonth, 1))
     const [rows, yearAgoRows, coverage, implementation] = await Promise.all([
-      readTickets(from, to), readTickets(yearAgoFrom, from), readCoverage(),
+      readTickets(from, to), readTickets(yearAgoFrom, yearAgoTo), readCoverage(),
       readImplementation(from, to).then(data => ({ data, error: null })).catch(() => ({ data: null, error: 'Les données Zoho Projects synchronisées sont indisponibles.' })),
     ])
     return NextResponse.json({
-      month, support: supportMetrics(rows, from, to), year_ago: { month: yearAgoMonth, support: supportMetrics(yearAgoRows, yearAgoFrom, from) }, implementation,
+      month, support: supportMetrics(rows, from, to), year_ago: { month: yearAgoMonth, support: supportMetrics(yearAgoRows, yearAgoFrom, yearAgoTo) }, implementation,
       coverage: { ...coverage, tickets_read: rows.length, certified: certifiedPeriod(coverage, from, to), partial_month: to > new Date() },
       unavailable: {
         quality: 'CSAT, insatisfaction, taux de réponse aux enquêtes et IQS : aucune source de qualité exploitable dans les données synchronisées.',
