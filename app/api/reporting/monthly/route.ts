@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { monthKey, monthStart, shiftMonth, supportMetrics, PHONE_BREAK_NOTE } from '@/lib/reporting/monthly'
 import { readCoverage, readTickets, readImplementation, certifiedPeriod } from '@/lib/reporting/source'
+import { CRM_P1_FIRST_RESPONSE_PALIER, MAX_RESOLUTION_DAYS } from '@/lib/reporting/slaProfiles'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -17,16 +18,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Mois invalide.' }, { status: 400 })
   }
   try {
-    const [rows, coverage, implementation] = await Promise.all([
-      readTickets(from, to), readCoverage(),
+    const yearAgoMonth = shiftMonth(month, -12)
+    const yearAgoFrom = monthStart(yearAgoMonth)
+    const [rows, yearAgoRows, coverage, implementation] = await Promise.all([
+      readTickets(from, to), readTickets(yearAgoFrom, from), readCoverage(),
       readImplementation(from, to).then(data => ({ data, error: null })).catch(() => ({ data: null, error: 'Les données Zoho Projects synchronisées sont indisponibles.' })),
     ])
     return NextResponse.json({
-      month, support: supportMetrics(rows, from, to), implementation,
+      month, support: supportMetrics(rows, from, to), year_ago: { month: yearAgoMonth, support: supportMetrics(yearAgoRows, yearAgoFrom, from) }, implementation,
       coverage: { ...coverage, tickets_read: rows.length, certified: certifiedPeriod(coverage, from, to), partial_month: to > new Date() },
       unavailable: {
         quality: 'CSAT, insatisfaction, taux de réponse aux enquêtes et IQS : aucune source de qualité exploitable dans les données synchronisées.',
-        sla: 'Première action et SLA P1–P4 : la première réponse n’est pas la première action. Priorités normalisées et calendrier de service insuffisants pour appliquer les seuils des slides.',
+        sla: `Conformité calculée séparément pour la première réponse et la résolution : temps calendaires, sans horaires ouvrés ni jours fériés. La première réponse reste une réponse mesurée, pas la première action. Les priorités sont mappées approximativement Urgent→P1, High→P2, Medium→P3, Low→P4 car la source ne contient pas P1–P4. Les paliers P1 CRM (${CRM_P1_FIRST_RESPONSE_PALIER.map(palier => `${palier.hours} h ${palier.label.toLowerCase()}`).join(' ; ')}) ont des dates d’effet à renseigner ; le palier actif est donc appliqué à toute la période et l’historique n’est pas remesuré au seuil passé. P2–P4 en première réponse et toutes les résolutions CRM reprennent provisoirement les seuils du profil groupe. Les délais de résolution >${MAX_RESOLUTION_DAYS} jours sont non conformes dans le taux, même s’ils restent exclus de la moyenne.`,
         cancellation: 'Exclusion des annulations non garantie : le statut brut n’est pas conservé. Les volumes incluent tous les tickets synchronisés.',
         phone: 'Appels entrants, appels manqués et décrochés en moins de 30 s : journal de téléphonie non connecté au cockpit. Les tickets Phone ne permettent pas ces mesures.',
         implementation: 'Les nouveaux démarrages comptent uniquement les transitions Non démarré → In Progress, détectées pendant le mois par la synchronisation quotidienne. Les reprises depuis Pending, une pause ou un autre statut sont exclues. Un import déjà In Progress ne prouve pas un nouveau démarrage. Les dates de détection peuvent différer du jour exact dans Zoho ; les transitions entre deux synchronisations et avant le début du suivi ne sont pas reconstituées. Live utilise le champ Live date renseigné, sinon une transition observée ; les remises en Live successives ne sont pas toutes historisées.',

@@ -8,7 +8,7 @@ export async function readTickets(from: Date, to: Date, channelsOnly = false): P
   const rows: TicketRow[] = []
   for (let offset = 0; ; offset += PAGE_SIZE) {
     let query = supabaseAdmin.from('ticket_analytics')
-      .select(channelsOnly ? 'created_at,source' : 'id,created_at,resolved_at,source,product_area,first_response_at,first_response_time_ms,first_contact_resolution')
+      .select(channelsOnly ? 'created_at,source' : 'id,created_at,resolved_at,source,product_area,priority,first_response_at,first_response_time_ms,first_contact_resolution')
     query = channelsOnly ? query.gte('created_at', from.toISOString()).lt('created_at', to.toISOString())
       : query.or(`and(created_at.gte.${from.toISOString()},created_at.lt.${to.toISOString()}),and(resolved_at.gte.${from.toISOString()},resolved_at.lt.${to.toISOString()})`)
     const { data, error } = await query.order('id', { ascending: true }).range(offset, offset + PAGE_SIZE - 1)

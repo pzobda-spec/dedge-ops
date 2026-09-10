@@ -11,7 +11,7 @@ test('lien Linear explicite, absence vérifiée et données inconnues distincts'
 })
 
 test('moyennes L1/L2 séparées et seuil de 90 jours appliqué à chaque groupe', () => {
-  const make = (id: string, hours: number): TicketRow => ({ id, created_at: new Date(Date.parse('2026-08-20T12:00:00Z') - hours * 3_600_000).toISOString(), resolved_at: '2026-08-20T12:00:00Z', source: null, product_area: null, first_response_at: null, first_response_time_ms: null, first_contact_resolution: null })
+  const make = (id: string, hours: number): TicketRow => ({ id, created_at: new Date(Date.parse('2026-08-20T12:00:00Z') - hours * 3_600_000).toISOString(), resolved_at: '2026-08-20T12:00:00Z', source: null, product_area: null, priority: null, first_response_at: null, first_response_time_ms: null, first_contact_resolution: null })
   const result = supportLevelMetrics([make('a', 2), make('b', 4), make('c', 48), make('d', 90 * 24 + 1), make('e', 12)], new Map([['a', 'l1'], ['b', 'l1'], ['c', 'l2'], ['d', 'l2']]))
   assert.equal(result.l1.resolution_hours, 3)
   assert.equal(result.l2.resolution_hours, 48)

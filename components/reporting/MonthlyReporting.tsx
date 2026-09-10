@@ -6,6 +6,7 @@ import { monthKey, shiftMonth, PHONE_BREAK_NOTE } from '@/lib/reporting/monthly'
 import type { channelMetrics, supportMetrics } from '@/lib/reporting/monthly'
 import type { readCoverage, readImplementation } from '@/lib/reporting/source'
 import type { supportLevelMetrics } from '@/lib/reporting/supportLevels'
+import { CRM_P1_FIRST_RESPONSE_PALIER, thresholdLabel } from '@/lib/reporting/slaProfiles'
 
 type Levels = ReturnType<typeof supportLevelMetrics> & { month: string; note: string; coverage: { oldest_checked_at: string | null; cache_minutes: number } }
 
@@ -13,6 +14,7 @@ type Coverage = Awaited<ReturnType<typeof readCoverage>> & { tickets_read: numbe
 type Monthly = {
   month: string
   support: ReturnType<typeof supportMetrics>
+  year_ago: { month: string; support: ReturnType<typeof supportMetrics> }
   implementation: { data: Awaited<ReturnType<typeof readImplementation>> | null; error: string | null }
   coverage: Coverage
   unavailable: Record<string, string>
@@ -28,9 +30,26 @@ const syncLabel = (value: string | null) => value ? new Date(value).toLocaleStri
 const panel = 'rounded-xl border border-[#ded8e8] bg-white p-4 sm:p-5'
 const note = 'rounded-lg border border-[#edc86b] bg-[#fffaf0] p-3 text-xs leading-5 text-[#765314]'
 const cell = 'px-3 py-2 text-right tabular-nums'
+const p1PalierText = CRM_P1_FIRST_RESPONSE_PALIER.map(palier => `${palier.hours}h ${palier.label.toLowerCase()}`).join(' ; ')
+const evolutionPct = (current: number | null | undefined, previous: number | null | undefined) => current == null || previous == null || previous === 0 ? null : (current - previous) * 100 / Math.abs(previous)
+const evolutionPoints = (current: number | null | undefined, previous: number | null | undefined) => current == null || previous == null ? null : current - previous
+const evolutionLabel = (value: number | null, suffix = ' %') => value == null ? '— (référence non mesurable)' : `${value >= 0 ? '+' : ''}${number(value, suffix)} vs N-1`
 
 function Kpi({ title, value, detail }: { title: string; value: string; detail?: string }) {
   return <div className="rounded-lg bg-[#f7f3fc] p-4"><h4 className="text-xs font-semibold text-[#696969]">{title}</h4><p className="mt-2 text-2xl font-bold text-[#59319f]">{value}</p>{detail && <p className="mt-2 text-xs leading-5 text-[#696969]">{detail}</p>}</div>
+}
+
+function complianceThresholdLine(data: ReturnType<typeof supportMetrics>['first_response_compliance']) {
+  return data.priorities.map(item => `${item.priority} : ${thresholdLabel(item.threshold_hours)}`).join(' | ')
+}
+
+function ComplianceDetails({ title, data }: { title: string; data: ReturnType<typeof supportMetrics>['first_response_compliance'] }) {
+  return <div className="rounded-lg border border-[#ded8e8] bg-white p-3">
+    <p className="text-xs font-semibold text-[#4a4a4a]">{title}</p>
+    <p className="mt-1 text-xs text-[#696969]">Seuils : {complianceThresholdLine(data)}</p>
+    <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">{data.priorities.map(item => <div key={item.priority} className="rounded bg-[#f7f3fc] p-2"><p className="font-semibold">{item.priority}{item.applicable ? '' : ' · N/A'}</p><p className="mt-1 tabular-nums">{item.applicable ? `${item.compliant} / ${item.measured} · ${item.rate_pct == null ? '—' : `${number(item.rate_pct)} %`}` : `${item.measured} tickets`}</p></div>)}</div>
+    <p className="mt-2 text-xs text-[#696969]">Sans mesure : {data.without_measurement} · Non classés : {data.unclassified}{data.priorities.some(item => item.priority === 'P4' && !item.applicable && item.measured > 0) ? ' · P4 résolution : non applicable, volume affiché mais exclu du taux.' : ''}</p>
+  </div>
 }
 
 export default function MonthlyReporting() {
@@ -74,9 +93,11 @@ export default function MonthlyReporting() {
       `Reporting mensuel — ${label(month)} — périmètre CRM / Support Zoho synchronisé (pas le global D-EDGE)`,
       `Couverture : ${monthly.coverage.certified ? 'mois dans les bornes déclarées du backfill ; exhaustivité non vérifiée' : 'exhaustivité non certifiée'}${monthly.coverage.partial_month ? ' ; mois en cours' : ''}. Synchronisation tickets : ${syncLabel(monthly.coverage.last_synced_at)}.`,
       `Tickets créés : ${s.opened} ; clôturés : ${s.closed} ; clôturés / créés : ${number(s.closed_opened_pct, ' %')}.`,
+      `Évolution vs ${label(monthly.year_ago.month)} : tickets créés ${evolutionLabel(evolutionPct(s.opened, monthly.year_ago.support.opened))} ; tickets clôturés ${evolutionLabel(evolutionPct(s.closed, monthly.year_ago.support.closed))}.`,
       'Créations selon created_at ; clôtures selon resolved_at, y compris les tickets créés avant le mois. Ce sont les dates de clôture actuellement synchronisées, pas un historique de toutes les transitions.',
-      `Première réponse moyenne : ${number(s.first_response_hours, ' h')} (${s.first_response_sample}/${s.opened} tickets créés documentés). Résolution moyenne calendaire hors délais > ${s.resolution_max_days} jours : ${number(s.resolution_hours, ' h')} (${s.resolution_sample}/${s.closed} clôtures retenues ; ${s.resolution_excluded_count} exclues au-delà du seuil ; ${s.resolution_missing_count} durées manquantes ou invalides).`,
-      `FCR estimé : ${number(s.fcr_estimate_pct, ' %')} (${s.fcr_sample}/${s.closed} clôtures documentées).`,
+      `Première réponse moyenne : ${number(s.first_response_hours, ' h')} (${s.first_response_sample}/${s.opened} tickets créés documentés) · ${evolutionLabel(evolutionPct(s.first_response_hours, monthly.year_ago.support.first_response_hours))}. Résolution moyenne calendaire hors délais > ${s.resolution_max_days} jours : ${number(s.resolution_hours, ' h')} (${s.resolution_sample}/${s.closed} clôtures retenues ; ${s.resolution_excluded_count} exclues au-delà du seuil ; ${s.resolution_missing_count} durées manquantes ou invalides) · ${evolutionLabel(evolutionPct(s.resolution_hours, monthly.year_ago.support.resolution_hours))}.`,
+      `FCR estimé : ${number(s.fcr_estimate_pct, ' %')} (${s.fcr_sample}/${s.closed} clôtures documentées) · ${evolutionLabel(evolutionPoints(s.fcr_estimate_pct, monthly.year_ago.support.fcr_estimate_pct), ' points')}.`,
+      `Conformité première réponse : ${number(s.first_response_compliance.rate_pct, ' %')} (cible ${s.first_response_compliance.target_pct} %) ; conformité résolution : ${number(s.resolution_compliance.rate_pct, ' %')} (cible ${s.resolution_compliance.target_pct} %).`,
       `Produits les plus sollicités : ${s.top_products.map(v => `${v.name} : ${v.count}`).join(' ; ') || '—'}.`,
       `Jours les plus chargés (Paris) : ${s.peak_days.map(v => `${v.name} : ${v.count}`).join(' ; ') || '—'}. Aucune cause incident ou release déduite.`,
       ...(p ? [`Implémentation — nouveaux projets démarrés (Non démarré → In Progress) : ${number(p.in_progress)} ; ${p.in_progress_resumed_or_other} reprises ou autres transitions exclues ; passés Live : ${p.went_live}.`,
@@ -113,12 +134,22 @@ export default function MonthlyReporting() {
       <p className={note}>Données observées pour {label(month)} · {monthly.coverage.certified ? 'mois dans les bornes déclarées du backfill ; exhaustivité non vérifiée' : 'exhaustivité de la période non certifiée'}{monthly.coverage.partial_month ? ' · mois en cours, chiffres partiels' : ''}. Dernière synchronisation tickets : {syncLabel(monthly.coverage.last_synced_at)}. Un zéro désigne l’absence de ligne correspondante dans la source synchronisée ; il ne prouve pas l’absence d’activité. {selectedChannel?.sparse_history && 'Volume atypiquement faible : historique à vérifier avant utilisation dans les slides.'}</p>
       <section className={`${panel} space-y-4`} aria-labelledby="monthly-support-title">
         <h3 id="monthly-support-title" className="font-bold">Support | CRM — {label(month)}</h3>
+        <p className="text-xs text-[#696969]">Les évolutions « vs N-1 » comparent ce mois au même mois de {label(monthly.year_ago.month).split(' ').pop()} ; volumes en pourcentage relatif, taux en points de pourcentage. Référence absente ou nulle : « — ».</p>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <Kpi title="Tickets créés" value={number(monthly.support.opened)} detail="Créations pendant le mois, tous canaux." />
-          <Kpi title="Tickets clôturés" value={number(monthly.support.closed)} detail={`Selon la date de clôture synchronisée, même si créés avant ce mois. Clôturés / créés : ${number(monthly.support.closed_opened_pct, ' %')}.`} />
-          <Kpi title="Première réponse moyenne" value={number(monthly.support.first_response_hours, ' h')} detail={`${monthly.support.first_response_sample} / ${monthly.support.opened} créations documentées. Métrique Zoho, sinon écart entre horodatages ; ce n’est pas la première action.`} />
-          <Kpi title="Résolution moyenne globale" value={number(monthly.support.resolution_hours == null ? null : monthly.support.resolution_hours / 24, ' j')} detail={`Hors délais > ${monthly.support.resolution_max_days} jours. ${monthly.support.resolution_sample} / ${monthly.support.closed} clôtures retenues ; ${monthly.support.resolution_excluded_count} exclues ; ${monthly.support.resolution_missing_count} durées manquantes ou invalides. Temps calendaire, pas un taux SLA.`} />
+          <Kpi title="Tickets créés" value={number(monthly.support.opened)} detail={`Créations pendant le mois, tous canaux. ${evolutionLabel(evolutionPct(monthly.support.opened, monthly.year_ago.support.opened))}.`} />
+          <Kpi title="Tickets clôturés" value={number(monthly.support.closed)} detail={`Selon la date de clôture synchronisée, même si créés avant ce mois. Clôturés / créés : ${number(monthly.support.closed_opened_pct, ' %')}. ${evolutionLabel(evolutionPct(monthly.support.closed, monthly.year_ago.support.closed))}.`} />
+          <Kpi title="Première réponse moyenne" value={number(monthly.support.first_response_hours, ' h')} detail={`${monthly.support.first_response_sample} / ${monthly.support.opened} créations documentées. Métrique Zoho, sinon écart entre horodatages ; ce n’est pas la première action. ${evolutionLabel(evolutionPct(monthly.support.first_response_hours, monthly.year_ago.support.first_response_hours))}.`} />
+          <Kpi title="Résolution moyenne globale" value={number(monthly.support.resolution_hours == null ? null : monthly.support.resolution_hours / 24, ' j')} detail={`Hors délais > ${monthly.support.resolution_max_days} jours. ${monthly.support.resolution_sample} / ${monthly.support.closed} clôtures retenues ; ${monthly.support.resolution_excluded_count} exclues ; ${monthly.support.resolution_missing_count} durées manquantes ou invalides. Temps calendaire, pas un taux SLA. ${evolutionLabel(evolutionPct(monthly.support.resolution_hours, monthly.year_ago.support.resolution_hours))}.`} />
         </div>
+        <div className="grid gap-3 lg:grid-cols-2">
+          <Kpi title="Conformité première réponse" value={number(monthly.support.first_response_compliance.rate_pct, ' %')} detail={`Cible ${monthly.support.first_response_compliance.target_pct} % · ${complianceThresholdLine(monthly.support.first_response_compliance)} · ${evolutionLabel(evolutionPoints(monthly.support.first_response_compliance.rate_pct, monthly.year_ago.support.first_response_compliance.rate_pct), ' points')}`} />
+          <Kpi title="Conformité résolution" value={number(monthly.support.resolution_compliance.rate_pct, ' %')} detail={`Cible ${monthly.support.resolution_compliance.target_pct} % · ${complianceThresholdLine(monthly.support.resolution_compliance)} · ${evolutionLabel(evolutionPoints(monthly.support.resolution_compliance.rate_pct, monthly.year_ago.support.resolution_compliance.rate_pct), ' points')}`} />
+        </div>
+        <div className="grid gap-3 lg:grid-cols-2">
+          <ComplianceDetails title="Détail première réponse" data={monthly.support.first_response_compliance} />
+          <ComplianceDetails title="Détail résolution" data={monthly.support.resolution_compliance} />
+        </div>
+        <p className={note}>Profil actif : <strong>crm</strong> · mapping approximatif des priorités (Urgent→P1, High→P2, Medium→P3, Low→P4), car aucune priorité P1–P4 n’est présente dans la source sur les six derniers mois · temps calendaires, sans horaires ouvrés ni jours fériés · P2–P4 première réponse et toute la résolution sont provisoires, reprises du profil groupe · paliers P1 : {p1PalierText} ; dates d’effet à renseigner, donc le palier actif est appliqué à toute la période et l’historique n’est pas remesuré au seuil passé · les délais résolution &gt;{monthly.support.resolution_max_days} jours sont non conformes au taux, même s’ils sont exclus de la moyenne.</p>
         <div className="space-y-3" aria-labelledby="support-levels-title">
           <h4 id="support-levels-title" className="text-sm font-bold">Résolution moyenne par niveau de support</h4>
           {levelsLoading && <p role="status" className="text-xs text-[#696969]">Vérification des liens Linear dans Zoho Desk…</p>}
@@ -131,7 +162,7 @@ export default function MonthlyReporting() {
           </>}
         </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          <Kpi title="FCR estimé" value={number(monthly.support.fcr_estimate_pct, ' %')} detail={`${monthly.support.fcr_sample} clôtures documentées. Estimation selon les réouvertures / échanges disponibles.`} />
+          <Kpi title="FCR estimé" value={number(monthly.support.fcr_estimate_pct, ' %')} detail={`${monthly.support.fcr_sample} clôtures documentées. Estimation selon les réouvertures / échanges disponibles. ${evolutionLabel(evolutionPoints(monthly.support.fcr_estimate_pct, monthly.year_ago.support.fcr_estimate_pct), ' points')}.`} />
           {['CSAT', 'Insatisfaction', 'Réponse aux enquêtes', 'IQS'].map(title => <Kpi key={title} title={title} value="—" detail="Source de qualité indisponible." />)}
         </div>
         <p className="text-xs leading-5 text-[#696969]">{monthly.unavailable.cancellation} {monthly.unavailable.sla} Les clôtures reflètent l’état synchronisé actuel, pas toutes les transitions historiques.</p>

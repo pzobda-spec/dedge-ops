@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { channelMetrics, channelRange, monthStart, parseDate, supportMetrics, RATIO_APPELS_PAR_TICKET, type TicketRow } from '@/lib/reporting/monthly'
 
-const row = (values: Partial<TicketRow>): TicketRow => ({ created_at: null, resolved_at: null, source: null, product_area: null, first_response_at: null, first_response_time_ms: null, first_contact_resolution: null, ...values })
+const row = (values: Partial<TicketRow>): TicketRow => ({ created_at: null, resolved_at: null, source: null, product_area: null, priority: null, first_response_at: null, first_response_time_ms: null, first_contact_resolution: null, ...values })
 
 test('mois Paris, passage heure été/hiver et bornes exclusives', () => {
   assert.equal(monthStart('2026-04').toISOString(), '2026-03-31T22:00:00.000Z')
@@ -44,6 +44,25 @@ test('clôtures de tickets anciens incluses, données absentes exclues des moyen
   assert.equal(stats.fcr_estimate_pct, 50)
   assert.equal(stats.fcr_sample, 2)
   assert.equal(supportMetrics([], monthStart('2026-08'), monthStart('2026-09')).resolution_hours, null)
+})
+
+test('conformité première réponse et résolution par priorité mappée', () => {
+  const rows = [
+    row({ created_at: '2026-08-01T10:00:00Z', priority: 'High', first_response_time_ms: 3 * 3_600_000, resolved_at: '2026-08-02T10:00:00Z' }),
+    row({ created_at: '2026-08-02T10:00:00Z', priority: 'Medium', first_response_time_ms: 73 * 3_600_000, resolved_at: '2026-08-10T10:00:00Z' }),
+    row({ created_at: '2026-08-03T10:00:00Z', priority: 'Low', first_response_time_ms: null, first_response_at: null, resolved_at: '2026-08-04T10:00:00Z' }),
+    row({ created_at: '2026-08-04T10:00:00Z', priority: null, first_response_time_ms: 1, resolved_at: '2026-08-05T10:00:00Z' }),
+  ]
+  const stats = supportMetrics(rows, monthStart('2026-08'), monthStart('2026-09'))
+  assert.equal(stats.first_response_compliance.target_pct, 90)
+  assert.equal(stats.first_response_compliance.mapping_approximate, true)
+  assert.equal(stats.first_response_compliance.priorities.find(x => x.priority === 'P2')?.rate_pct, 100)
+  assert.equal(stats.first_response_compliance.priorities.find(x => x.priority === 'P3')?.rate_pct, 0)
+  assert.equal(stats.first_response_compliance.without_measurement, 1)
+  assert.equal(stats.first_response_compliance.unclassified, 1)
+  assert.equal(stats.resolution_compliance.priorities.find(x => x.priority === 'P4')?.applicable, false)
+  assert.equal(stats.resolution_compliance.priorities.find(x => x.priority === 'P4')?.measured, 1)
+  assert.equal(stats.resolution_compliance.measured, 2)
 })
 
 test('résolution limitée à 90 jours sans modifier les clôtures ni le FCR', () => {

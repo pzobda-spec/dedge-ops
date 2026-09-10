@@ -6,6 +6,23 @@ Les entrées antérieures au 15 juillet 2026 ont été reconstituées à partir 
 l’historique Git ; elles synthétisent les changements fonctionnels encore
 pertinents plutôt que chaque correction intermédiaire.
 
+## 2026-09-10 — Évolution mensuelle vs N-1
+
+- Le reporting mensuel compare désormais chaque mois au même mois de l’année précédente, y compris pour les mois de 2025. Les volumes sont affichés en évolution relative ; les taux de conformité en points de pourcentage. Une référence absente ou nulle reste « — ».
+
+## 2026-09-10 — Pilotage Support par conformité SLA
+
+- Ajout des taux de conformité de première réponse et de résolution, cible 90 %, ventilés par priorité avec volumes mesurés, conformes, sans mesure et non classés. Le profil CRM et tous ses seuils sont centralisés dans `lib/reporting/slaProfiles.ts`.
+- Étape 0 : sur les six derniers mois, la source contient Medium 2 032, Low 37, High 1 et aucun P1–P4/null ; le mapping Urgent→P1, High→P2, Medium→P3, Low→P4 est donc affiché comme approximation.
+- Les temps sont calendaires. Les délais de résolution supérieurs à 90 jours restent exclus des moyennes mais sont non conformes dans les taux. P4 résolution est best effort et exclu du taux. Le palier CRM P1 de 4 h s’applique à toute la période faute de dates arbitrées pour les paliers historique 2 h et cible 6 h.
+
+## 2026-09-10 — Conformité Support par première réponse et résolution
+
+- Étape 0 exécutée sur Supabase avant le code : sur les six derniers mois, les priorités sont Medium 2 032, Low 37, High 1, sans null ; aucune valeur P1–P4 n’est présente. La répartition des durées de résolution et les 96 durées manquantes ont été conservées pour cadrer les limites.
+- Reporting Support : ajout des taux de conformité première réponse et résolution par priorité, cible 90 %, détail mesuré/conforme/taux, sans mesure et non classés. Les seuils sont centralisés dans `lib/reporting/slaProfiles.ts`.
+- Profil CRM actif : mapping Urgent→P1, High→P2, Medium→P3, Low→P4 explicitement approximatif ; P1 première réponse à 4 h sur toute la période faute de dates d’effet pour les paliers 2 h historique et 6 h cible ; P2–P4 première réponse et résolution provisoires depuis le profil groupe. Temps calendaires uniquement.
+- Résolution : les délais supérieurs à 90 jours sont non conformes dans le taux, tout en restant exclus des moyennes existantes. P4 résolution « best effort » affiche son volume mais est exclu du taux.
+
 ## 2026-09-10 — Moyenne téléphonique conditionnée à la couverture
 
 - Suppression de la moyenne mensuelle estimée lorsque la période contient des mois incomplets, non certifiés, atypiquement faibles ou traverse l’arrêt de la prise d’appels. La tuile affiche « — » avec la raison ; aucun chiffre mensuel n’est rebaptisé journalier.

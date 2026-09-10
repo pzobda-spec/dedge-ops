@@ -1,8 +1,7 @@
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
+import { ACTIVE_SLA_PROFILE, MAX_RESOLUTION_DAYS, PRIORITY_APPROXIMATION, SLA_TARGET_PERCENT, CRM_P1_FIRST_RESPONSE_PALIER, thresholdHours, type Priority } from './slaProfiles'
 
 export const TIME_ZONE = 'Europe/Paris'
-// Au-delà de 90 jours calendaires, une clôture est exclue de la moyenne uniquement.
-export const MAX_RESOLUTION_DAYS = 90
 // Un appel génère en moyenne 2 tickets Phone (doublons de saisie).
 // Ratio à réviser si l'hypothèse change. Hypothèse non validée, jamais une mesure.
 // Les exports arbitraires sont interdits dans les route.ts de Next.js 14.
@@ -11,6 +10,7 @@ export const PHONE_BREAK_NOTE = 'À partir de mars–avril 2026, l’équipe a a
 
 export interface TicketRow {
   id?: string
+  priority: string | null
   created_at: string | null
   resolved_at: string | null
   source: string | null
@@ -70,6 +70,37 @@ function duration(from: string | null, to: string | null): number | null {
   const hours = (Date.parse(to) - Date.parse(from)) / 3_600_000
   return Number.isFinite(hours) && hours >= 0 ? hours : null
 }
+function mapPriority(value: string | null): { priority: Priority | null; approximated: boolean } {
+  const normalized = value?.trim().toLowerCase().replace(/\s+/g, '')
+  if (normalized === 'p1' || normalized === 'p2' || normalized === 'p3' || normalized === 'p4') return { priority: normalized.toUpperCase() as Priority, approximated: false }
+  const mapped = Object.entries(PRIORITY_APPROXIMATION).find(([label]) => label.toLowerCase() === (value ?? '').trim().toLowerCase())?.[1] as Priority | undefined
+  return { priority: mapped ?? null, approximated: mapped !== undefined }
+}
+function complianceRows(rows: TicketRow[], kind: 'first_response' | 'resolution') {
+  const byPriority = new Map<Priority, { measured: number; compliant: number; threshold_hours: number | null }>()
+  let withoutMeasurement = 0, unclassified = 0
+  for (const row of rows) {
+    const mapped = mapPriority(row.priority)
+    if (!mapped.priority) { unclassified++; continue }
+    const hours = kind === 'resolution'
+      ? duration(row.created_at, row.resolved_at)
+      : (() => { const ms = row.first_response_time_ms === null || row.first_response_time_ms === '' ? NaN : Number(row.first_response_time_ms); return Number.isFinite(ms) && ms >= 0 ? ms / 3_600_000 : duration(row.created_at, row.first_response_at) })()
+    const threshold = thresholdHours(kind, mapped.priority)
+    const bucket = byPriority.get(mapped.priority) ?? { measured: 0, compliant: 0, threshold_hours: threshold }
+    if (hours === null) { withoutMeasurement++; byPriority.set(mapped.priority, bucket); continue }
+    bucket.measured++
+    if (threshold !== null && hours <= threshold) bucket.compliant++
+    byPriority.set(mapped.priority, bucket)
+  }
+  const priorities = (['P1', 'P2', 'P3', 'P4'] as Priority[]).map(priority => {
+    const bucket = byPriority.get(priority) ?? { measured: 0, compliant: 0, threshold_hours: thresholdHours(kind, priority) }
+    return { priority, ...bucket, rate_pct: bucket.measured ? bucket.compliant * 100 / bucket.measured : null, applicable: bucket.threshold_hours !== null }
+  })
+  const applicable = priorities.filter(item => item.applicable)
+  const measured = applicable.reduce((sum, item) => sum + item.measured, 0)
+  const compliant = applicable.reduce((sum, item) => sum + item.compliant, 0)
+  return { rate_pct: measured ? compliant * 100 / measured : null, target_pct: SLA_TARGET_PERCENT, measured, compliant, without_measurement: withoutMeasurement, unclassified, priorities, profile: ACTIVE_SLA_PROFILE, mapping_approximate: rows.some(row => mapPriority(row.priority).approximated) }
+}
 export function resolutionMetrics(rows: TicketRow[]) {
   const documented = rows.map(row => duration(row.created_at, row.resolved_at)).filter((value): value is number => value !== null)
   const retained = documented.filter(hours => hours <= MAX_RESOLUTION_DAYS * 24)
@@ -97,6 +128,9 @@ export function supportMetrics(rows: TicketRow[], from: Date, to: Date) {
     opened: created.length, closed: closed.length, closed_opened_pct: percent(closed.length, created.length),
     first_response_hours: average(replies), first_response_sample: replies.length,
     ...resolutionMetrics(closed),
+    first_response_compliance: complianceRows(created, 'first_response'),
+    resolution_compliance: complianceRows(closed, 'resolution'),
+    sla_notes: { calendar_time: true, p1_palier: CRM_P1_FIRST_RESPONSE_PALIER, provisional: true },
     fcr_estimate_pct: percent(fcr.filter(Boolean).length, fcr.length), fcr_sample: fcr.length,
     top_products: counts(row => row.product_area?.trim() || 'Autre').slice(0, 8),
     peak_days: counts(row => formatInTimeZone(row.created_at!, TIME_ZONE, 'yyyy-MM-dd')).slice(0, 5),

@@ -29,6 +29,19 @@ synchronisé et les projets d’onboarding ; ce n’est pas le global D-EDGE.
   lancement des lectures borné à 30 secondes. Les lectures non réalisées restent
   inconnues ; aucun ticket n’est classé L1 par défaut. Les routes Zoho existantes
   et le schéma ne sont pas modifiés.
+- Conformité Support : le profil actif est `crm`, avec cible 90 %. Sur les six
+  derniers mois la priorité source ne contient pas P1–P4 : le mapping Urgent→P1,
+  High→P2, Medium→P3, Low→P4 est donc une approximation visible. Le taux de première
+  réponse porte sur les tickets créés ; le taux de résolution sur les tickets clôturés.
+  Les tickets sans durée sont « sans mesure » et exclus du dénominateur ; les
+  priorités non classées sont comptées à part. P4 en résolution est best effort,
+  non applicable et exclu du taux. Les délais >90 jours sont non conformes au taux,
+  bien qu’exclus de la moyenne. Les temps sont calendaires. Le palier CRM P1 est 4 h
+  pour toute la période faute de dates arbitrées pour 2 h historique et 6 h cible.
+- Évolution vs N-1 : chaque mois est comparé au même mois de l’année précédente,
+  y compris lorsqu’un mois de 2025 est sélectionné. Les volumes (créés, clôturés)
+  sont exprimés en pourcentage relatif ; les taux de conformité en points de
+  pourcentage. Une référence absente ou nulle affiche « — ».
 - Implémentation : nouveaux démarrages uniquement sur événement `status_changed`
   avec `from=not_started` et `to=in_progress`. Les retours de Pending/pause/autre
   sont exclus, ainsi que les imports déjà In Progress. Un projet compte une fois
