@@ -260,7 +260,7 @@ export default function TicketsAnalyticsDashboard() {
           <div>
             <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#8064b3]">Support</p>
             <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Tickets</h1>
-            <p className="mt-1 text-sm text-[#696969]">Tendances et performance de l’activité support Zoho Desk.</p>
+            <p className="mt-1 text-sm text-[#696969]">Support : historique Zoho Desk et Zoho Analytics synchronisé, dates en Europe/Paris.</p>
           </div>
           <a
             href="https://support.loungeup.com"
@@ -369,7 +369,7 @@ export default function TicketsAnalyticsDashboard() {
         {!data && loading ? <DashboardSkeleton /> : data && (
           <>
             <section aria-label="Indicateurs clés" className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-              <KpiCard label="Ouverts de la période" value={formatNumber(data.open)} subtitle="Créés sur la période · Open + Pending" />
+              <KpiCard label="Ouverts de la période" value={formatNumber(data.open)} subtitle="État actuel Open + Pending des tickets créés sur la période" />
               <KpiCard
                 label={hasFacetFilters ? 'Volume filtré' : 'Volume période'}
                 value={formatNumber(data.total)}
@@ -384,7 +384,7 @@ export default function TicketsAnalyticsDashboard() {
               />
               <KpiCard
                 label={`Résolution au 1er contact${data.meta.fcr_is_estimate ? ' (estim.)' : ''}`}
-                value={`${formatNumber(data.fcr_rate, 1)} %`}
+                value={data.fcr_rate == null ? '—' : `${formatNumber(data.fcr_rate, 1)} %`}
                 subtitle={data.meta.fcr_is_estimate ? 'Estimation · historique de réouverture indisponible' : 'FCR sur les résolutions'}
               />
               <KpiCard

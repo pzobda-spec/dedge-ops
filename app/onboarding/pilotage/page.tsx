@@ -317,11 +317,20 @@ export default function OnboardingPilotagePage() {
       .map(([owner, activeProjects]) => ({ owner, activeProjects }))
   }, [workloadSnapshots])
 
+  // Les relevés sont agrégés par propriétaire, sans détail produit/statut/client.
+  const workloadScopeSupported = !productFilter && !statusFilter && attentionFilter === 'all' && clientTypologyFilter === 'all' && !search.trim()
+  const scopedWorkloadSnapshots = useMemo(() => workloadScopeSupported
+    ? workloadSnapshots.filter(row => {
+      if (activeOwner === 'Tous') return true
+      const owner = resolveOwnerName(row.owner)
+      return activeOwner === 'Implémentation' ? IMPLEMENTATION_GROUP.some(member => member === owner) : owner === resolveOwnerName(activeOwner)
+    })
+    : [], [workloadSnapshots, workloadScopeSupported, activeOwner])
   const workloadTrend = useMemo(
-    () => buildCombinedWorkloadTrend(dimensionFilteredProjects, chartRange, locale, workloadSnapshots, workloadSnapshotsAvailable),
-    [chartRange, dimensionFilteredProjects, locale, workloadSnapshots, workloadSnapshotsAvailable],
+    () => buildCombinedWorkloadTrend(dimensionFilteredProjects, chartRange, locale, scopedWorkloadSnapshots, workloadSnapshotsAvailable),
+    [chartRange, dimensionFilteredProjects, locale, scopedWorkloadSnapshots, workloadSnapshotsAvailable],
   )
-  const hasRealWorkloadHistory = workloadSnapshotsAvailable === true && workloadSnapshots.length > 0
+  const hasRealWorkloadHistory = workloadSnapshotsAvailable === true && scopedWorkloadSnapshots.length > 0
   const realWorkloadStartMonth = hasRealWorkloadHistory && workloadSnapshotsFirstDate ? workloadSnapshotsFirstDate.slice(0, 7) : null
 
   useEffect(() => {
@@ -600,6 +609,7 @@ export default function OnboardingPilotagePage() {
                 <WorkloadSection rows={perPerson} overloaded={overloaded} />
 
                 <ChartCard title={t('Évolution de la charge')} subtitle={`${t('Trait plein : relevé réel. Pointillé : estimation à partir des dates Zoho.')} · ${formatRange(chartRange, locale)}`} wide>
+                  {!workloadScopeSupported && <p className="text-xs text-[#903b07]">Les relevés réels ne sont pas ventilés selon ces filtres. Seule l’estimation des projets sélectionnés est affichée.</p>}
                   {workloadTrend.data.length === 0 || workloadTrend.owners.length === 0 ? <EmptyChart /> : (
                     <>
                       <div className="h-full overflow-x-auto" role="img" aria-label={t('Évolution de la charge par chargé de projet : trait plein pour les relevés réels, pointillé pour l’estimation reconstituée')}>

@@ -1,3 +1,4 @@
+import { normalizeStatus, normalizePriority, normalizeCategory, normalizeProduct, estimateFirstContactResolution } from './analyticsNormalization'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 import { ZOHO_ANALYTICS_API_BASE_URL } from './constants'
 import { createZohoTokenProvider } from './oauth'
@@ -14,6 +15,9 @@ const DEPARTMENT_ID = '5861000000007061'
 
 export interface ZohoAnalyticsTicket {
   ID?: string
+  'Modified Time'?: string
+  'Number of Reopen'?: string
+  'Number of Threads'?: string
   'Created Time'?: string
   'Ticket Closed Time'?: string
   Department?: string
@@ -37,17 +41,19 @@ function analyticsDate(value: string | undefined): string | null {
   return Number.isFinite(date.getTime()) ? date.toISOString() : null
 }
 
-function criteria(from: Date, to: Date): string {
+function criteria(from: Date, to: Date, scope: 'closed' | 'activity'): string {
   const format = (date: Date) => formatInTimeZone(date, 'Europe/Paris', 'yyyy-MM-dd HH:mm:ss')
-  return `"Tickets (Zoho Desk)"."Ticket Closed Time" >= '${format(from)}' AND "Tickets (Zoho Desk)"."Ticket Closed Time" < '${format(to)}' AND "Tickets (Zoho Desk)"."Department" = '${DEPARTMENT_ID}'`
+  const inWindow = (column: string) => `("Tickets (Zoho Desk)"."${column}" >= '${format(from)}' AND "Tickets (Zoho Desk)"."${column}" < '${format(to)}')`
+  const window = scope === 'closed' ? inWindow('Ticket Closed Time') : `(${inWindow('Created Time')} OR ${inWindow('Ticket Closed Time')} OR ${inWindow('Modified Time')})`
+  return `${window} AND "Tickets (Zoho Desk)"."Department" = '${DEPARTMENT_ID}'`
 }
 
-export async function fetchZohoAnalyticsClosedTickets(from: Date, to: Date): Promise<ZohoAnalyticsTicket[]> {
+export async function fetchZohoAnalyticsTickets(from: Date, to: Date, scope: 'closed' | 'activity' = 'activity'): Promise<ZohoAnalyticsTicket[]> {
   if (!ORG_ID) throw new Error('ZOHO_ANALYTICS_ORG_ID is not configured')
   const config = {
     responseFormat: 'json', keyValueFormat: true,
-    criteria: criteria(from, to),
-    selectedColumns: ['ID', 'Created Time', 'Ticket Closed Time', 'Department', 'Status', 'Priority', 'Channel', 'Subject', 'Category', 'Classifications', 'Agent Responded Time', 'First Reply Time (hrs)', 'Is First Call Resolution', 'Account ID'],
+    criteria: criteria(from, to, scope),
+    selectedColumns: ['ID', 'Modified Time', 'Number of Reopen', 'Number of Threads', 'Created Time', 'Ticket Closed Time', 'Department', 'Status', 'Priority', 'Channel', 'Subject', 'Category', 'Classifications', 'Agent Responded Time', 'First Reply Time (hrs)', 'Is First Call Resolution', 'Account ID'],
   }
   const url = `${ZOHO_ANALYTICS_API_BASE_URL}/workspaces/${WORKSPACE_ID}/views/${TICKETS_VIEW_ID}/data?CONFIG=${encodeURIComponent(JSON.stringify(config))}`
   const token = await getAccessToken()
@@ -58,22 +64,32 @@ export async function fetchZohoAnalyticsClosedTickets(from: Date, to: Date): Pro
 }
 
 export function toTicketAnalyticsRow(row: ZohoAnalyticsTicket, now = new Date()) {
-  const firstReplyHours = Number(row['First Reply Time (hrs)'])
+  const rawReply = row['First Reply Time (hrs)']?.trim()
+  const firstReplyHours = rawReply ? Number(rawReply) : NaN
+  const createdAt = analyticsDate(row['Created Time'])
+  const replyMs = Number.isFinite(firstReplyHours) && firstReplyHours > 0 ? Math.round(firstReplyHours * 3_600_000) : null
   return {
     id: row.ID?.trim() ?? '',
     subject: row.Subject?.trim() || null,
-    status: row.Status?.trim() || null,
-    priority: row.Priority?.trim() || null,
-    category: row.Category?.trim() || null,
+    status: normalizeStatus(row.Status),
+    priority: normalizePriority(row.Priority),
+    category: normalizeCategory(row.Classifications ?? ''),
     classification: row.Classifications?.trim() || null,
-    product_area: row.Category?.trim() || null,
+    product_area: normalizeProduct(row.Category ?? '', row.Subject ?? ''),
     client_id: row['Account ID']?.trim() || null,
-    created_at: analyticsDate(row['Created Time']),
+    created_at: createdAt,
+    zoho_modified_at: analyticsDate(row['Modified Time']),
     resolved_at: analyticsDate(row['Ticket Closed Time']),
-    first_response_at: analyticsDate(row['Agent Responded Time']),
-    first_response_time_ms: Number.isFinite(firstReplyHours) && firstReplyHours >= 0 ? Math.round(firstReplyHours * 3_600_000) : null,
-    first_contact_resolution: row['Is First Call Resolution']?.trim().toLowerCase() === 'yes' ? true : row['Is First Call Resolution']?.trim().toLowerCase() === 'no' ? false : null,
+    // First Reply Time est ouvré (formule Analytics vérifiée).
+    // Aucune date de première réponse calendaire ne peut en être déduite.
+    first_response_at: null,
+    first_response_time_ms: replyMs,
+    first_contact_resolution: estimateFirstContactResolution(row['Number of Reopen'], row['Number of Threads']),
     source: row.Channel?.trim() || null,
     last_synced_at: now.toISOString(),
   }
+}
+
+export function fetchZohoAnalyticsClosedTickets(from: Date, to: Date) {
+  return fetchZohoAnalyticsTickets(from, to, 'closed')
 }

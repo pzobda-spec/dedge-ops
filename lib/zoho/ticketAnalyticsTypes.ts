@@ -42,7 +42,7 @@ export interface TicketAnalyticsResponse {
   previous_total: number
   volume_change_pct: number | null
   avg_first_response_hours: number | null
-  fcr_rate: number
+  fcr_rate: number | null
   by_product: AnalyticsBreakdown[]
   by_category: AnalyticsBreakdown[]
   by_classification: AnalyticsBreakdown[]

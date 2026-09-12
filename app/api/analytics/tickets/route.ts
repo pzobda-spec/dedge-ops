@@ -1,3 +1,5 @@
+import { formatInTimeZone } from 'date-fns-tz'
+import { parseDate as parseReportingDate, TIME_ZONE } from '@/lib/reporting/monthly'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/server'
 import type {
@@ -62,7 +64,7 @@ interface NormalizedTicket {
   createdAt: number
   resolvedAt: number | null
   firstResponseHours: number | null
-  firstContactResolution: boolean
+  firstContactResolution: boolean | null
 }
 
 export async function GET(request: NextRequest) {
@@ -85,8 +87,10 @@ export async function GET(request: NextRequest) {
     )
   }
 
-  const toExclusive = new Date(to.getTime() + DAY_MS)
-  const rangeDays = (toExclusive.getTime() - from.getTime()) / DAY_MS
+  const nextDay = new Date(`${toParam}T00:00:00Z`)
+  nextDay.setUTCDate(nextDay.getUTCDate() + 1)
+  const toExclusive = parseReportingDate(nextDay.toISOString().slice(0, 10))
+  const rangeDays = (nextDay.getTime() - Date.parse(`${fromParam}T00:00:00Z`)) / DAY_MS
   if (rangeDays <= 0 || rangeDays > MAX_RANGE_DAYS) {
     return NextResponse.json(
       { error: `La période doit contenir entre 1 et ${MAX_RANGE_DAYS} jours.` },
@@ -95,7 +99,7 @@ export async function GET(request: NextRequest) {
   }
 
   const filters = readFilters(request.nextUrl.searchParams)
-  const previousFrom = new Date(from.getTime() - rangeDays * DAY_MS)
+  const previousFrom = parseReportingDate(new Date(Date.parse(`${fromParam}T00:00:00Z`) - rangeDays * DAY_MS).toISOString().slice(0, 10))
 
   try {
     // Options deliberately ignore the active facets, matching the historical
@@ -202,6 +206,7 @@ function aggregateTickets(
   const firstResponseSamples = current
     .map(ticket => ticket.firstResponseHours)
     .filter((value): value is number => value !== null)
+  const fcrSamples = resolvedInPeriod.filter(ticket => ticket.firstContactResolution !== null)
   const timeSeries = buildTimeSeries(current, resolvedInPeriod, fromMs, toMs)
   const aggregateResult = buildAggregateRows(current)
   const volumeChange = previous.length > 0
@@ -215,9 +220,9 @@ function aggregateTickets(
     previous_total: previous.length,
     volume_change_pct: volumeChange,
     avg_first_response_hours: average(firstResponseSamples),
-    fcr_rate: resolvedInPeriod.length > 0
-      ? roundOne((resolvedInPeriod.filter(ticket => ticket.firstContactResolution).length / resolvedInPeriod.length) * 100)
-      : 0,
+    fcr_rate: fcrSamples.length > 0
+      ? roundOne((fcrSamples.filter(ticket => ticket.firstContactResolution).length / fcrSamples.length) * 100)
+      : null,
     by_product: countBy(current, ticket => ticket.product),
     by_category: countBy(current, ticket => ticket.category, CATEGORY_ORDER),
     by_classification: countBy(current, ticket => ticket.classification),
@@ -236,7 +241,7 @@ function aggregateTickets(
       priorities: sortWithOrder(unique(options.map(ticket => ticket.priority)), PRIORITY_ORDER),
     },
     meta: {
-      from: isoDate(from),
+      from: formatInTimeZone(from, TIME_ZONE, 'yyyy-MM-dd'),
       to: isoDate(new Date(toMs - 1)),
       granularity: timeSeries.granularity,
       generated_at: new Date().toISOString(),
@@ -252,22 +257,14 @@ function aggregateTickets(
 function normalizeTicket(row: TicketAnalyticsRow): NormalizedTicket {
   const createdAt = Date.parse(row.created_at ?? '')
   const resolvedAt = Date.parse(row.resolved_at ?? '')
-  const firstResponseAt = Date.parse(row.first_response_at ?? '')
-  const officialResponseMs = row.first_response_time_ms === null
-    ? Number.NaN
-    : Number(row.first_response_time_ms)
-  const firstResponseHours = Number.isFinite(officialResponseMs) && officialResponseMs >= 0
-    ? sensibleHours(officialResponseMs / 3_600_000)
-    : Number.isFinite(createdAt)
-    && Number.isFinite(firstResponseAt)
-    && firstResponseAt >= createdAt
-    ? sensibleHours((firstResponseAt - createdAt) / 3_600_000)
-    : null
+  const officialResponseMs = row.first_response_time_ms === null || row.first_response_time_ms === '' ? NaN : Number(row.first_response_time_ms)
+  const firstResponseHours = Number.isFinite(officialResponseMs) && officialResponseMs > 0
+    ? sensibleHours(officialResponseMs / 3_600_000) : null
 
   return {
     id: row.id,
     status: cleanLabel(row.status, 'Open'),
-    priority: cleanLabel(row.priority, 'Medium'),
+    priority: cleanLabel(row.priority, 'Non classé'),
     product: cleanLabel(row.product_area, 'Autre'),
     category: cleanLabel(row.category, 'Non classé'),
     classification: cleanLabel(row.classification, 'Non classé'),
@@ -275,7 +272,7 @@ function normalizeTicket(row: TicketAnalyticsRow): NormalizedTicket {
     createdAt,
     resolvedAt: Number.isFinite(resolvedAt) ? resolvedAt : null,
     firstResponseHours,
-    firstContactResolution: row.first_contact_resolution === true,
+    firstContactResolution: row.first_contact_resolution,
   }
 }
 
@@ -356,7 +353,7 @@ function bucketStarts(
 ): Date[] {
   const starts: Date[] = []
   let cursor = bucketDate(fromMs, granularity)
-  while (cursor.getTime() < toMs) {
+  while (cursor.getTime() < Date.parse(`${formatInTimeZone(toMs, TIME_ZONE, 'yyyy-MM-dd')}T00:00:00Z`)) {
     starts.push(new Date(cursor))
     if (granularity === 'day') cursor.setUTCDate(cursor.getUTCDate() + 1)
     else if (granularity === 'week') cursor.setUTCDate(cursor.getUTCDate() + 7)
@@ -366,7 +363,7 @@ function bucketStarts(
 }
 
 function bucketDate(timestamp: number, granularity: 'day' | 'week' | 'month'): Date {
-  const date = new Date(timestamp)
+  const date = new Date(`${formatInTimeZone(timestamp, TIME_ZONE, 'yyyy-MM-dd')}T00:00:00Z`)
   date.setUTCHours(0, 0, 0, 0)
   if (granularity === 'week') {
     date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7))
@@ -493,7 +490,5 @@ function isoDate(value: Date): string {
 
 function parseDate(value: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
-  const date = new Date(`${value}T00:00:00.000Z`)
-  if (!Number.isFinite(date.getTime()) || isoDate(date) !== value) return null
-  return date
+  try { return parseReportingDate(value) } catch { return null }
 }

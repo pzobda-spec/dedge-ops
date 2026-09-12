@@ -13,7 +13,7 @@ export async function readTickets(from: Date, to: Date, channelsOnly = false): P
       : query.or(`and(created_at.gte.${from.toISOString()},created_at.lt.${to.toISOString()}),and(resolved_at.gte.${from.toISOString()},resolved_at.lt.${to.toISOString()})`)
     const { data, error } = await query.order('id', { ascending: true }).range(offset, offset + PAGE_SIZE - 1)
     if (error || !data) throw new Error('Lecture des tickets indisponible.')
-    rows.push(...data as unknown as TicketRow[])
+    rows.push(...(data as unknown as TicketRow[]).map(row => ({ ...row, first_response_time_basis: 'business' as const })))
     if (data.length < PAGE_SIZE) return rows
   }
 }

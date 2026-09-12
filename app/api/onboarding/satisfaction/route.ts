@@ -1,3 +1,4 @@
+import { fetchAllPages } from '@/lib/supabase/pagination'
 import { unstable_cache } from 'next/cache'
 import { NextResponse } from 'next/server'
 import { resolveOwnerName } from '@/lib/onboarding/constants'
@@ -7,10 +8,11 @@ export const dynamic = 'force-dynamic'
 
 const getSatisfaction = unstable_cache(
   async () => {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await fetchAllPages((from, to) => supabaseAdmin
       .from('onboarding_satisfaction')
       .select('*')
-      .order('submitted_at', { ascending: false })
+      .order('submitted_at', { ascending: false }).order('zoho_id')
+      .range(from, to))
     if (error) {
       if (isMissingSatisfactionTable(error)) {
         console.warn('[onboarding/satisfaction] onboarding_satisfaction table is missing; returning empty data set')
@@ -49,5 +51,5 @@ export async function GET() {
 }
 
 function isMissingSatisfactionTable(error: { code?: string; message?: string }) {
-  return error.code === '42P01' || /onboarding_satisfaction/i.test(error.message ?? '')
+  return error.code === '42P01' || error.code === 'PGRST205'
 }

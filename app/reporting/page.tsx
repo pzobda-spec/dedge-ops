@@ -184,7 +184,7 @@ function buildCopiedReport(stats: QuarterlyStats): string {
     `Tickets créés : ${integerFormatter.format(stats.current.opened)}${volumeChange === null ? '' : ` (${signed(volumeChange, ' %')} vs ${stats.previous.label})`}`,
     `Tickets résolus : ${integerFormatter.format(stats.current.resolved)}`,
     `FCR : ${stats.current.fcr === null ? 'non disponible' : `${decimalFormatter.format(stats.current.fcr)} %`}`,
-    `Première réponse : ${stats.current.avg_first_response_hours === null ? 'non disponible' : `${decimalFormatter.format(stats.current.avg_first_response_hours)} h`}`,
+    `Première réponse ouvrée (Zoho) : ${stats.current.avg_first_response_hours === null ? 'non disponible' : `${decimalFormatter.format(stats.current.avg_first_response_hours)} h`}`,
   ]
 
   if (stats.comparisons.year_over_year.available && stats.year_ago) {
@@ -501,7 +501,7 @@ export default function ReportingPage() {
                 sampleSize={stats.current.fcr_sample_size}
               />
               <MetricCard
-                label="Première réponse"
+                label="Première réponse ouvrée (Zoho)"
                 value={stats.current.avg_first_response_hours === null ? '—' : `${decimalFormatter.format(stats.current.avg_first_response_hours)} h`}
                 comparison={responseChange}
                 comparisonLabel={stats.previous.label}

@@ -10,6 +10,7 @@ export const PHONE_BREAK_NOTE = 'À partir de mars–avril 2026, l’équipe a a
 
 export interface TicketRow {
   id?: string
+  first_response_time_basis?: 'calendar' | 'business'
   priority: string | null
   created_at: string | null
   resolved_at: string | null
@@ -84,9 +85,10 @@ function complianceRows(rows: TicketRow[], kind: 'first_response' | 'resolution'
     if (!mapped.priority) { unclassified++; continue }
     const hours = kind === 'resolution'
       ? duration(row.created_at, row.resolved_at)
-      : (() => { const ms = row.first_response_time_ms === null || row.first_response_time_ms === '' ? NaN : Number(row.first_response_time_ms); return Number.isFinite(ms) && ms >= 0 ? ms / 3_600_000 : duration(row.created_at, row.first_response_at) })()
+      : (() => { if (row.first_response_time_basis === 'business') return duration(row.created_at, row.first_response_at); const ms = row.first_response_time_ms === null || row.first_response_time_ms === '' ? NaN : Number(row.first_response_time_ms); return Number.isFinite(ms) && ms > 0 ? ms / 3_600_000 : duration(row.created_at, row.first_response_at) })()
     const threshold = thresholdHours(kind, mapped.priority)
     const bucket = byPriority.get(mapped.priority) ?? { measured: 0, compliant: 0, threshold_hours: threshold }
+    if (threshold === null) { bucket.measured++; byPriority.set(mapped.priority, bucket); continue }
     if (hours === null) { withoutMeasurement++; byPriority.set(mapped.priority, bucket); continue }
     bucket.measured++
     if (threshold !== null && hours <= threshold) bucket.compliant++
@@ -94,12 +96,12 @@ function complianceRows(rows: TicketRow[], kind: 'first_response' | 'resolution'
   }
   const priorities = (['P1', 'P2', 'P3', 'P4'] as Priority[]).map(priority => {
     const bucket = byPriority.get(priority) ?? { measured: 0, compliant: 0, threshold_hours: thresholdHours(kind, priority) }
-    return { priority, ...bucket, rate_pct: bucket.measured ? bucket.compliant * 100 / bucket.measured : null, applicable: bucket.threshold_hours !== null }
+    return { priority, ...bucket, rate_pct: bucket.threshold_hours !== null && bucket.measured ? bucket.compliant * 100 / bucket.measured : null, applicable: bucket.threshold_hours !== null }
   })
   const applicable = priorities.filter(item => item.applicable)
   const measured = applicable.reduce((sum, item) => sum + item.measured, 0)
   const compliant = applicable.reduce((sum, item) => sum + item.compliant, 0)
-  return { rate_pct: measured ? compliant * 100 / measured : null, target_pct: SLA_TARGET_PERCENT, measured, compliant, without_measurement: withoutMeasurement, unclassified, priorities, profile: ACTIVE_SLA_PROFILE, mapping_approximate: rows.some(row => mapPriority(row.priority).approximated) }
+  return { population: rows.length, rate_pct: measured ? compliant * 100 / measured : null, target_pct: SLA_TARGET_PERCENT, measured, compliant, without_measurement: withoutMeasurement, unclassified, priorities, profile: ACTIVE_SLA_PROFILE, mapping_approximate: rows.some(row => mapPriority(row.priority).approximated) }
 }
 export function resolutionMetrics(rows: TicketRow[]) {
   const documented = rows.map(row => duration(row.created_at, row.resolved_at)).filter((value): value is number => value !== null)
@@ -116,7 +118,7 @@ export function supportMetrics(rows: TicketRow[], from: Date, to: Date) {
   const closed = rows.filter(row => inRange(row.resolved_at, from, to))
   const replies = created.map(row => {
     const ms = row.first_response_time_ms === null || row.first_response_time_ms === '' ? NaN : Number(row.first_response_time_ms)
-    return Number.isFinite(ms) && ms >= 0 ? ms / 3_600_000 : duration(row.created_at, row.first_response_at)
+    return Number.isFinite(ms) && ms > 0 ? ms / 3_600_000 : row.first_response_time_basis === 'business' ? null : duration(row.created_at, row.first_response_at)
   }).filter((value): value is number => value !== null)
   const fcr = closed.map(row => row.first_contact_resolution).filter((value): value is boolean => typeof value === 'boolean')
   function counts(selector: (row: TicketRow) => string) {

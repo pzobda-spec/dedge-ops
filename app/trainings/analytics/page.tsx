@@ -32,7 +32,7 @@ interface DateRange {
 interface SessionsPayload {
   sessions?: AnalyticsSession[]
   error?: string
-  meta?: { truncated?: boolean }
+  meta?: { truncated?: boolean; degraded?: boolean }
 }
 
 interface LoadedSessions {
@@ -385,7 +385,7 @@ export default function TrainingsAnalyticsPage() {
 
             {sourceTruncated && (
               <aside role="alert" className="rounded-xl border border-[#e8c8a8] bg-[#fff5ec] px-4 py-3 text-sm text-[#903b07]">
-                Une plage source Acuity a atteint sa limite de résultats. Les indicateurs peuvent être partiels ; réduisez la période ou vérifiez la source.
+                La source Acuity est partielle : limite de résultats atteinte ou sessions sans inscription indisponibles. Les indicateurs peuvent être partiels ; réduisez la période ou vérifiez la source.
               </aside>
             )}
 
@@ -668,7 +668,7 @@ async function fetchSessions(range: DateRange, signal: AbortSignal): Promise<Loa
   if (!Array.isArray(body.sessions)) throw new Error('La réponse Acuity ne contient aucune liste de sessions.')
   return {
     sessions: deduplicateSessions(body.sessions),
-    truncated: body.meta?.truncated === true,
+    truncated: body.meta?.truncated === true || body.meta?.degraded === true,
   }
 }
 
@@ -872,7 +872,7 @@ function buildReport({
     `Période : ${formatRange(range)}`,
     `Comparaison : ${formatRange(previousRange)}`,
     `Filtres : ${activeFilters.length > 0 ? activeFilters.join(' · ') : 'Aucun'}`,
-    `Source complète : ${sourceTruncated ? 'Non — limite Acuity atteinte' : 'Oui'}`,
+    `Source complète : ${sourceTruncated ? 'Non — source Acuity partielle ou dégradée' : 'Oui'}`,
     '',
     'INDICATEURS',
     `Sessions passées : ${formatNumber(analytics.sessions)} (${comparisons.sessions.text})`,

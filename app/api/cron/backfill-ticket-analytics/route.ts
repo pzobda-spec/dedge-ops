@@ -1,3 +1,4 @@
+import { normalizePriority, estimateFirstContactResolution } from '@/lib/zoho/analyticsNormalization'
 import { NextRequest, NextResponse } from 'next/server'
 import { authErrorResponse, requireRole } from '@/lib/auth/roles'
 import { supabaseAdmin } from '@/lib/supabase/server'
@@ -32,7 +33,7 @@ interface TicketAnalyticsRow {
   ticket_number: string | null
   subject: string | null
   status: string
-  priority: string
+  priority: string | null
   category: string
   classification: string
   product_area: string
@@ -42,7 +43,7 @@ interface TicketAnalyticsRow {
   created_at: string
   resolved_at: string | null
   first_response_at: string | null
-  first_contact_resolution: boolean
+  first_contact_resolution: boolean | null
   source: string | null
   last_synced_at: string
   zoho_modified_at: string | null
@@ -378,9 +379,6 @@ function normalizeStatus(value: string | null | undefined): string {
   return cleanLabel(value) || 'Ouvert'
 }
 
-function normalizePriority(value: string | null | undefined): string {
-  return cleanLabel(value) || 'Moyenne'
-}
 
 function normalizeCategory(value: string): string {
   return cleanLabel(value) || 'Non classé'
@@ -397,26 +395,16 @@ function validIsoDate(value: string | null | undefined): string | null {
 }
 
 function firstResponseAt(ticket: ZohoTicket): string | null {
-  const raw = ticket.firstResponseTime ?? ticket.responseTime
-  if (raw === null || raw === undefined || raw === '') return null
-
-  const createdAt = Date.parse(ticket.createdTime)
-  if (!Number.isFinite(createdAt)) return null
-
-  if (typeof raw === 'string' && /[T:-]/.test(raw)) {
-    const parsed = Date.parse(raw)
-    if (Number.isFinite(parsed) && parsed >= createdAt) return new Date(parsed).toISOString()
-  }
-
-  const numeric = Number(raw)
-  if (!Number.isFinite(numeric) || numeric < 0) return null
-  const responseAt = numeric > 100_000_000_000 ? numeric : createdAt + numeric
-  return responseAt >= createdAt ? new Date(responseAt).toISOString() : null
+  // Les durées numériques Zoho sont ouvrées : ne pas les additionner à createdTime.
+  const raw = ticket.firstResponseTime
+  if (typeof raw !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(raw)) return null
+  const timestamp = Date.parse(raw)
+  return Number.isFinite(timestamp) && timestamp >= Date.parse(ticket.createdTime) ? new Date(timestamp).toISOString() : null
 }
 
-function isFirstContactResolution(ticket: ZohoTicket): boolean {
+function isFirstContactResolution(ticket: ZohoTicket): boolean | null {
   const reopenCount = readReopenCount(ticket)
-  return reopenCount !== null ? reopenCount === 0 : (Number(ticket.threadCount) || 0) <= 2
+  return estimateFirstContactResolution(reopenCount, ticket.threadCount)
 }
 
 function readReopenCount(ticket: ZohoTicket): number | null {

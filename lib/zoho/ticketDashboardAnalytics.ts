@@ -1,3 +1,4 @@
+import { normalizePriority, estimateFirstContactResolution } from './analyticsNormalization'
 import { fetchAccounts, fetchTickets, type ZohoTicket } from './client'
 import { ZOHO_SUPPORT_DEPARTMENT_ID, ZOHO_TICKET_PAGE_SIZE } from './constants'
 import type {
@@ -28,7 +29,7 @@ interface NormalizedTicket {
   createdAt: number
   closedAt: number | null
   firstResponseHours: number | null
-  firstContactResolution: boolean
+  firstContactResolution: boolean | null
 }
 
 export interface AnalyticsRange {
@@ -249,7 +250,7 @@ function aggregateTicketAnalytics(
   const firstResponseSamples = current
     .map(ticket => ticket.firstResponseHours)
     .filter((value): value is number => value !== null)
-  const fcrSamples = resolvedInPeriod
+  const fcrSamples = resolvedInPeriod.filter(ticket => ticket.firstContactResolution !== null)
   const total = current.length
   const previousTotal = previous.length
   const volumeChange = previousTotal > 0
@@ -273,7 +274,7 @@ function aggregateTicketAnalytics(
     avg_first_response_hours: average(firstResponseSamples),
     fcr_rate: fcrSamples.length > 0
       ? roundOne((fcrSamples.filter(ticket => ticket.firstContactResolution).length / fcrSamples.length) * 100)
-      : 0,
+      : null,
     by_product: countBy(current, ticket => ticket.product),
     by_category: countBy(current, ticket => ticket.category, CATEGORY_ORDER),
     by_classification: countBy(current, ticket => ticket.classification),
@@ -320,13 +321,13 @@ function normalizeTicket(ticket: ZohoTicket, accountNames: DeskAccountNames): No
       ?? firstCustomField(ticket.cf, ['product', 'produit', 'module'])
       ?? 'Autre',
   )
-  const threadCount = Number(ticket.threadCount) || 0
+  const threadCount = ticket.threadCount
   const reopenCount = readReopenCount(ticket)
 
   return {
     id: ticket.id,
     status: normalizeStatus(ticket.status),
-    priority: normalizePriority(ticket.priority),
+    priority: normalizePriority(ticket.priority) ?? 'Non classé',
     product: normalizeProduct(rawProduct, ticket.subject),
     category: normalizeCategory(classification),
     classification,
@@ -341,7 +342,7 @@ function normalizeTicket(ticket: ZohoTicket, accountNames: DeskAccountNames): No
     createdAt,
     closedAt: Number.isFinite(closedAt) ? closedAt : null,
     firstResponseHours: readFirstResponseHours(ticket, createdAt),
-    firstContactResolution: reopenCount !== null ? reopenCount === 0 : threadCount <= 2,
+    firstContactResolution: estimateFirstContactResolution(reopenCount, threadCount),
   }
 }
 
@@ -370,13 +371,6 @@ function normalizeStatus(status: string): string {
   return 'Open'
 }
 
-function normalizePriority(priority: string | null): string {
-  const normalized = normalizeText(priority ?? '')
-  if (normalized === 'urgent') return 'Urgent'
-  if (['high', 'haute', 'elevee'].includes(normalized)) return 'High'
-  if (['low', 'basse', 'faible'].includes(normalized)) return 'Low'
-  return 'Medium'
-}
 
 function normalizeCategory(classification: string): string {
   const normalized = normalizeText(classification).replace(/[-_]/g, ' ')

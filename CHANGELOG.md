@@ -6,6 +6,24 @@ Les entrées antérieures au 15 juillet 2026 ont été reconstituées à partir 
 l’historique Git ; elles synthétisent les changements fonctionnels encore
 pertinents plutôt que chaque correction intermédiaire.
 
+## 2026-09-12 — Cohérence des sources des dashboards
+
+- L’historique Support combine désormais Zoho Analytics et les tickets courants
+  de Zoho Desk sans remplacer les priorités absentes par une priorité inventée.
+  Les durées Zoho en heures ouvrées alimentent uniquement la moyenne de première
+  réponse ; le taux calendaire reste indisponible sans horodatage fiable.
+- Les imports Desk et Analytics partagent les mêmes règles de normalisation des
+  statuts, priorités, produits et estimations FCR. Les valeurs FCR non mesurables
+  restent « — » et les périodes du dashboard Tickets sont alignées sur
+  Europe/Paris.
+- Le dashboard principal lit les bugs Linear avec pagination complète et affiche
+  « — » lorsqu’une source échoue. Les historiques de charge Onboarding respectent
+  les filtres qu’ils peuvent réellement porter ; les données Acuity partielles et
+  la couverture de satisfaction sont signalées.
+- Ajout d’un plan de mise en place auditable pour le CSAT, l’insatisfaction, le
+  taux de réponse aux formulaires et l’IQS, avec les dénominateurs et sources à
+  valider avant publication.
+
 ## 2026-09-10 — Évolution mensuelle vs N-1
 
 - Le reporting mensuel compare désormais chaque mois au même mois de l’année précédente, y compris pour les mois de 2025. Les volumes sont affichés en évolution relative ; les taux de conformité en points de pourcentage. Une référence absente ou nulle reste « — ».

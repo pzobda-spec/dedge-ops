@@ -1,3 +1,4 @@
+import { normalizeStatus, normalizePriority, normalizeCategory, normalizeProduct, estimateFirstContactResolution } from '@/lib/zoho/analyticsNormalization'
 import { NextRequest, NextResponse } from 'next/server'
 import { authErrorResponse, requireRole } from '@/lib/auth/roles'
 import { supabaseAdmin } from '@/lib/supabase/server'
@@ -29,7 +30,7 @@ interface TicketAnalyticsRow {
   ticket_number: string | null
   subject: string | null
   status: string
-  priority: string
+  priority: string | null
   category: string
   classification: string
   product_area: string
@@ -39,7 +40,7 @@ interface TicketAnalyticsRow {
   created_at: string
   resolved_at: string | null
   first_response_at: string | null
-  first_contact_resolution: boolean
+  first_contact_resolution: boolean | null
   source: string | null
   last_synced_at: string
   zoho_modified_at: string | null
@@ -284,28 +285,16 @@ async function fetchExistingIds(ids: string[], cutoff: Date): Promise<Set<string
 }
 
 function firstResponseAt(ticket: ZohoTicket): string | null {
-  const raw = ticket.firstResponseTime ?? ticket.responseTime
-  if (raw === null || raw === undefined || raw === '') return null
-
-  const createdAt = Date.parse(ticket.createdTime)
-  if (!Number.isFinite(createdAt)) return null
-
-  if (typeof raw === 'string' && /[T:-]/.test(raw)) {
-    const parsed = Date.parse(raw)
-    if (Number.isFinite(parsed) && parsed >= createdAt) return new Date(parsed).toISOString()
-  }
-
-  const numeric = Number(raw)
-  if (!Number.isFinite(numeric) || numeric < 0) return null
-  const responseAt = numeric > 100_000_000_000 ? numeric : createdAt + numeric
-  const responseDelay = responseAt - createdAt
-  if (responseDelay < 0 || responseDelay > 365 * DAY_MS) return null
-  return new Date(responseAt).toISOString()
+  // Les durées numériques Zoho sont ouvrées : ne pas les additionner à createdTime.
+  const raw = ticket.firstResponseTime
+  if (typeof raw !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(raw)) return null
+  const timestamp = Date.parse(raw)
+  return Number.isFinite(timestamp) && timestamp >= Date.parse(ticket.createdTime) ? new Date(timestamp).toISOString() : null
 }
 
-function isFirstContactResolution(ticket: ZohoTicket): boolean {
+function isFirstContactResolution(ticket: ZohoTicket): boolean | null {
   const reopenCount = readReopenCount(ticket)
-  return reopenCount !== null ? reopenCount === 0 : (Number(ticket.threadCount) || 0) <= 2
+  return estimateFirstContactResolution(reopenCount, ticket.threadCount)
 }
 
 function readReopenCount(ticket: ZohoTicket): number | null {
@@ -317,58 +306,6 @@ function readReopenCount(ticket: ZohoTicket): number | null {
 
   const custom = firstCustomField(ticket.cf, ['reopen_count', 'reopened_count', 'reouverture'])
   return custom !== null && Number.isFinite(Number(custom)) ? Number(custom) : null
-}
-
-function normalizeStatus(status: string | null | undefined): string {
-  const normalized = normalizeText(status ?? '')
-  if (['closed', 'ferme', 'fermee'].includes(normalized)) return 'Closed'
-  if (['solved', 'resolved', 'resolu', 'resolue'].includes(normalized)) return 'Resolved'
-  if (['pending', 'managed', 'on hold', 'onhold', 'stuck client', 'waiting'].includes(normalized)) return 'Pending'
-  return 'Open'
-}
-
-function normalizePriority(priority: string | null): string {
-  const normalized = normalizeText(priority ?? '')
-  if (normalized === 'urgent') return 'Urgent'
-  if (['high', 'haute', 'elevee'].includes(normalized)) return 'High'
-  if (['low', 'basse', 'faible'].includes(normalized)) return 'Low'
-  return 'Medium'
-}
-
-function normalizeCategory(classification: string): string {
-  const normalized = normalizeText(classification).replace(/[-_]/g, ' ')
-  if (normalized === 'question') return 'Question'
-  if (['problem', 'probleme', 'incident', 'bug'].includes(normalized)) return 'Problem'
-  if (['task', 'tache', 'demande'].includes(normalized)) return 'Task'
-  if (['feature request', 'feature', 'suggestion', 'amelioration'].includes(normalized)) return 'Feature Request'
-  return 'Non classé'
-}
-
-function normalizeProduct(product: string, subject: string): string {
-  const normalized = normalizeText(product).replace(/[-_]/g, ' ')
-  const normalizedSubject = normalizeText(subject).replace(/[-_]/g, ' ')
-  const searchable = `${normalized} ${normalizedSubject}`
-
-  if (/^csm$/.test(normalized)) return 'CSM'
-  if (/\b(dns|spf|dkim|dmarc)\b/.test(searchable)) return 'Newsletters'
-  if (normalized === 'email delivery' || /mailinblack/.test(normalizedSubject)) return 'Autre'
-  if (/whats\s*app/.test(normalized)) return 'WhatsApp'
-  if (/loyalty program|programme de fidelite|\bloyalty\b/.test(normalized)) return 'Loyalty Program'
-  if (/dmbook/.test(normalized)) return 'Dmbook Pro'
-  if (/hub de messagerie|messaging hub|^hub$/.test(normalized)) return 'Hub de messagerie'
-  if (/newsletter/.test(normalized)) return 'Newsletters'
-  if (/campaign|campagne/.test(normalized)) return 'Campaigns'
-
-  const csvImportOrExport = /\b(import|export)\b.*\bcsv\b|\bcsv\b.*\b(import|export)\b/.test(searchable)
-  if (
-    /guest profile|profil (client|invite)|customer profile/.test(normalized)
-    || /\bsegment(ation|s)?\b/.test(searchable)
-    || csvImportOrExport
-  ) return 'Guest Profile'
-  if (/\bpms\b|integration|interface|connecteur|synchronis/.test(normalized)) return 'PMS'
-  if (/guest app|application|check ?in|commande|kiosque|wifi|statistiques app|\bpages?\b|formulaire|\bforms?\b/.test(normalized)) return 'Guest App'
-  if (/crm|administrateur|admin|\b2fa\b/.test(normalized)) return 'CRM Core'
-  return 'Autre'
 }
 
 function firstCustomField(

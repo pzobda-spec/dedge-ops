@@ -40,7 +40,7 @@ export function implementationMetrics(projects: ReportingProject[], events: Repo
     if (event.event_type === 'go_live' && metadata?.to === 'live' && metadata.from && metadata.from !== 'live') observedLive.add(event.project_id)
   }
   let liveDated = 0, liveObserved = 0, liveUndated = 0
-  const officialStarts = projects.filter(project => project.start_date && project.start_date >= firstDay && project.start_date < nextDay)
+  const officialStarts = projects.filter(project => validDay(project.start_date ?? null) && project.start_date! >= firstDay && project.start_date! < nextDay)
   for (const project of projects) {
     // Le champ Live date courant fait autorité, y compris après correction de l'événement canonique.
     if (validDay(project.actual_go_live)) {
@@ -54,9 +54,11 @@ export function implementationMetrics(projects: ReportingProject[], events: Repo
   return {
     in_progress: trackingStartedAt && Date.parse(trackingStartedAt) < to.getTime() ? fromNotStarted.size : null,
     official_starts: officialStarts.length,
-    official_starts_crm: officialStarts.filter(project => !/dmbook/i.test(project.product ?? '')).length,
+    official_starts_crm: officialStarts.filter(project => /^(loungeup|crm)$/i.test(project.product?.trim() ?? '')).length,
     official_starts_dmbook: officialStarts.filter(project => /dmbook/i.test(project.product ?? '')).length,
-    status_transition_starts: fromNotStarted.size,
+    official_starts_unclassified: officialStarts.filter(project => !/dmbook/i.test(project.product ?? '') && !/^(loungeup|crm)$/i.test(project.product?.trim() ?? '')).length,
+    starts_without_date: projects.filter(project => !validDay(project.start_date ?? null)).length,
+    status_transition_starts: trackingStartedAt && Date.parse(trackingStartedAt) < to.getTime() ? fromNotStarted.size : null,
     in_progress_from_not_started: fromNotStarted.size,
     in_progress_resumed_or_other: progress.size - fromNotStarted.size,
     imported_in_progress_without_transition: [...importedInProgress].filter(id => !progress.has(id)).length,

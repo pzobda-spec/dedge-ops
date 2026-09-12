@@ -372,3 +372,36 @@ export async function createIssue(input: {
 
   return mapRawIssue(data.issueCreate.issue)
 }
+
+// Vue globale : pages compactes, agrégats uniquement vers le navigateur.
+export async function fetchBugSummary() {
+  const query = `query BugSummary($after: String) {
+    issues(first: 250, after: $after, filter: { team: { key: { eq: "BUGS" } } }) {
+      nodes { id state { name type } priority createdAt }
+      pageInfo { hasNextPage endCursor }
+    }
+  }`
+  type Node = { id: string; state: { name: string; type: string }; priority: number; createdAt: string }
+  const nodes = new Map<string, Node>()
+  let after: string | null = null
+  const cursors = new Set<string>()
+  for (;;) {
+    const data: { issues: { nodes: Node[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } = await linearQuery(query, { after })
+    data.issues.nodes.forEach(node => nodes.set(node.id, node))
+    if (!data.issues.pageInfo.hasNextPage) break
+    const next = data.issues.pageInfo.endCursor
+    if (!next || cursors.has(next)) throw new Error('Pagination Linear incomplète.')
+    cursors.add(next); after = next
+  }
+  const all = [...nodes.values()]
+  const open = all.filter(node => !['completed', 'canceled'].includes(node.state.type))
+  const now = Date.now()
+  const trend = Array.from({ length: 30 }, (_, i) => open.filter(node => {
+    const age = Math.floor((now - Date.parse(node.createdAt)) / 86_400_000)
+    return age === 29 - i
+  }).length)
+  return { open: open.length, to_qualify: open.filter(node => node.state.type === 'backlog').length,
+    urgent: open.filter(node => node.priority === 1).length,
+    resolved: all.filter(node => node.state.type === 'completed').length,
+    trend, source_count: all.length, generated_at: new Date().toISOString() }
+}

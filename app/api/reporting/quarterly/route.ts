@@ -1,3 +1,5 @@
+import { formatInTimeZone } from 'date-fns-tz'
+import { monthKey, monthStart, TIME_ZONE } from '@/lib/reporting/monthly'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/server'
 
@@ -313,8 +315,8 @@ function computeMetrics(
   return {
     key: quarter.key,
     label: quarter.label,
-    from: isoDate(quarter.start),
-    to: isoDate(new Date(quarter.end.getTime() - 1)),
+    from: formatInTimeZone(quarter.start, TIME_ZONE, 'yyyy-MM-dd'),
+    to: formatInTimeZone(new Date(quarter.end.getTime() - 1), TIME_ZONE, 'yyyy-MM-dd'),
     opened: created.length,
     resolved: resolved.length,
     fcr: fcrSamples.length > 0
@@ -612,13 +614,8 @@ function buildInsights(input: {
 function normalizeTicket(row: TicketRow): Ticket {
   const createdAt = timestamp(row.created_at)
   const resolvedAt = timestamp(row.resolved_at)
-  const firstResponseAt = timestamp(row.first_response_at)
   const officialResponseMs = finiteNumber(row.first_response_time_ms)
-  const responseHours = officialResponseMs !== null && officialResponseMs >= 0
-    ? officialResponseMs / 3_600_000
-    : createdAt !== null && firstResponseAt !== null && firstResponseAt >= createdAt
-    ? (firstResponseAt - createdAt) / 3_600_000
-    : null
+  const responseHours = officialResponseMs !== null && officialResponseMs > 0 ? officialResponseMs / 3_600_000 : null
 
   return {
     id: row.id,
@@ -652,14 +649,14 @@ function parseQuarter(value: string | null): Quarter | null {
 }
 
 function lastCompletedQuarter(): Quarter {
-  const now = new Date()
-  const currentNumber = Math.floor(now.getUTCMonth() / 3) + 1
-  return shiftQuarter(makeQuarter(now.getUTCFullYear(), currentNumber), -1)
+  const [year, month] = monthKey(new Date()).split('-').map(Number)
+  const currentNumber = Math.floor((month - 1) / 3) + 1
+  return shiftQuarter(makeQuarter(year, currentNumber), -1)
 }
 
 function makeQuarter(year: number, number: number): Quarter {
-  const start = new Date(Date.UTC(year, (number - 1) * 3, 1))
-  const end = new Date(Date.UTC(year, number * 3, 1))
+  const start = monthStart(`${year}-${String((number - 1) * 3 + 1).padStart(2, '0')}`)
+  const end = monthStart(`${number === 4 ? year + 1 : year}-${String(number === 4 ? 1 : number * 3 + 1).padStart(2, '0')}`)
   return { key: `${year}-Q${number}`, label: `T${number} ${year}`, year, number, start, end }
 }
 

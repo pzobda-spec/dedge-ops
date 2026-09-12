@@ -28,7 +28,6 @@ export const SLA_PROFILES = {
 } as const
 
 export function thresholdHours(kind: 'first_response' | 'resolution', priority: Priority, profile: SlaProfileName = ACTIVE_SLA_PROFILE): number | null {
-  if (kind === 'first_response' && priority === 'P1' && profile === 'crm') return 4
   return SLA_PROFILES[profile][kind === 'first_response' ? 'first_response_hours' : 'resolution_hours'][priority]
 }
 

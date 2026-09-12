@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { Line, LineChart, ResponsiveContainer, YAxis } from 'recharts'
 import type { ZohoMappedTicket } from '@/lib/zoho/mapper'
-import type { LinearIssue } from '@/lib/linear/client'
+import type { fetchBugSummary } from '@/lib/linear/client'
 import type { AcuitySession } from '@/lib/acuity/client'
 import type { OnboardingProject } from '@/lib/zoho/projectsClient'
 import type { AppUser } from '@/lib/auth/roles'
@@ -104,7 +104,9 @@ function Sparkline({ values, color, label }: { values: number[]; color: string; 
 
 export default function DashboardPage() {
   const [tickets, setTickets] = useState<ZohoMappedTicket[]>([])
-  const [escalations, setEscalations] = useState<LinearIssue[]>([])
+  const [bugSummary, setBugSummary] = useState<Awaited<ReturnType<typeof fetchBugSummary>> | null>(null)
+  const [ticketsAvailable, setTicketsAvailable] = useState(false)
+  const [projectsAvailable, setProjectsAvailable] = useState(false)
   const [sessions, setSessions] = useState<AcuitySession[]>([])
   const [projects, setProjects] = useState<OnboardingProject[]>([])
   const [loadingTickets, setLoadingTickets] = useState(true)
@@ -126,21 +128,24 @@ export default function DashboardPage() {
     const allowedRestricted = !!currentUser && ['admin', 'onboarder', 'support'].includes(currentUser.role)
     setCanAccessRestricted(allowedRestricted)
 
+    const read = async (url: string) => { const response = await fetch(url, { cache: 'no-store' }); if (!response.ok) throw new Error('Source indisponible'); return response.json() }
     const requests = [
-      fetch('/api/zoho/tickets').then(r => r.json()),
-      fetch('/api/linear/issues').then(r => r.json()),
-      allowedRestricted ? fetch('/api/acuity/sessions?period=upcoming').then(r => r.json()) : Promise.resolve({ sessions: [] }),
-      allowedRestricted ? fetch('/api/zoho/projects').then(r => r.json()) : Promise.resolve({ projects: [] }),
+      read('/api/zoho/tickets'),
+      read('/api/dashboard/bugs'),
+      allowedRestricted ? read('/api/acuity/sessions?period=upcoming') : Promise.resolve({ sessions: [] }),
+      allowedRestricted ? read('/api/zoho/projects') : Promise.resolve({ projects: [] }),
       fetch('/api/support/cockpit', { cache: 'no-store' }).then(r => r.ok ? r.json() : null),
     ] as const
 
     const [ticketsRes, escalationsRes, sessionsRes, projectsRes, cockpitRes] = await Promise.allSettled(requests)
+    setTicketsAvailable(ticketsRes.status === 'fulfilled' && Array.isArray(ticketsRes.value.tickets))
+    setProjectsAvailable(allowedRestricted && projectsRes.status === 'fulfilled' && Array.isArray(projectsRes.value.projects))
     if (ticketsRes.status === 'fulfilled') setTickets(ticketsRes.value.tickets ?? [])
     setLoadingTickets(false)
-    if (escalationsRes.status === 'fulfilled') setEscalations(escalationsRes.value.issues ?? [])
+    setBugSummary(escalationsRes.status === 'fulfilled' ? escalationsRes.value : null)
     if (sessionsRes.status === 'fulfilled') setSessions(sessionsRes.value.sessions ?? [])
     if (projectsRes.status === 'fulfilled') setProjects((projectsRes.value.projects ?? []).map(normalizeOnboardingProjectOwner))
-    if (cockpitRes.status === 'fulfilled') setCockpit(cockpitRes.value)
+    setCockpit(cockpitRes.status === 'fulfilled' ? cockpitRes.value : null)
     setLoadingCockpit(false)
     setLoadingOther(false)
   }, [])
@@ -187,10 +192,6 @@ export default function DashboardPage() {
   }, [])
 
   const highRisk = useMemo(() => tickets.filter(t => (t.riskScore ?? 0) >= 60), [tickets])
-  const openBugs = useMemo(() => escalations.filter(e => e.status !== 'resolved'), [escalations])
-  const toQualify = useMemo(() => escalations.filter(e => e.status === 'to_qualify'), [escalations])
-  const urgentBugs = useMemo(() => openBugs.filter(e => e.priority === 1), [openBugs])
-  const resolvedBugs = useMemo(() => escalations.filter(e => e.status === 'resolved'), [escalations])
 
   const todaySessions = useMemo(() => sessions.filter(s => isToday(s.datetime)), [sessions])
   const upcomingSessions = useMemo(() =>
@@ -214,10 +215,7 @@ export default function DashboardPage() {
     () => buildRecentActivityTrend(highRisk, ticket => ticket.createdAt),
     [highRisk],
   )
-  const openBugsTrend = useMemo(
-    () => buildRecentActivityTrend(openBugs, issue => issue.createdAt),
-    [openBugs],
-  )
+  const openBugsTrend = bugSummary?.trend ?? []
   const blockedProjectsTrend = useMemo(
     () => buildRecentActivityTrend(blockedProjects, project => project.startDate ?? project.endDate),
     [blockedProjects],
@@ -256,32 +254,32 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {[
             {
-              label: 'Délai de 1ère réponse dépassé', value: cockpit?.overdue_count ?? 0,
+              label: 'Délai de 1ère réponse dépassé', value: cockpit?.overdue_count ?? null,
               sub: 'seuil individuel · 6h / 24h / 24h / 48h ouvrées',
               href: '/tickets',
               loading: loadingCockpit, severity: 'critical' as const,
               trend: overdueTrend, trendColor: '#b7221b',
             },
             {
-              label: 'Tickets à risque', value: highRisk.length,
+              label: 'Tickets à risque', value: ticketsAvailable ? highRisk.length : null,
               sub: 'score ≥ 60', href: '/tickets',
               loading: loadingTickets, severity: 'warning' as const,
               trend: highRiskTrend, trendColor: '#903b07',
             },
             {
-              label: 'Bugs ouverts', value: openBugs.length,
-              sub: toQualify.length > 0 ? `dont ${toQualify.length} à qualifier` : 'aucune à qualifier',
+              label: 'Bugs ouverts', value: bugSummary?.open ?? null,
+              sub: bugSummary ? `${bugSummary.to_qualify} en backlog · annulations exclues` : 'Source Linear indisponible',
               href: '/escalations', loading: loadingOther, severity: 'warning' as const,
               trend: openBugsTrend, trendColor: '#59319f',
             },
             {
-              label: 'Onboarding bloqués', value: blockedProjects.length,
+              label: 'Onboarding bloqués', value: projectsAvailable ? blockedProjects.length : null,
               sub: 'projets en attente déblocage', href: '/onboarding/board',
               loading: loadingOther, severity: 'warning' as const,
               trend: blockedProjectsTrend, trendColor: '#2b5bb7',
             },
           ].map(({ label, value, sub, href, loading, severity, trend, trendColor }) => {
-            const isAlert = value > 0
+            const isAlert = value !== null && value > 0
             const spinColor = severity === 'critical' ? 'border-t-[#b7221b]' : 'border-t-[#903b07]'
             const valColor = !isAlert ? 'text-[#1c6437]' : severity === 'critical' ? 'text-[#b7221b]' : 'text-[#903b07]'
             const borderColor = !isAlert ? 'border-[#e2e2e2]' : severity === 'critical' ? 'border-[#fca5a5]' : 'border-[#fdba74]'
@@ -291,14 +289,14 @@ export default function DashboardPage() {
                 <p className="text-xs font-semibold text-[#696969] uppercase tracking-wide">{label}</p>
                 {loading
                   ? <div className="mt-2"><Spinner color={spinColor} /></div>
-                  : <p className={`text-3xl font-bold tabular-nums mt-1.5 ${valColor}`}>{value}</p>
+                  : <p className={`text-3xl font-bold tabular-nums mt-1.5 ${valColor}`}>{value ?? '—'}</p>
                 }
-                <p className="text-xs text-[#696969] mt-1">{sub}</p>
+                <p className="text-xs text-[#696969] mt-1">{value === null ? 'Donnée indisponible ou accès non autorisé' : sub}</p>
                 <div className="mt-3 border-t border-black/5 pt-2">
                   <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-[#8a8a8a]">Activité récente · 30 jours</p>
                   {loading ? (
                     <div className="h-8 w-full animate-pulse rounded bg-black/5" />
-                  ) : (
+                  ) : value === null ? <p className="text-xs text-[#696969]">—</p> : (
                     <Sparkline
                       color={trendColor}
                       label={`Activité récente sur 30 jours pour ${label}, valeur actuelle ${value}`}
@@ -352,20 +350,20 @@ export default function DashboardPage() {
                 <div className="px-2 py-4 text-center">
                   <div className="grid grid-cols-3 divide-x divide-[#f0f0f0]">
                     <div className="px-2">
-                      <p className="text-2xl font-bold tabular-nums text-[#59319f]">{openBugs.length}</p>
+                      <p className="text-2xl font-bold tabular-nums text-[#59319f]">{bugSummary?.open ?? '—'}</p>
                       <p className="mt-1 text-[11px] text-[#696969]">ouverts</p>
                     </div>
                     <div className="px-2">
-                      <p className="text-2xl font-bold tabular-nums text-[#903b07]">{toQualify.length}</p>
-                      <p className="mt-1 text-[11px] text-[#696969]">à qualifier</p>
+                      <p className="text-2xl font-bold tabular-nums text-[#903b07]">{bugSummary?.to_qualify ?? '—'}</p>
+                      <p className="mt-1 text-[11px] text-[#696969]">en backlog</p>
                     </div>
                     <div className="px-2">
-                      <p className="text-2xl font-bold tabular-nums text-[#b7221b]">{urgentBugs.length}</p>
+                      <p className="text-2xl font-bold tabular-nums text-[#b7221b]">{bugSummary?.urgent ?? '—'}</p>
                       <p className="mt-1 text-[11px] text-[#696969]">urgents</p>
                     </div>
                   </div>
                   <p className="mt-3 border-t border-[#f0f0f0] pt-3 text-[11px] text-[#878787]">
-                    {resolvedBugs.length} résolus dans la source synchronisée
+                    {bugSummary?.resolved ?? '—'} résolus dans la source synchronisée
                   </p>
                 </div>
               )}
