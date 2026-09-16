@@ -24,7 +24,7 @@ interface Integration {
 }
 
 const INTEGRATIONS: Integration[] = [
-  { key: 'zohoDeskConfigured',     name: 'Zoho Desk',          type: 'OAuth2',         description: 'Tickets support, conversations, réponses', scope: 'ZohoDesk.tickets.READ · ZohoDesk.tickets.UPDATE · ZohoDesk.tickets.CREATE', envVars: ['ZOHO_REFRESH_TOKEN', 'ZOHO_CLIENT_ID', 'ZOHO_CLIENT_SECRET'] },
+  { key: 'zohoDeskConfigured',     name: 'Zoho Desk',          type: 'OAuth2',         description: 'Tickets support et gestion complète de la base de connaissances', scope: 'Desk.tickets.ALL · Desk.articles.READ/CREATE/UPDATE/DELETE · scopes Desk complets', envVars: ['ZOHO_REFRESH_TOKEN', 'ZOHO_CLIENT_ID', 'ZOHO_CLIENT_SECRET'] },
   { key: 'zohoCrmConfigured',      name: 'Zoho CRM',           type: 'OAuth2',         description: 'Comptes clients, segments MRR (lecture seule)', scope: 'ZohoCRM.modules.READ', envVars: ['ZOHO_CRM_REFRESH_TOKEN'] },
   { key: 'zohoProjectsConfigured', name: 'Zoho Projects',      type: 'OAuth2',         description: 'Projets onboarding, statuts, avancement', scope: 'ZohoProjects.portals.READ', envVars: ['ZOHO_PROJECTS_REFRESH_TOKEN'] },
   { key: 'zohoFormsConfigured',    name: 'Zoho Forms',         type: 'OAuth2',         description: 'Formulaires de satisfaction client', scope: 'ZohoForms.form.READ (partage le token Zoho Desk)', envVars: ['ZOHO_FORMS_SATISFACTION_FORM'] },

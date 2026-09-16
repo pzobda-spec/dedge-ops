@@ -55,7 +55,15 @@ const navItems: NavItem[] = [
       { href: '/csm/plan-charge', label: 'Plan de charge' },
     ],
   },
-  { href: '/knowledge', label: 'Knowledge Base', roles: ['admin', 'support'], hidden: true },
+  {
+    href: '/knowledge',
+    label: 'KB',
+    roles: ['admin', 'support'],
+    children: [
+      { href: '/knowledge/zoho', label: 'Générer un article' },
+      { href: '/knowledge', label: 'Fiches internes' },
+    ],
+  },
   { href: '/reporting', label: 'Reporting', roles: ['admin', 'support'] },
   { href: '/assistant', label: 'Assistant IA', roles: ['admin', 'support'], hidden: true },
   { href: '/settings', label: 'Paramètres', roles: ['admin', 'onboarder', 'support', 'commercial_readonly', 'csm_lead'] },

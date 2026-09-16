@@ -9,7 +9,7 @@ const getAccessToken = createZohoTokenProvider({
   accessTokenEnv: 'ZOHO_ACCESS_TOKEN',
 })
 
-async function zohoFetch<T>(path: string, options: RequestInit = {}, retry = true): Promise<T> {
+export async function zohoFetch<T>(path: string, options: RequestInit = {}, retry = true): Promise<T> {
   const token = await getAccessToken()
 
   const res = await fetch(`${ZOHO_DESK_BASE_URL}${path}`, {
