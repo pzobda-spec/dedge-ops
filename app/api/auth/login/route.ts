@@ -2,17 +2,11 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/server'
-
-function safeNextPath(value: unknown): string | null {
-  return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') ? value : null
-}
+import { isRole } from '@/lib/auth/roles'
+import { safeNextPath, authCallbackUrl } from '@/lib/auth/paths'
 
 function getCallbackUrl(request: NextRequest, next: string | null): string {
-  const host = request.headers.get('host') ?? ''
-  const base = host.startsWith('localhost') || host.startsWith('127.')
-    ? `http://${host}/auth/callback`
-    : 'https://dedge-ops-6zer.vercel.app/auth/callback'
-  const callback = new URL(base)
+  const callback = new URL(authCallbackUrl(request.nextUrl.origin))
   if (next) callback.searchParams.set('next', next)
   return callback.toString()
 }
@@ -40,88 +34,54 @@ async function sendOtp(email: string, callbackUrl: string, shouldCreateUser: boo
   return error
 }
 
-function isAccessRequestsMissing(error: { message?: string; code?: string }): boolean {
-  return error.code === '42P01' || /access_requests/i.test(error.message ?? '')
-}
-
-function isEmergencyAllowed(email: string): boolean {
-  const configured = (process.env.AUTH_ALLOWED_EMAILS ?? '')
-    .split(',')
-    .map(e => e.trim().toLowerCase())
-    .filter(Boolean)
-
-  return new Set([...configured, 'grohaut@d-edge.com']).has(email)
-}
-
 export async function POST(request: NextRequest) {
-  const body = await request.json()
-  const email: string = (body.email ?? '').trim().toLowerCase()
-  const next = safeNextPath(body.next)
-
-  if (!email) {
-    return NextResponse.json({ status: 'error', error: 'Email requis' }, { status: 400 })
-  }
-
-  const callbackUrl = getCallbackUrl(request, next)
-  console.log('[auth/login] email:', email, '| callback:', callbackUrl)
-
-  // Admin email bypass — always allowed, creates account if needed
-  const adminEmail = (process.env.ADMIN_EMAIL ?? '').trim().toLowerCase()
-  if (adminEmail && email === adminEmail) {
-    console.log('[auth/login] admin bypass → sending OTP')
-    const error = await sendOtp(email, callbackUrl, true)
-    if (error) {
-      console.error('[auth/login] OTP error (admin):', error.message)
-      return NextResponse.json({ status: 'error', error: error.message }, { status: 500 })
+  try {
+    const body = await request.json().catch(() => ({}))
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+      return NextResponse.json({ status: 'error', error: 'Email invalide' }, { status: 400 })
     }
-    return NextResponse.json({ status: 'sent' })
-  }
-
-  // Check existing request
-  const { data: existing, error: dbError } = await supabaseAdmin
-    .from('access_requests')
-    .select('status')
-    .eq('email', email)
-    .maybeSingle()
-
-  if (dbError) {
-    console.error('[auth/login] DB error:', dbError.message)
-    if (isAccessRequestsMissing(dbError) && isEmergencyAllowed(email)) {
-      console.log('[auth/login] access_requests missing; allowed email fallback → sending OTP')
-      const error = await sendOtp(email, callbackUrl, true)
-      if (error) {
-        console.error('[auth/login] OTP error (fallback):', error.message)
-        return NextResponse.json({ status: 'error', error: error.message }, { status: 500 })
+    const { data: profile, error: profileError } = await supabaseAdmin.from('users')
+      .select('role,active').eq('email', email).maybeSingle()
+    if (profileError) throw new Error(profileError.message)
+    // Application access is the source of truth, including direct admin invitations.
+    if (profile) {
+      if (!profile.active || !isRole(profile.role)) {
+        return NextResponse.json({ status: 'error', error: 'Compte désactivé. Contactez votre administrateur.' }, { status: 403 })
       }
+      const error = await sendOtp(email, getCallbackUrl(request, safeNextPath(body.next)), false)
+      if (error) throw new Error(error.message)
       return NextResponse.json({ status: 'sent' })
     }
-    return NextResponse.json({ status: 'error', error: 'Erreur base de données: ' + dbError.message }, { status: 500 })
-  }
 
-  if (existing?.status === 'approved') {
-    console.log('[auth/login] approved user → sending OTP')
-    const error = await sendOtp(email, callbackUrl, false)
-    if (error) {
-      console.error('[auth/login] OTP error:', error.message)
-      return NextResponse.json({ status: 'error', error: error.message }, { status: 500 })
+    const { data: existing, error: dbError } = await supabaseAdmin.from('access_requests')
+      .select('status').eq('email', email).maybeSingle()
+    if (dbError) throw new Error(dbError.message)
+    if (existing?.status === 'approved') {
+      return NextResponse.json({ status: 'error', error: 'Votre demande est approuvée, mais votre profil doit être finalisé par un administrateur.' }, { status: 409 })
     }
-    return NextResponse.json({ status: 'sent' })
-  }
-
-  if (existing?.status === 'pending') {
-    console.log('[auth/login] already pending')
+    if (existing?.status === 'pending') return NextResponse.json({ status: 'pending' })
+    if (existing?.status === 'rejected') {
+      return NextResponse.json({ status: 'error', error: 'Votre demande a été refusée. Contactez votre administrateur.' }, { status: 403 })
+    }
+    if (!/^[^\s@]+@d-edge\.com$/.test(email)) {
+      return NextResponse.json({ status: 'error', error: 'Les demandes d’accès sont réservées aux adresses @d-edge.com.' }, { status: 400 })
+    }
+    if (body.intent !== 'request') return NextResponse.json({ status: 'details_required' })
+    const fullName = typeof body.full_name === 'string' ? body.full_name.trim() : ''
+    if (!fullName || fullName.length > 200 || !isRole(body.requested_role)) {
+      return NextResponse.json({ status: 'error', error: 'Nom complet et niveau d’accès souhaité requis.' }, { status: 400 })
+    }
+    const { error: insertError } = await supabaseAdmin.from('access_requests').insert({
+      email, full_name: fullName, requested_role: body.requested_role, status: 'pending',
+    })
+    if (insertError) {
+      if (insertError.code === '23505') return NextResponse.json({ status: 'pending' })
+      throw new Error(insertError.message)
+    }
     return NextResponse.json({ status: 'pending' })
+  } catch (error) {
+    console.error('[auth/login]', error instanceof Error ? error.message : error)
+    return NextResponse.json({ status: 'error', error: 'Connexion indisponible pour le moment. Réessayez dans quelques instants.' }, { status: 500 })
   }
-
-  // New request
-  console.log('[auth/login] new access request for:', email)
-  const { error: insertError } = await supabaseAdmin
-    .from('access_requests')
-    .insert({ email })
-
-  if (insertError) {
-    console.error('[auth/login] insert error:', insertError.message)
-  }
-
-  return NextResponse.json({ status: 'pending' })
 }

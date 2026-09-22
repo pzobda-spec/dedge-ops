@@ -18,6 +18,9 @@ interface AccessRequest {
   email: string
   requested_at: string
   status: string
+  full_name: string | null
+  requested_role: Role | null
+  approved_role: Role | null
 }
 
 const roles: Role[] = ['admin', 'onboarder', 'support', 'commercial_readonly', 'csm_lead']
@@ -48,11 +51,13 @@ function formatDate(value: string | null): string {
 const inputCls = 'mt-1 w-full rounded-lg border border-[#e2e2e2] px-3 py-2 text-sm text-[#1a1a1a] focus:outline-none focus:ring-2 focus:ring-[#3b72d1]'
 const labelCls = 'text-xs font-semibold text-[#696969] uppercase tracking-wide'
 
-function AccessRequests() {
+function AccessRequests({ onChanged, users }: { onChanged: () => Promise<void>; users: AdminUser[] }) {
   const [requests, setRequests] = useState<AccessRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [acting, setActing] = useState<string | null>(null)
+  const [selectedRoles, setSelectedRoles] = useState<Record<string, Role>>({})
+  const [notice, setNotice] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -74,24 +79,34 @@ function AccessRequests() {
 
   async function handleAction(email: string, action: 'approve' | 'reject') {
     setActing(email)
-    await fetch('/api/auth/approve', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, action }),
-    })
-    await load()
-    setActing(null)
+    setError(null)
+    setNotice(null)
+    try {
+      const accessRequest = requests.find(r => r.email === email)
+      const role = selectedRoles[email] ?? accessRequest?.requested_role
+      const res = await fetch('/api/auth/approve', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, action, role }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
+      setNotice(data.warning ?? (action === 'approve' ? 'Compte actif créé. Un lien de connexion a été envoyé.' : 'Demande refusée.'))
+      await Promise.all([load(), onChanged()])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Opération impossible.')
+    } finally { setActing(null) }
   }
 
   const pending = requests.filter(r => r.status === 'pending')
   const others = requests.filter(r => r.status !== 'pending')
 
   if (loading) return <p className="text-sm text-[#696969]">Chargement…</p>
-  if (error) return <p className="text-sm text-[#b7221b]">Impossible de charger les demandes d&apos;accès : {error}</p>
-  if (requests.length === 0) return <p className="text-sm text-[#696969] italic">Aucune demande d&apos;accès.</p>
+  if (requests.length === 0) return <p className="text-sm text-[#696969]">{error ?? 'Aucune demande d’accès.'}</p>
 
   return (
     <div className="space-y-3">
+      {error && <p role="alert" className="text-sm text-[#b7221b]">{error}</p>}
+      {notice && <p role="status" className="text-sm text-[#696969]">{notice}</p>}
       {pending.length > 0 && (
         <div className="space-y-2">
           <p className="text-xs font-semibold text-[#84550e] uppercase tracking-wide">En attente</p>
@@ -99,19 +114,25 @@ function AccessRequests() {
             <div key={r.id} className="bg-white rounded-xl border border-[#fbf1ca] p-4 flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm font-medium text-[#1a1a1a]">{r.email}</p>
+                <p className="text-sm text-[#4a4a4a]">{r.full_name ?? 'Nom non renseigné (ancienne demande)'}</p>
+                <p className="text-xs text-[#696969]">Niveau souhaité : {r.requested_role ? roleLabels[r.requested_role] : 'Non renseigné'}</p>
                 <p className="text-xs text-[#696969] mt-0.5">{formatDate(r.requested_at)}</p>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
+                <select aria-label={`Rôle à attribuer à ${r.email}`} value={selectedRoles[r.email] ?? r.requested_role ?? ''} onChange={e => setSelectedRoles(prev => ({ ...prev, [r.email]: e.target.value as Role }))} className="rounded-lg border px-2 py-1.5 text-xs">
+                  <option value="" disabled>Choisir le rôle</option>
+                  {roles.map(role => <option key={role} value={role}>{roleLabels[role]}</option>)}
+                </select>
                 <button
                   onClick={() => handleAction(r.email, 'approve')}
-                  disabled={acting === r.email}
+                  disabled={acting !== null || !(selectedRoles[r.email] ?? r.requested_role)}
                   className="px-3 py-1.5 bg-[#1c6437] text-white text-xs font-medium rounded-lg hover:bg-[#166534] disabled:opacity-50 transition-colors"
                 >
                   {acting === r.email ? '…' : 'Approuver'}
                 </button>
                 <button
                   onClick={() => handleAction(r.email, 'reject')}
-                  disabled={acting === r.email}
+                  disabled={acting !== null}
                   className="px-3 py-1.5 bg-[#f7f7f7] text-[#696969] text-xs font-medium rounded-lg hover:bg-[#e2e2e2] disabled:opacity-50 transition-colors"
                 >
                   Refuser
@@ -127,12 +148,19 @@ function AccessRequests() {
           {others.map(r => (
             <div key={r.id} className="bg-white rounded-xl border border-[#e2e2e2] p-4 flex items-center justify-between gap-4 opacity-70">
               <p className="text-sm text-[#4a4a4a]">{r.email}</p>
+              {r.status === 'approved' && !users.some(user => user.email === r.email) && <div className="flex gap-2 items-center">
+                <select aria-label={`Rôle pour réparer ${r.email}`} value={selectedRoles[r.email] ?? ''} onChange={e => setSelectedRoles(prev => ({ ...prev, [r.email]: e.target.value as Role }))} className="rounded border p-1 text-xs">
+                  <option value="" disabled>Choisir le rôle</option>
+                  {roles.map(role => <option key={role} value={role}>{roleLabels[role]}</option>)}
+                </select>
+                <button disabled={acting !== null || !selectedRoles[r.email]} onClick={() => handleAction(r.email, 'approve')} className="text-xs underline disabled:opacity-50">Finaliser le compte</button>
+              </div>}
               <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                 r.status === 'approved'
                   ? 'bg-[#cff7dc] text-[#1c6437]'
                   : 'bg-[#e2e2e2] text-[#696969]'
               }`}>
-                {r.status === 'approved' ? 'Approuvé' : 'Refusé'}
+                {r.status === 'approved' ? `Approuvé${r.approved_role ? ` · ${roleLabels[r.approved_role]}` : ''}` : 'Refusé'}
               </span>
             </div>
           ))}
@@ -200,7 +228,7 @@ export default function AdminUsersPage() {
 
         <div className="mb-8">
           <p className="text-xs font-bold text-[#696969] uppercase tracking-wide mb-4">Demandes d&apos;accès</p>
-          <AccessRequests />
+          <AccessRequests onChanged={loadUsers} users={users} />
         </div>
 
         {loading ? (
@@ -259,7 +287,7 @@ export default function AdminUsersPage() {
       {inviteOpen && (
         <InviteModal
           onClose={() => setInviteOpen(false)}
-          onSuccess={(email) => { setInviteOpen(false); setMessage(`Invitation envoyée à ${email}`); loadUsers() }}
+          onSuccess={(email, warning) => { setInviteOpen(false); setMessage(warning ?? `Accès créé et lien envoyé à ${email}`); loadUsers() }}
           onError={setError}
         />
       )}
@@ -300,7 +328,7 @@ function RoleSelect({ value, onChange }: { value: Role; onChange: (role: Role) =
   )
 }
 
-function InviteModal({ onClose, onSuccess, onError }: { onClose: () => void; onSuccess: (email: string) => void; onError: (error: string) => void }) {
+function InviteModal({ onClose, onSuccess, onError }: { onClose: () => void; onSuccess: (email: string, warning?: string) => void; onError: (error: string) => void }) {
   const [email, setEmail] = useState('')
   const [fullName, setFullName] = useState('')
   const [role, setRole] = useState<Role>('onboarder')
@@ -316,7 +344,7 @@ function InviteModal({ onClose, onSuccess, onError }: { onClose: () => void; onS
     const data = await res.json().catch(() => ({}))
     setSaving(false)
     if (!res.ok) { onError(data.error ?? `HTTP ${res.status}`); return }
-    onSuccess(email)
+    onSuccess(email, data.warning)
   }
 
   return (
@@ -326,7 +354,7 @@ function InviteModal({ onClose, onSuccess, onError }: { onClose: () => void; onS
       <RoleSelect value={role} onChange={setRole} />
       <div className="flex justify-end gap-2">
         <button onClick={onClose} className="px-3 py-2 rounded-lg text-sm text-[#696969] hover:bg-[#f7f7f7] transition-colors">Annuler</button>
-        <button onClick={submit} disabled={saving || !email} className="px-3 py-2 rounded-lg bg-[#59319f] text-white text-sm font-medium hover:bg-[#3f2175] disabled:opacity-50 transition-colors">
+        <button onClick={submit} disabled={saving || !email || !fullName.trim()} className="px-3 py-2 rounded-lg bg-[#59319f] text-white text-sm font-medium hover:bg-[#3f2175] disabled:opacity-50 transition-colors">
           {saving ? 'Invitation…' : "Envoyer l'invitation"}
         </button>
       </div>

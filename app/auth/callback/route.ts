@@ -1,10 +1,8 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
-
-function safeNextPath(value: string | null): string {
-  return value?.startsWith('/') && !value.startsWith('//') ? value : '/dashboard'
-}
+import { safeNextPath } from '@/lib/auth/paths'
+import { finishSignIn } from '@/lib/auth/finish'
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -32,20 +30,19 @@ export async function GET(request: NextRequest) {
     const { data, error } = await supabase.auth.exchangeCodeForSession(code)
     if (!error) {
       const email = data.user?.email?.trim().toLowerCase()
-      if (email) {
-        const { supabaseAdmin } = await import('@/lib/supabase/server')
-        await supabaseAdmin
-          .from('users')
-          .update({
-            active: true,
-            last_login_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('email', email)
+      try {
+        const destination = email ? await finishSignIn(email, next) : '/login?error=1'
+        return NextResponse.redirect(new URL(destination, request.url))
+      } catch {
+        return NextResponse.redirect(new URL('/forbidden', request.url))
       }
-      return NextResponse.redirect(new URL(next, request.url))
     }
   }
 
-  return NextResponse.redirect(new URL('/login?error=1', request.url))
+  if (code || searchParams.has('error')) return NextResponse.redirect(new URL('/login?error=1', request.url))
+  // Invitation / admin-issued links return tokens in the URL fragment. Browsers
+  // carry that fragment through the redirect; it cannot be read on the server.
+  const complete = new URL('/auth/complete', request.url)
+  if (next) complete.searchParams.set('next', next)
+  return NextResponse.redirect(complete)
 }

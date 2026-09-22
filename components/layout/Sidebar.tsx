@@ -23,8 +23,8 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   // Point d'entrée de la journée : liste de décisions, placée avant les vues
-  // d'état. Ouverte à tous les rôles, elle croise implémentation, support et CSM.
-  { href: '/a-traiter', label: 'À traiter', roles: ['admin', 'support', 'onboarder', 'commercial_readonly', 'csm_lead'] },
+  // d'état. Vue transverse, non limitée aux projets de l'onboarder connecté.
+  { href: '/a-traiter', label: 'À traiter', roles: ['admin', 'support', 'commercial_readonly', 'csm_lead'] },
   { href: '/dashboard', label: 'Tableau de bord', roles: ['admin', 'support'] },
   { href: '/tickets', label: 'Tickets', roles: ['admin', 'support'] },
   { href: '/escalations', label: 'Bugs', roles: ['admin', 'support'] },
@@ -66,7 +66,7 @@ const navItems: NavItem[] = [
   },
   { href: '/reporting', label: 'Reporting', roles: ['admin', 'support'] },
   { href: '/assistant', label: 'Assistant IA', roles: ['admin', 'support'], hidden: true },
-  { href: '/settings', label: 'Paramètres', roles: ['admin', 'onboarder', 'support', 'commercial_readonly', 'csm_lead'] },
+  { href: '/settings', label: 'Paramètres', roles: ['admin', 'support', 'commercial_readonly', 'csm_lead'] },
   {
     href: '/admin/users',
     label: 'Administration',
@@ -102,7 +102,7 @@ export default function Sidebar({ mobileOpen = false, onNavigate }: { mobileOpen
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
     await supabase.auth.signOut()
-    sessionStorage.removeItem('dedge-current-user')
+    sessionStorage.removeItem('dedge-current-user-v2')
     router.push('/login')
   }
 

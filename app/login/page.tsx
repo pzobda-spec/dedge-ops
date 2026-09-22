@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import type { Role } from '@/lib/auth/roles'
 
 type State = 'idle' | 'loading' | 'sent' | 'pending' | 'error'
 
@@ -8,6 +9,17 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [state, setState] = useState<State>('idle')
   const [errorMsg, setErrorMsg] = useState('')
+  const [requesting, setRequesting] = useState(false)
+  const [fullName, setFullName] = useState('')
+  const [requestedRole, setRequestedRole] = useState<Role>('onboarder')
+
+  useEffect(() => {
+    sessionStorage.removeItem('dedge-current-user-v2')
+    if (new URLSearchParams(window.location.search).has('error')) {
+      setState('error')
+      setErrorMsg('Le lien est invalide ou a expiré. Demandez un nouveau lien de connexion.')
+    }
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -17,10 +29,11 @@ export default function LoginPage() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, next: new URLSearchParams(window.location.search).get('next') }),
+        body: JSON.stringify({ email, intent: requesting ? 'request' : 'login', full_name: fullName, requested_role: requestedRole, next: new URLSearchParams(window.location.search).get('next') }),
       })
       const data = await res.json()
       if (data.status === 'sent') setState('sent')
+      else if (data.status === 'details_required') { setRequesting(true); setState('idle') }
       else if (data.status === 'pending') setState('pending')
       else { setState('error'); setErrorMsg(data.error ?? 'Erreur inconnue') }
     } catch {
@@ -72,19 +85,36 @@ export default function LoginPage() {
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-[#696969] mb-1.5 uppercase tracking-wide">
+                <label htmlFor="email" className="block text-xs font-semibold text-[#696969] mb-1.5 uppercase tracking-wide">
                   Adresse email
                 </label>
                 <input
+                  id="email"
                   type="email"
                   value={email}
-                  onChange={e => setEmail(e.target.value)}
+                  onChange={e => { setEmail(e.target.value); setRequesting(false) }}
                   placeholder="prenom.nom@d-edge.com"
                   required
                   autoFocus
                   className="w-full border border-[#e2e2e2] rounded-lg px-3 py-2.5 text-sm text-[#1a1a1a] placeholder:text-[#b0b0b0] focus:outline-none focus:ring-2 focus:ring-[#3b72d1] focus:border-transparent transition-shadow"
                 />
               </div>
+
+              {requesting && <>
+                <p className="text-sm text-[#696969]">Demandez un accès au cockpit. Un administrateur validera ou ajustera le niveau souhaité.</p>
+                <label className="block text-sm">Nom complet
+                  <input value={fullName} onChange={e => setFullName(e.target.value)} autoComplete="name" required maxLength={200} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" />
+                </label>
+                <label className="block text-sm">Niveau d’accès souhaité
+                  <select value={requestedRole} onChange={e => setRequestedRole(e.target.value as Role)} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm">
+                    <option value="onboarder">Onboarder</option>
+                    <option value="support">Support</option>
+                    <option value="commercial_readonly">Commercial — lecture seule</option>
+                    <option value="csm_lead">Team lead CSM</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </label>
+              </>}
 
               {state === 'error' && (
                 <p className="text-xs text-[#b7221b] bg-[#fee3e2] border border-[#fca5a5] rounded-lg px-3 py-2">
@@ -102,7 +132,7 @@ export default function LoginPage() {
                     <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     Vérification…
                   </span>
-                ) : 'Continuer'}
+                ) : requesting ? 'Envoyer ma demande d’accès' : 'Continuer'}
               </button>
 
               <p className="text-center text-xs text-[#696969]">

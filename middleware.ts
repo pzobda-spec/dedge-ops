@@ -2,11 +2,16 @@ import { createServerClient } from '@supabase/ssr'
 import { NextRequest, NextResponse } from 'next/server'
 import { isHardcodedAccessEmail } from '@/lib/auth/access'
 import type { Role } from '@/lib/auth/roles'
+import { homePathForRole } from '@/lib/auth/paths'
 
 // ─── Route restrictions ────────────────────────────────────────────────────────
 // Each entry: if the request path matches a prefix, only the listed roles may access it.
 
 const RESTRICTED_ROUTES: Array<{ prefixes: string[]; roles: Role[] }> = [
+  {
+    prefixes: ['/settings'],
+    roles: ['admin', 'support', 'commercial_readonly', 'csm_lead'],
+  },
   // Admin surfaces must be matched before their broader read scopes.
   {
     prefixes: ['/admin', '/api/admin'],
@@ -30,11 +35,13 @@ const RESTRICTED_ROUTES: Array<{ prefixes: string[]; roles: Role[] }> = [
     ],
     roles: ['admin', 'support'],
   },
-  // Vue « À traiter cette semaine » : elle croise implémentation, support et
-  // CSM, elle est donc ouverte à tous les rôles applicatifs. Le périmètre des
-  // données reste porté par la route elle-même.
+  // This cross-team view is not scoped to an onboarder's own projects.
   {
-    prefixes: ['/a-traiter', '/api/onboarding/weekly-exceptions', '/api/onboarding/workload-snapshots'],
+    prefixes: ['/a-traiter', '/api/onboarding/weekly-exceptions'],
+    roles: ['admin', 'support', 'commercial_readonly', 'csm_lead'],
+  },
+  {
+    prefixes: ['/api/onboarding/workload-snapshots'],
     roles: ['admin', 'support', 'onboarder', 'commercial_readonly', 'csm_lead'],
   },
   // Onboarding scope: admin + onboarder + commercial_readonly + csm_lead.
@@ -123,12 +130,6 @@ async function getMiddlewareUser(email: string): Promise<MiddlewareUser | null> 
   }
 }
 
-function homePathForRole(role: Role | null): string {
-  if (role === 'csm_lead') return '/csm/pilotage'
-  if (role === 'onboarder' || role === 'commercial_readonly') return '/onboarding'
-  return '/dashboard'
-}
-
 // ─── Middleware ────────────────────────────────────────────────────────────────
 
 export async function middleware(request: NextRequest) {
@@ -186,12 +187,17 @@ export async function middleware(request: NextRequest) {
   }
 
   const isPublic = path.startsWith('/login')
+  const redirectWithCookies = (url: URL) => {
+    const response = NextResponse.redirect(url)
+    supabaseResponse.cookies.getAll().forEach(cookie => response.cookies.set(cookie))
+    return response
+  }
 
   // Not authenticated → redirect to login
   if (!userEmail && !isPublic) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
-    return NextResponse.redirect(url)
+    return redirectWithCookies(url)
   }
 
   // Authenticated on root or login → redirect to role-appropriate home
@@ -199,8 +205,9 @@ export async function middleware(request: NextRequest) {
     const appUser = isHardcodedAccessEmail(userEmail) ? null : await getMiddlewareUser(userEmail)
     const role = appUser?.role ?? (isHardcodedAccessEmail(userEmail) ? 'admin' : null)
     const url = request.nextUrl.clone()
-    url.pathname = homePathForRole(role)
-    return NextResponse.redirect(url)
+    url.pathname = !isHardcodedAccessEmail(userEmail) && (!appUser || !appUser.active)
+      ? '/forbidden' : homePathForRole(role)
+    return redirectWithCookies(url)
   }
 
   // Role-based access control on restricted routes
@@ -215,8 +222,8 @@ export async function middleware(request: NextRequest) {
           return NextResponse.json({ error: 'Utilisateur non autorisé' }, { status: 403 })
         }
         const url = request.nextUrl.clone()
-        url.pathname = '/login'
-        return NextResponse.redirect(url)
+        url.pathname = '/forbidden'
+        return redirectWithCookies(url)
       }
 
       if (appUser && !appUser.active) {
@@ -225,7 +232,7 @@ export async function middleware(request: NextRequest) {
         }
         const url = request.nextUrl.clone()
         url.pathname = '/forbidden'
-        return NextResponse.redirect(url)
+        return redirectWithCookies(url)
       }
 
       const role = appUser?.role ?? 'admin'
@@ -235,7 +242,7 @@ export async function middleware(request: NextRequest) {
         }
         const url = request.nextUrl.clone()
         url.pathname = homePathForRole(role)
-        return NextResponse.redirect(url)
+        return redirectWithCookies(url)
       }
     }
   }

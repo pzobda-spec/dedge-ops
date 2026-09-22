@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
   try {
-    await requireRole(req, ['admin', 'onboarder', 'support', 'commercial_readonly', 'csm_lead'])
+    await requireRole(req, ['admin', 'support', 'commercial_readonly', 'csm_lead'])
 
     const sources = await loadPlanChargeSources()
     const referenceDate = planChargeReferenceDate()

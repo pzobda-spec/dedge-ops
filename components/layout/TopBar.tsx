@@ -50,7 +50,7 @@ export default function TopBar({ title, subtitle, onMenuClick }: TopBarProps) {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
     await supabase.auth.signOut()
-    sessionStorage.removeItem('dedge-current-user')
+    sessionStorage.removeItem('dedge-current-user-v2')
     router.push('/login')
   }
 
@@ -88,9 +88,9 @@ export default function TopBar({ title, subtitle, onMenuClick }: TopBarProps) {
           </button>
           {open && (
             <div className="absolute right-0 z-50 mt-2 w-56 rounded-xl border border-[#e2e2e2] bg-white p-2 shadow-[0_8px_24px_rgba(0,0,0,0.12)]">
-              <Link href="/settings/me" className="block rounded-lg px-3 py-2 text-sm text-[#4a4a4a] hover:bg-[#f7f7f7]">
+              {user.role !== 'onboarder' && <Link href="/settings/me" className="block rounded-lg px-3 py-2 text-sm text-[#4a4a4a] hover:bg-[#f7f7f7]">
                 Mes paramètres
-              </Link>
+              </Link>}
               <button onClick={logout} className="block w-full rounded-lg px-3 py-2 text-left text-sm text-[#b7221b] hover:bg-[#fee3e2]">
                 Déconnexion
               </button>
