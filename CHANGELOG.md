@@ -6,6 +6,17 @@ Les entrées antérieures au 15 juillet 2026 ont été reconstituées à partir 
 l’historique Git ; elles synthétisent les changements fonctionnels encore
 pertinents plutôt que chaque correction intermédiaire.
 
+## 2026-09-30 — Slide mensuelle Implementation | CRM
+
+- Quatre groupes recopiables depuis le reporting mensuel : projets CRM démarrés
+  et Live, stock Zoho Projects actuel, Welcome cases et Setup cases.
+- Agrégats Salesforce reçus par une route POST protégée par secret, puis remplacés
+  atomiquement dans `sf_case_monthly` ; aucune lecture Salesforce en direct.
+- Ratios, âges moyens, synchronisations et données absentes explicités dans la
+  page et dans la copie des slides.
+- Le trimestre en cours est sélectionnable dans le reporting support ; ses
+  comparaisons restent désactivées tant que la période est partielle.
+
 ## 2026-09-12 — Cohérence des sources des dashboards
 
 - L’historique Support combine désormais Zoho Analytics et les tickets courants

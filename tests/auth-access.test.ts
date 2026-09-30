@@ -137,6 +137,7 @@ test('middleware: orphan sessions terminate, onboarder routes and refresh cookie
     }
     assert.equal((await middleware(new NextRequest('http://localhost/api/onboarding/weekly-exceptions'))).status, 403)
     assert.equal((await middleware(new NextRequest('http://localhost/onboarding'))).status, 200)
+    assert.equal((await middleware(new NextRequest('http://localhost/api/cron/ingest-sf-case-monthly', { method: 'POST' }))).status, 200)
     fixture({ profile: { email: 'fixture@d-edge.com', role: 'onboarder', active: false } })
     assert.equal(new URL((await middleware(new NextRequest('http://localhost/login'))).headers.get('location')).pathname, '/forbidden')
   } finally { globalThis.fetch = originalFetch }

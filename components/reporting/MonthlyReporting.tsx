@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Legend, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { monthKey, shiftMonth, PHONE_BREAK_NOTE } from '@/lib/reporting/monthly'
 import type { channelMetrics, supportMetrics } from '@/lib/reporting/monthly'
-import type { readCoverage, readImplementation } from '@/lib/reporting/source'
+import type { readCoverage, readImplementation, readCaseMonthly } from '@/lib/reporting/source'
+import { implementationSlideGroups, implementationSlideCopyLines } from '@/lib/reporting/implementationSlide'
 import type { supportLevelMetrics } from '@/lib/reporting/supportLevels'
 import { CRM_P1_FIRST_RESPONSE_PALIER, thresholdLabel } from '@/lib/reporting/slaProfiles'
 
@@ -16,6 +17,7 @@ type Monthly = {
   support: ReturnType<typeof supportMetrics>
   year_ago: { month: string; support: ReturnType<typeof supportMetrics> }
   implementation: { data: Awaited<ReturnType<typeof readImplementation>> | null; error: string | null }
+  cases: { data: Awaited<ReturnType<typeof readCaseMonthly>> | null; error: string | null }
   coverage: Coverage
   unavailable: Record<string, string>
 }
@@ -100,9 +102,11 @@ export default function MonthlyReporting() {
       `Conformité première réponse : ${number(s.first_response_compliance.rate_pct, ' %')} (cible ${s.first_response_compliance.target_pct} %) ; conformité résolution : ${number(s.resolution_compliance.rate_pct, ' %')} (cible ${s.resolution_compliance.target_pct} %).`,
       `Produits les plus sollicités : ${s.top_products.map(v => `${v.name} : ${v.count}`).join(' ; ') || '—'}.`,
       `Jours les plus chargés (Paris) : ${s.peak_days.map(v => `${v.name} : ${v.count}`).join(' ; ') || '—'}. Aucune cause incident ou release déduite.`,
-      ...(p ? [`Implémentation — débuts renseignés selon la date de démarrage Zoho Projects : ${number(p.official_starts)} (CRM : ${p.official_starts_crm}, Dmbook : ${p.official_starts_dmbook}, non classés : ${p.official_starts_unclassified}) ; transitions Non démarré → In Progress observées : ${number(p.status_transition_starts)} ; passés Live : ${p.went_live}.`,
-        `Live : ${p.live_dated} selon Live date, ${p.live_observed_without_date} transitions observées sans date métier. ${p.live_without_usable_date} projets actuellement Live sans date exploitable pour ce mois. ${p.imported_in_progress_without_transition} imports déjà In Progress sans transition prouvée pendant le mois. Début du suivi : ${syncLabel(p.tracking_started_at)}. Synchronisation projets : ${syncLabel(p.last_synced_at)}.`,
-        `Portefeuille actuel (${p.project_count} projets, non historique) : ${p.current_statuses.map(v => `${v.name} : ${v.count}`).join(' ; ')}.`] : [monthly.implementation.error || 'Implémentation indisponible.']),
+      `Zoho Projects : synchronisation ${syncLabel(p?.last_synced_at ?? null)}. Zoho Projects (current) : stock actuel, non historique.`,
+      ...implementationSlideCopyLines(p, monthly.cases.data),
+      ...(monthly.cases.error ? [monthly.cases.error] : []),
+      'Started / Live (%) = Started ÷ Live × 100 ; Closed / opened (%) = Closed ÷ Opened × 100. Average age projets : démarrage à Live ; Cases : création à clôture des dossiers fermés dans le mois.',
+      ...(['welcome', 'setup'] as const).flatMap(type => monthly.cases?.data?.[type]?.warning ? [`${type} : ${monthly.cases.data[type].warning}`] : []),
       ...Object.values(monthly.unavailable), PHONE_BREAK_NOTE,
     ]
     const selected = channels?.months.find(row => row.key === month)
@@ -183,13 +187,23 @@ export default function MonthlyReporting() {
       </section>
       <section className={`${panel} space-y-4`} aria-labelledby="monthly-implementation-title">
         <h3 id="monthly-implementation-title" className="font-bold">Implémentation | CRM — {label(month)}</h3>
-        {monthly.implementation.data ? <>
-          <div className="grid gap-3 sm:grid-cols-2"><Kpi title="Débuts renseignés dans Zoho Projects" value={number(monthly.implementation.data.official_starts)} detail={`Date de démarrage Zoho Projects. CRM : ${monthly.implementation.data.official_starts_crm} · Dmbook : ${monthly.implementation.data.official_starts_dmbook} · Non classés : ${monthly.implementation.data.official_starts_unclassified}. Transition Non démarré → In Progress observée : ${monthly.implementation.data.status_transition_starts}.`} /><Kpi title="Projets passés Live" value={number(monthly.implementation.data.went_live)} detail={`${monthly.implementation.data.live_dated} selon Live date ; ${monthly.implementation.data.live_observed_without_date} transitions observées sans date métier. Chaque projet compte une fois par mois.`} /></div>
-          <p className="text-xs text-[#696969]">Parcours : opportunité gagnée → projet migré dans Zoho Projects → In Progress → Live. La date de début peut être planifiée : elle ne certifie pas un lancement client. Les passages In Progress observés sont indiqués séparément.</p>
-          <p className="text-xs text-[#696969]">Source : Zoho Projects synchronisé et journal de transitions · {monthly.implementation.data.project_count} projets · suivi enregistré depuis {syncLabel(monthly.implementation.data.tracking_started_at)} · synchronisation : {syncLabel(monthly.implementation.data.last_synced_at)}. {monthly.implementation.data.imported_in_progress_without_transition} imports déjà In Progress sans transition prouvée ce mois ; {monthly.implementation.data.live_without_usable_date} projets actuellement Live sans date exploitable pour ce mois.</p>
-          {!monthly.implementation.data.tracking_covers_month && <p className={note}>Le mois sélectionné précède le début du suivi ou n’est couvert qu’en partie. L’historique In Progress est incomplet.</p>}
-        </> : <p role="alert" className={note}>{monthly.implementation.error}</p>}
-        <p className={note}>{monthly.unavailable.implementation} {monthly.unavailable.quality}</p>
+        <div className="grid gap-4 xl:grid-cols-2">
+          {implementationSlideGroups(monthly.implementation.data, monthly.cases.data).map((group, index) => <div key={group.title} className="rounded-lg border border-[#ded8e8] p-3">
+            <h4 className="mb-3 font-semibold">{group.title}</h4>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{group.metrics.map(metric => <Kpi key={metric.label} title={metric.label} value={metric.value} />)}</div>
+            <p className="mt-3 text-xs leading-5 text-[#696969]">{index < 2
+              ? `Source : Zoho Projects synchronisé · périmètre CRM · synchronisation : ${syncLabel(monthly.implementation.data?.last_synced_at ?? null)}.`
+              : `Source : agrégats Salesforce · total dédupliqué · synchronisation : ${syncLabel(monthly.cases.data?.[index === 2 ? 'welcome' : 'setup'].synced_at ?? null)}.`}</p>
+          </div>)}
+        </div>
+        <p className="text-xs text-[#696969]" title="Started ÷ Live × 100 ; Closed ÷ Opened × 100">Started / Live (%) = Started ÷ Live × 100 ; Closed / opened (%) = Closed ÷ Opened × 100. Un dénominateur nul affiche « — ».</p>
+        <p className="text-xs text-[#696969]">Average age Zoho : moyenne des jours entre start_date (sinon created_at) et actual_go_live, pour les projets CRM passés Live pendant le mois. Couverture : {number(monthly.implementation.data?.crm_live_age_sample)} / {number(monthly.implementation.data?.crm_went_live)} projets Live. Average age Cases : moyenne des jours entre CreatedDate et ClosedDate des Cases fermés pendant le mois, hors Cancelled ; aucun Case fermé : « — ».</p>
+        <p className="text-xs text-[#696969]">Started reprend la date de démarrage Zoho Projects, qui peut être planifiée. Live reprend le champ Live date, sinon une transition observée. Les lignes Salesforce par produit sont indicatives et ne s’additionnent pas ; le total compte chaque Case une fois.</p>
+        {month !== shiftMonth(monthKey(new Date()), -1) && <p className={note}>Zoho Projects (current) : stock actuel, non historique.</p>}
+        {!monthly.implementation.data && <p role="alert" className={note}>{monthly.implementation.error}</p>}
+        {monthly.cases.error && <p role="alert" className={note}>{monthly.cases.error}</p>}
+        {(['welcome', 'setup'] as const).map(type => monthly.cases.data?.[type].warning && <p key={type} role="alert" className={note}>{type === 'welcome' ? 'Welcome cases' : 'Setup cases'} : {monthly.cases.data[type].warning}</p>)}
+        {monthly.implementation.data && !monthly.implementation.data.tracking_covers_month && <p className={note}>Le suivi des transitions Zoho ne couvre pas tout le mois sélectionné.</p>}
       </section>
       <section className={`${panel} space-y-3`} aria-labelledby="monthly-projects-title"><h3 id="monthly-projects-title" className="font-bold">Projets — portefeuille actuel d’onboarding</h3><p className="text-xs leading-5 text-[#696969]">{monthly.unavailable.projects}</p>{monthly.implementation.data && <div className="flex flex-wrap gap-2">{monthly.implementation.data.current_statuses.map(item => <span key={item.name} className="rounded-lg bg-[#f7f3fc] px-3 py-2 text-sm">{item.name} : <strong>{item.count}</strong></span>)}</div>}</section>
       <section className={`${panel} space-y-3`} aria-labelledby="monthly-phone-title"><h3 id="monthly-phone-title" className="font-bold">Téléphonie — mesures réelles attendues dans la slide</h3><div className="grid gap-3 sm:grid-cols-3"><Kpi title="Appels entrants" value="—" /><Kpi title="Appels décrochés en moins de 30 s" value="—" /><Kpi title="Taux d’appels manqués" value="—" /></div><p className={note}>{monthly.unavailable.phone}</p>{selectedChannel && <p className="text-sm">Mesure disponible pour {label(month)} : <strong>{selectedChannel.phone} tickets Phone</strong>, soit {number(selectedChannel.phone_share_pct, ' %')} des tickets créés.</p>}</section>

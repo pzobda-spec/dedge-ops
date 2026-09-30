@@ -53,3 +53,18 @@ test('bornes Paris exclusives et absence de suivi distincte de zéro', () => {
   assert.equal(aggregate([], [], '2026-09-01T00:00:00Z').in_progress, null)
   assert.equal(aggregate([], []).in_progress, 0)
 })
+
+test('slide CRM : Live et âge moyen des seuls projets datés du mois', () => {
+  const result = aggregate([
+    project('crm-a', { product: 'LoungeUp', start_date: '2026-08-01', actual_go_live: '2026-08-11', zoho_status: 'live' }),
+    project('crm-b', { product: 'CRM', start_date: null, created_at: '2026-08-05T10:00:00Z', actual_go_live: '2026-08-15', zoho_status: 'live' }),
+    project('crm-undated', { product: 'CRM', zoho_status: 'live' }),
+    project('dmbook', { product: 'Dmbook Pro', start_date: '2026-08-01', actual_go_live: '2026-08-20', zoho_status: 'live' }),
+    project('pending', { product: 'CRM', zoho_status: 'pending_client' }),
+  ], [event('crm-undated', 'in_progress', 'live', 'go_live')])
+  assert.equal(result.crm_went_live, 3)
+  assert.equal(result.crm_live_age_sample, 2)
+  assert.equal(result.crm_current_statuses.pending_client, 1)
+  assert.equal(result.crm_live_average_age_days, 10)
+  assert.equal(aggregate([project('x', { product: 'CRM', zoho_status: 'live' })], []).crm_live_average_age_days, null)
+})

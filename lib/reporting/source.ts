@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase/server'
 import { monthKey, type TicketRow } from './monthly'
 import { implementationMetrics, type ReportingProject, type ReportingProjectEvent } from './implementation'
+import { caseSlideMetrics, type StoredCaseMonthlyRow } from './sfCases'
 
 const PAGE_SIZE = 1_000
 
@@ -47,12 +48,13 @@ export async function readImplementation(from: Date, to: Date) {
   const rows: ReportingProject[] = []
   for (let offset = 0; ; offset += PAGE_SIZE) {
     const { data, error } = await supabaseAdmin.from('onboarding_projects')
-      .select('id,zoho_project_id,actual_go_live,zoho_status,start_date,product,last_synced_at').not('zoho_project_id', 'is', null)
+      .select('id,zoho_project_id,actual_go_live,zoho_status,start_date,created_at,product,last_synced_at').not('zoho_project_id', 'is', null)
       .order('id').range(offset, offset + PAGE_SIZE - 1)
     if (error || !data) throw new Error('Les données Zoho Projects synchronisées sont indisponibles.')
     rows.push(...data as ReportingProject[])
     if (data.length < PAGE_SIZE) break
   }
+  if (rows.length === 0) throw new Error('Aucun projet Zoho synchronisé.')
   const events: ReportingProjectEvent[] = []
   for (let offset = 0; ; offset += PAGE_SIZE) {
     const { data, error } = await supabaseAdmin.from('onboarding_events')
@@ -69,4 +71,12 @@ export async function readImplementation(from: Date, to: Date) {
     .in('event_type', ['status_changed', 'go_live', 'project_created']).order('created_at').limit(1)
   if (first.error) throw new Error('Couverture de l’historique projet indisponible.')
   return implementationMetrics(rows, events, from, to, first.data?.[0]?.created_at ?? null)
+}
+
+export async function readCaseMonthly(month: string) {
+  const { data, error } = await supabaseAdmin.from('sf_case_monthly')
+    .select('case_type,product,opened,closed,open_stock,avg_age_days,synced_at')
+    .eq('month', `${month}-01`).eq('product', '__TOTAL__')
+  if (error || !data) throw new Error('Les agrégats Salesforce sont indisponibles.')
+  return caseSlideMetrics(data as StoredCaseMonthlyRow[], month)
 }

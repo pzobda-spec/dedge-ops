@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { monthKey, monthStart, shiftMonth, supportMetrics, PHONE_BREAK_NOTE } from '@/lib/reporting/monthly'
-import { readCoverage, readTickets, readImplementation, certifiedPeriod } from '@/lib/reporting/source'
+import { readCoverage, readTickets, readImplementation, readCaseMonthly, certifiedPeriod } from '@/lib/reporting/source'
 import { CRM_P1_FIRST_RESPONSE_PALIER, MAX_RESOLUTION_DAYS } from '@/lib/reporting/slaProfiles'
 
 export const dynamic = 'force-dynamic'
@@ -21,12 +21,13 @@ export async function GET(request: NextRequest) {
     const yearAgoMonth = shiftMonth(month, -12)
     const yearAgoFrom = monthStart(yearAgoMonth)
     const yearAgoTo = monthStart(shiftMonth(yearAgoMonth, 1))
-    const [rows, yearAgoRows, coverage, implementation] = await Promise.all([
+    const [rows, yearAgoRows, coverage, implementation, cases] = await Promise.all([
       readTickets(from, to), readTickets(yearAgoFrom, yearAgoTo), readCoverage(),
       readImplementation(from, to).then(data => ({ data, error: null })).catch(() => ({ data: null, error: 'Les données Zoho Projects synchronisées sont indisponibles.' })),
+      readCaseMonthly(month).then(data => ({ data, error: null })).catch(() => ({ data: null, error: 'Les agrégats Salesforce sont indisponibles.' })),
     ])
     return NextResponse.json({
-      month, support: supportMetrics(rows, from, to), year_ago: { month: yearAgoMonth, support: supportMetrics(yearAgoRows, yearAgoFrom, yearAgoTo) }, implementation,
+      month, support: supportMetrics(rows, from, to), year_ago: { month: yearAgoMonth, support: supportMetrics(yearAgoRows, yearAgoFrom, yearAgoTo) }, implementation, cases,
       coverage: { ...coverage, tickets_read: rows.length, certified: certifiedPeriod(coverage, from, to), partial_month: to > new Date() },
       unavailable: {
         source: 'Historique combiné Zoho Desk et Zoho Analytics. Analytics peut omettre des tickets ouverts présents dans Desk. Les clôtures sont les dates courantes synchronisées, pas un journal de toutes les clôtures et réouvertures.',
@@ -38,7 +39,7 @@ export async function GET(request: NextRequest) {
         projects: 'Projets transverses Support / Implémentation / CSM : prochaines étapes et décisions à renseigner dans les slides. Le portefeuille ci-dessous reflète les statuts actuels des projets d’onboarding, pas une situation historique de fin de mois.',
       },
       phone_break_note: PHONE_BREAK_NOTE,
-      meta: { from: from.toISOString(), to: to.toISOString(), source: 'Supabase · ticket_analytics, onboarding_projects et onboarding_events (Zoho Projects synchronisé)', generated_at: new Date().toISOString() },
+      meta: { from: from.toISOString(), to: to.toISOString(), source: 'Supabase · ticket_analytics, onboarding_projects, onboarding_events (Zoho Projects synchronisé) et sf_case_monthly (agrégats Salesforce)', generated_at: new Date().toISOString() },
     })
   } catch {
     return NextResponse.json({ error: 'La synthèse mensuelle est temporairement indisponible.' }, { status: 502 })

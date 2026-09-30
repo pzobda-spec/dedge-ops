@@ -1,0 +1,10 @@
+.git/
+.next/
+.vercel/
+node_modules/
+.env*
+DO NOT PUSH/
+Claude outputs/
+docs/plan-forecast-capacite.md
+docs/plan-projet-satisfaction-support.md
+docs/projet-satisfaction-support.md

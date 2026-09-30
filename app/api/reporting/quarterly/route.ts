@@ -1,7 +1,8 @@
 import { formatInTimeZone } from 'date-fns-tz'
-import { monthKey, monthStart, TIME_ZONE } from '@/lib/reporting/monthly'
+import { monthStart, TIME_ZONE } from '@/lib/reporting/monthly'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/server'
+import { currentQuarter, quarterCoverageStatus } from '@/lib/reporting/quarterSelection'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -103,6 +104,7 @@ interface Insight {
 
 export async function GET(request: NextRequest) {
   try {
+    const now = new Date()
     const quarterParam = request.nextUrl.searchParams.get('quarter')
     const parsedQuarter = parseQuarter(quarterParam)
     if (quarterParam && !parsedQuarter) {
@@ -111,11 +113,12 @@ export async function GET(request: NextRequest) {
         { status: 400 },
       )
     }
-    const selectedQuarter = parsedQuarter ?? lastCompletedQuarter()
-    const latestAllowed = lastCompletedQuarter()
+    const currentPeriod = currentQuarter(now)
+    const latestAllowed = makeQuarter(currentPeriod.year, currentPeriod.number)
+    const selectedQuarter = parsedQuarter ?? latestAllowed
     if (selectedQuarter.start.getTime() > latestAllowed.start.getTime()) {
       return NextResponse.json(
-        { error: 'Seuls les trimestres terminés peuvent être comparés.' },
+        { error: 'Ce trimestre n’a pas encore commencé.' },
         { status: 400 },
       )
     }
@@ -140,7 +143,7 @@ export async function GET(request: NextRequest) {
     const rawHistory = quarters.map(quarter => {
       const created = tickets.filter(ticket => inRange(ticket.createdAt, quarter.start, quarter.end))
       ticketsByQuarter.set(quarter.key, created)
-      return computeMetrics(quarter, tickets, created, coverage.from, coverage.to)
+      return computeMetrics(quarter, tickets, created, coverage.from, coverage.to, now)
     })
     const history = flagSuspectQuarters(rawHistory)
 
@@ -224,7 +227,8 @@ export async function GET(request: NextRequest) {
       },
       meta: {
         selected_quarter: selectedQuarter.key,
-        generated_at: new Date().toISOString(),
+        selected_quarter_in_progress: selectedQuarter.end.getTime() > now.getTime(),
+        generated_at: now.toISOString(),
         source: 'Supabase · ticket_analytics',
       },
     })
@@ -302,6 +306,7 @@ function computeMetrics(
   created: Ticket[],
   coverageFrom: string | null,
   coverageTo: string | null,
+  now: Date,
 ): QuarterMetrics {
   const resolved = allTickets.filter(ticket => inRange(ticket.resolvedAt, quarter.start, quarter.end))
   const responseSamples = created
@@ -310,7 +315,7 @@ function computeMetrics(
   const fcrSamples = resolved
     .map(ticket => ticket.firstContactResolution)
     .filter((value): value is boolean => value !== null)
-  const coverageStatus = quarterCoverageStatus(quarter, coverageFrom, coverageTo)
+  const coverageStatus = quarterCoverageStatus(quarter, coverageFrom, coverageTo, now)
 
   return {
     key: quarter.key,
@@ -346,21 +351,6 @@ function flagSuspectQuarters(history: QuarterMetrics[]): QuarterMetrics[] {
       ? { ...point, coverage_status: 'suspect' as const, is_comparable: false }
       : point
   })
-}
-
-function quarterCoverageStatus(
-  quarter: Quarter,
-  coverageFrom: string | null,
-  coverageTo: string | null,
-): QuarterMetrics['coverage_status'] {
-  const from = timestamp(coverageFrom)
-  const to = timestamp(coverageTo)
-  if (from === null || to === null || to < quarter.start.getTime() || from >= quarter.end.getTime()) {
-    return 'absent'
-  }
-  const coversStart = from <= quarter.start.getTime() + DAY_MS
-  const coversEnd = to >= quarter.end.getTime() - DAY_MS
-  return coversStart && coversEnd ? 'complete' : 'partial'
 }
 
 function comparisonAvailability(current: QuarterMetrics, reference: QuarterMetrics): {
@@ -646,12 +636,6 @@ function parseQuarter(value: string | null): Quarter | null {
   const number = Number(match[2])
   if (year < 2020 || year > 2100) return null
   return makeQuarter(year, number)
-}
-
-function lastCompletedQuarter(): Quarter {
-  const [year, month] = monthKey(new Date()).split('-').map(Number)
-  const currentNumber = Math.floor((month - 1) / 3) + 1
-  return shiftQuarter(makeQuarter(year, currentNumber), -1)
 }
 
 function makeQuarter(year: number, number: number): Quarter {

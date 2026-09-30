@@ -7,6 +7,7 @@ export interface ReportingProject {
   actual_go_live: string | null
   zoho_status: string | null
   start_date?: string | null
+  created_at?: string | null
   product?: string | null
   last_synced_at: string | null
 }
@@ -40,21 +41,48 @@ export function implementationMetrics(projects: ReportingProject[], events: Repo
     if (event.event_type === 'go_live' && metadata?.to === 'live' && metadata.from && metadata.from !== 'live') observedLive.add(event.project_id)
   }
   let liveDated = 0, liveObserved = 0, liveUndated = 0
+  let crmLive = 0
+  const crmLiveAges: number[] = []
+  const isCrm = (project: ReportingProject) => /^(loungeup|crm)$/i.test(project.product?.trim() ?? '')
   const officialStarts = projects.filter(project => validDay(project.start_date ?? null) && project.start_date! >= firstDay && project.start_date! < nextDay)
   for (const project of projects) {
     // Le champ Live date courant fait autorité, y compris après correction de l'événement canonique.
     if (validDay(project.actual_go_live)) {
-      if (project.actual_go_live! >= firstDay && project.actual_go_live! < nextDay) liveDated++
-    } else if (observedLive.has(project.id)) liveObserved++
+      if (project.actual_go_live! >= firstDay && project.actual_go_live! < nextDay) {
+        liveDated++
+        if (isCrm(project)) {
+          crmLive++
+          const originDay = validDay(project.start_date ?? null)
+            ? project.start_date!
+            : project.created_at && Number.isFinite(Date.parse(project.created_at))
+              ? formatInTimeZone(project.created_at, TIME_ZONE, 'yyyy-MM-dd') : null
+          const origin = originDay ? Date.parse(`${originDay}T00:00:00Z`) : NaN
+          const liveAt = Date.parse(`${project.actual_go_live}T00:00:00Z`)
+          if (Number.isFinite(origin) && liveAt >= origin) crmLiveAges.push((liveAt - origin) / 86_400_000)
+        }
+      }
+    } else if (observedLive.has(project.id)) {
+      liveObserved++
+      if (isCrm(project)) crmLive++
+    }
     else if (project.zoho_status === 'live') liveUndated++
   }
   const labels: Record<string, string> = { not_started: 'Non démarré', in_progress: 'En cours', pending_client: 'En attente client', live: 'En production', blocked: 'Bloqué', standby: 'En pause', other: 'Autre' }
   const statuses = new Map<string, number>()
+  const crmStatuses = { blocked: 0, standby: 0, pending_client: 0, in_progress: 0 }
   projects.forEach(project => { const name = labels[project.zoho_status ?? ''] ?? 'Non renseigné'; statuses.set(name, (statuses.get(name) ?? 0) + 1) })
+  projects.filter(isCrm).forEach(project => {
+    const status = project.zoho_status
+    if (status && Object.hasOwn(crmStatuses, status)) crmStatuses[status as keyof typeof crmStatuses]++
+  })
   return {
     in_progress: trackingStartedAt && Date.parse(trackingStartedAt) < to.getTime() ? fromNotStarted.size : null,
     official_starts: officialStarts.length,
     official_starts_crm: officialStarts.filter(project => /^(loungeup|crm)$/i.test(project.product?.trim() ?? '')).length,
+    crm_went_live: crmLive,
+    crm_live_average_age_days: crmLiveAges.length ? crmLiveAges.reduce((sum, age) => sum + age, 0) / crmLiveAges.length : null,
+    crm_live_age_sample: crmLiveAges.length,
+    crm_current_statuses: crmStatuses,
     official_starts_dmbook: officialStarts.filter(project => /dmbook/i.test(project.product ?? '')).length,
     official_starts_unclassified: officialStarts.filter(project => !/dmbook/i.test(project.product ?? '') && !/^(loungeup|crm)$/i.test(project.product?.trim() ?? '')).length,
     starts_without_date: projects.filter(project => !validDay(project.start_date ?? null)).length,

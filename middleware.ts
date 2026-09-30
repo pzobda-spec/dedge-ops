@@ -141,7 +141,7 @@ export async function middleware(request: NextRequest) {
     path.startsWith('/api/mcp') ||
     path.startsWith('/.well-known/oauth-protected-resource') ||
     path.startsWith('/oauth/consent') ||
-    path.startsWith('/api/cron') ||
+    path === '/api/cron' || path.startsWith('/api/cron/') ||
     path === '/api/webhooks/zoho-desk' ||
     path.startsWith('/api/webhooks/zoho-forms') ||
     path.startsWith('/forbidden')

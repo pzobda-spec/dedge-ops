@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import MonthlyReporting from '@/components/reporting/MonthlyReporting'
+import { currentQuarter } from '@/lib/reporting/quarterSelection'
 import {
   Bar,
   BarChart,
@@ -87,6 +88,7 @@ interface QuarterlyStats {
   }
   meta: {
     selected_quarter: string
+    selected_quarter_in_progress: boolean
     generated_at: string
     source: string
   }
@@ -117,14 +119,9 @@ function shiftQuarter(quarter: QuarterOption, offset: number): QuarterOption {
   return makeQuarter(date.getUTCFullYear(), Math.floor(date.getUTCMonth() / 3) + 1)
 }
 
-function lastCompletedQuarter(): QuarterOption {
-  const now = new Date()
-  const current = makeQuarter(now.getUTCFullYear(), Math.floor(now.getUTCMonth() / 3) + 1)
-  return shiftQuarter(current, -1)
-}
-
 function quarterOptions(): QuarterOption[] {
-  const latest = lastCompletedQuarter()
+  const { year, number } = currentQuarter()
+  const latest = makeQuarter(year, number)
   return Array.from({ length: 12 }, (_, index) => shiftQuarter(latest, index - 11))
 }
 
@@ -180,9 +177,10 @@ function buildCopiedReport(stats: QuarterlyStats): string {
     : null
   const lines = [
     `Reporting support — ${stats.current.label}`,
+    ...(stats.meta.selected_quarter_in_progress ? ['Trimestre en cours : données à date, comparaisons désactivées.'] : []),
     '',
-    `Tickets créés : ${integerFormatter.format(stats.current.opened)}${volumeChange === null ? '' : ` (${signed(volumeChange, ' %')} vs ${stats.previous.label})`}`,
-    `Tickets résolus : ${integerFormatter.format(stats.current.resolved)}`,
+    `Tickets créés : ${stats.current.coverage_status === 'absent' ? '—' : integerFormatter.format(stats.current.opened)}${volumeChange === null ? '' : ` (${signed(volumeChange, ' %')} vs ${stats.previous.label})`}`,
+    `Tickets résolus : ${stats.current.coverage_status === 'absent' ? '—' : integerFormatter.format(stats.current.resolved)}`,
     `FCR : ${stats.current.fcr === null ? 'non disponible' : `${decimalFormatter.format(stats.current.fcr)} %`}`,
     `Première réponse ouvrée (Zoho) : ${stats.current.avg_first_response_hours === null ? 'non disponible' : `${decimalFormatter.format(stats.current.avg_first_response_hours)} h`}`,
   ]
@@ -342,6 +340,7 @@ export default function ReportingPage() {
   const visibleTopics = stats?.top_topics.filter(item => !isOther(item.name)).slice(0, 7) ?? []
   const topicMax = Math.max(1, ...visibleTopics.map(item => item.count), stats?.quality.other_count ?? 0)
   const qoqAvailable = stats?.comparisons.quarter_over_quarter.available ?? false
+  const quarterDataAbsent = stats?.current.coverage_status === 'absent'
   const openedChange = stats && qoqAvailable ? percentageChange(stats.current.opened, stats.previous.opened) : null
   const resolvedChange = stats && qoqAvailable ? percentageChange(stats.current.resolved, stats.previous.resolved) : null
   const responseChange = qoqAvailable && stats?.current.avg_first_response_hours != null && stats.previous.avg_first_response_hours != null
@@ -429,6 +428,7 @@ export default function ReportingPage() {
                 <p className="mt-0.5 text-xs text-[#696969]">
                   Du {formatDate(stats.current.from)} au {formatDate(stats.current.to)} · dernière synchronisation {formatDateTime(stats.coverage.last_synced_at)}
                 </p>
+                {stats.meta.selected_quarter_in_progress && <p className="mt-1 text-xs font-semibold text-[#84550e]">Trimestre en cours · données à date · comparaisons désactivées</p>}
               </div>
               <button
                 type="button"
@@ -476,21 +476,21 @@ export default function ReportingPage() {
             {!stats.current.is_comparable && (
               <section className="rounded-xl border border-[#edc86b] bg-[#fff8e8] px-4 py-3 text-sm text-[#84550e]" role="status">
                 <p className="font-bold">Le trimestre sélectionné est incomplet ou à valider</p>
-                <p className="mt-1 text-xs leading-5">Les volumes restent visibles, mais les écarts et les suggestions qui nécessitent une référence fiable sont volontairement désactivés.</p>
+                <p className="mt-1 text-xs leading-5">{quarterDataAbsent ? 'Aucune donnée synchronisée pour ce trimestre : les indicateurs sont indisponibles.' : 'Les volumes restent visibles, mais les écarts et les suggestions qui nécessitent une référence fiable sont volontairement désactivés.'}</p>
               </section>
             )}
 
             <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Indicateurs du trimestre">
               <MetricCard
                 label="Tickets créés"
-                value={integerFormatter.format(stats.current.opened)}
+                value={quarterDataAbsent ? '—' : integerFormatter.format(stats.current.opened)}
                 comparison={openedChange}
                 comparisonLabel={stats.previous.label}
                 lowerIsBetter
               />
               <MetricCard
                 label="Tickets résolus"
-                value={integerFormatter.format(stats.current.resolved)}
+                value={quarterDataAbsent ? '—' : integerFormatter.format(stats.current.resolved)}
                 comparison={resolvedChange}
                 comparisonLabel={stats.previous.label}
               />
@@ -542,6 +542,7 @@ export default function ReportingPage() {
                   <p className="mt-1 text-xs text-[#696969]">Domaines produit comparés à {stats.previous.label}. « Autre » reste comptabilisé mais apparaît en dernier.</p>
                 </div>
                 <div className="space-y-3">
+                  {quarterDataAbsent && <p className="text-sm text-[#696969]">— Données du trimestre indisponibles.</p>}
                   {visibleTopics.map(topic => (
                     <div key={topic.name}>
                       <div className="mb-1 flex items-center justify-between gap-3">
@@ -579,7 +580,7 @@ export default function ReportingPage() {
                   <p className="mt-1 text-xs text-[#696969]">Clients actifs sur au moins deux trimestres et présents sur {stats.current.label}.</p>
                 </div>
                 {stats.recurring_clients.length === 0 ? (
-                  <p className="rounded-lg border border-dashed border-[#d8d8d8] px-4 py-8 text-center text-sm text-[#696969]">Aucun client récurrent sur la période disponible.</p>
+                  <p className="rounded-lg border border-dashed border-[#d8d8d8] px-4 py-8 text-center text-sm text-[#696969]">{quarterDataAbsent ? '— Données du trimestre indisponibles.' : 'Aucun client récurrent sur la période disponible.'}</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[520px] text-left text-sm">

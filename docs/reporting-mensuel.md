@@ -56,6 +56,46 @@ synchronisé et les projets d’onboarding ; ce n’est pas le global D-EDGE.
 - Portefeuille : statuts actuels des projets synchronisés, pas le stock historique
   de fin de mois ni le tableau des décisions des trois équipes.
 
+## Slide « Implementation | CRM »
+
+Le sélecteur mensuel pilote les quatre groupes et le bouton de copie restitue leurs
+16 valeurs. Les libellés des indicateurs reprennent la slide ; les notes de source
+et de méthode sont en français. Une valeur absente apparaît comme « — ».
+
+- **Zoho Projects (new)** : périmètre CRM (`product` LoungeUp ou CRM, hors Dmbook).
+  Started est le nombre de projets dont `start_date` tombe dans le mois ; cette
+  date peut être planifiée. Live suit `actual_go_live`, puis une transition Live
+  observée si la date manque. Started / Live (%) = Started ÷ Live × 100 ; si Live
+  vaut zéro, le ratio est « — ». Average age est la moyenne des jours entre
+  `start_date` (sinon `created_at`) et `actual_go_live` pour les projets passés
+  Live dans le mois. Un Live sans date métier reste dans le volume, mais pas dans
+  l'échantillon de la moyenne. Aucun âge mesurable : « — ».
+- **Zoho Projects (current)** : stock CRM actuel selon `zoho_status` pour Blocked,
+  Standby, Pending (`pending_client`) et In Progress (`in_progress`). La date de
+  synchronisation est visible. Pour tout mois autre que le dernier mois clos, un
+  bandeau rappelle que ce stock n'est pas historique.
+- **Welcome cases (CRM)** et **Setup cases** : lecture de `sf_case_monthly` ; seule
+  la ligne `product = '__TOTAL__'` alimente la slide. Elle déduplique les Cases
+  (un Case = un). Les lignes produit sont indicatives et ne s'additionnent pas.
+  Opened désigne les créations du mois ; Closed les clôtures du mois, y compris
+  celles de Cases plus anciens ; les Cases Cancelled sont exclus des deux.
+  Closed / opened (%) = Closed ÷ Opened × 100 ; dénominateur nul : « — ».
+  Average age est la moyenne des jours `ClosedDate - CreatedDate` pour les
+  Cases fermés dans le mois, hors Cancelled. Aucun Case fermé : « — ».
+  `open_stock` est facultatif, conservé hors de la slide. La tâche externe calcule
+  et pousse les agrégats ; l'application ne lit pas Salesforce en direct.
+
+La tâche externe envoie un lot complet via `POST /api/cron/ingest-sf-case-monthly`,
+avec `Authorization: Bearer <SF_INGEST_SECRET>` et un JSON `{ "month": "AAAA-MM-01",
+"rows": [...] }`. Les deux lignes `__TOTAL__` (welcome et setup) sont obligatoires.
+Après validation, une seule RPC remplace atomiquement toutes les lignes du mois ;
+`synced_at` est fixé par la base. Une ligne totale absente rend le groupe indisponible.
+Pour le mois en cours, une ligne totale synchronisée depuis plus de 48 heures rend
+également le groupe indisponible et affiche un avertissement. Aucune absence de
+ligne n'est interprétée comme zéro. `avg_age_days` peut être pondérée avec `closed`
+uniquement si tous les Cases fermés de chaque ligne ont une durée valide ; les
+totaux dédupliqués restent la référence pour la slide.
+
 ## Canaux et limites
 
 L’historique des clôtures est synchronisé par `/api/cron/sync-ticket-analytics-history`
