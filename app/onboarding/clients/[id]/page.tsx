@@ -96,7 +96,7 @@ export default function OnboardingClientDetailPage() {
               <p className="mt-1 text-sm text-[#696969]">{client.properties.length} {t('propriétés')} · {client.projects.length} {t('projets')} · {client.products.length} {t('produits')}</p>
             </div>
             <nav className="inline-flex self-start rounded-lg border border-[#ded8e8] bg-[#f7f5fa] p-1" aria-label={t('Vues onboarding')}>
-              <Link href="/onboarding" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Liste')}</Link>
+              <Link href="/onboarding" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Vue d’ensemble')}</Link>
               <Link href="/onboarding/board" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">Board</Link>
               <Link href="/onboarding/pilotage" className="rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Pilotage')}</Link>
               <Link href="/onboarding/clients" aria-current="page" className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-[#59319f] shadow-sm">{t('Clients')}</Link>

@@ -47,18 +47,13 @@ test('lot complet strict : totaux, unicité et nombres', () => {
   ]) assert.throws(() => parseCaseBatch(invalid))
 })
 
-test('copie : 16 valeurs, ratios exacts et absences visibles', () => {
-  const projects = {
-    official_starts_crm: 8, crm_went_live: 4, crm_live_average_age_days: 12.5,
-    crm_current_statuses: { blocked: 1, standby: 2, pending_client: 3, in_progress: 4 },
-  } as Parameters<typeof implementationSlideCopyLines>[0]
+test('copie : seuls les agrégats Cases restent visibles', () => {
   const cases = caseSlideMetrics([stored({})], '2026-08', new Date('2026-09-30T10:00:00Z'))
-  const lines = implementationSlideCopyLines(projects, cases)
-  assert.equal(lines.length, 4)
-  assert.match(lines[0], /Started 8 ; Live 4 ; Started \/ Live \(%\) 200 % ; Average age 12,5 j/)
-  assert.match(lines[2], /Opened 14 ; Closed 22 ; Closed \/ opened \(%\) 157,1 % ; Average age 176,5 j/)
-  assert.match(lines[3], /Opened — ; Closed — ; Closed \/ opened \(%\) — ; Average age —/)
-  assert.match(implementationSlideCopyLines({ ...projects!, crm_went_live: 0 }, cases)[0], /Started \/ Live \(%\) —/)
+  const lines = implementationSlideCopyLines(cases)
+  assert.equal(lines.length, 2)
+  assert.match(lines[0], /Opened 14 ; Closed 22 ; Closed \/ opened \(%\) 157,1 % ; Average age 176,5 j/)
+  assert.match(lines[1], /Opened — ; Closed — ; Closed \/ opened \(%\) — ; Average age —/)
+  assert.doesNotMatch(lines.join('\n'), /Zoho Projects|Started|Live/)
 })
 
 test('route : secret rejeté, lot invalide, puis un seul appel RPC atomique', async () => {

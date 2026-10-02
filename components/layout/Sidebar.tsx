@@ -42,7 +42,7 @@ const navItems: NavItem[] = [
     label: 'Onboarding',
     roles: ['admin', 'onboarder', 'commercial_readonly', 'csm_lead'],
     children: [
-      { href: '/onboarding', label: 'Projets' },
+      { href: '/onboarding', label: 'Vue d’ensemble' },
       { href: '/onboarding/pilotage', label: 'Pilotage' },
     ],
   },

@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { OnboardingProject, ProjectStatus, RiskLevel } from '@/lib/zoho/projectsClient'
 import { useCurrentUser } from '@/lib/hooks/useCurrentUser'
-import { IMPLEMENTATION_GROUP, isExcludedOnboardingOwner, normalizeOnboardingProjectOwner } from '@/lib/onboarding/constants'
+import { IMPLEMENTATION_GROUP, normalizeOnboardingProjectOwner } from '@/lib/onboarding/constants'
+import { getOnboardingOverviewMetrics } from '@/lib/onboarding/overviewMetrics'
 import { formatDate } from '@/lib/utils/dates'
 import { useLocale } from '@/lib/i18n/LocaleContext'
 import type { Locale } from '@/lib/i18n/locale'
@@ -33,8 +34,29 @@ const STATUS_LABELS: Record<ProjectStatus, string> = {
 
 type DefinedRiskLevel = Exclude<RiskLevel, null>
 type RiskFilter = 'all' | DefinedRiskLevel | 'high_or_critical'
-type Scope = 'mine' | 'impl' | 'all'
 type ClientTypologyFilter = 'all' | 'group' | 'individual' | 'unlinked'
+type ReportScope = 'mine' | 'implementation' | 'global' | `owner:${string}`
+
+function previousMonth(): string {
+  const today = new Date()
+  const previous = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+  return `${previous.getFullYear()}-${String(previous.getMonth() + 1).padStart(2, '0')}`
+}
+
+function monthLabel(month: string, locale: Locale): string {
+  return new Intl.DateTimeFormat(locale === 'en' ? 'en-GB' : 'fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+    .format(new Date(`${month}-01T00:00:00Z`))
+}
+
+function ttvLabel(days: number | null, locale: Locale): string {
+  if (days === null) return '—'
+  return `${new Intl.NumberFormat(locale === 'en' ? 'en-GB' : 'fr-FR', { maximumFractionDigits: 1 }).format(days)} ${locale === 'en' ? 'days' : 'jours'}`
+}
+
+function compactTtvLabel(days: number | null, locale: Locale): string {
+  if (days === null) return '—'
+  return `${new Intl.NumberFormat(locale === 'en' ? 'en-GB' : 'fr-FR', { maximumFractionDigits: 1 }).format(days)} ${locale === 'en' ? 'd' : 'j'}`
+}
 
 const RISK_LABELS: Record<DefinedRiskLevel, string> = {
   low: 'Faible',
@@ -56,12 +78,6 @@ const PRODUCT_CONFIG: Record<string, { bg: string; text: string }> = {
   'WhatsApp':    { bg: 'bg-[#cff7dc]', text: 'text-[#1c6437]' },
   'Mobile Keys': { bg: 'bg-[#f7f7f7]', text: 'text-[#696969]' },
 }
-
-const SCOPE_OPTIONS: { value: Scope; label: string }[] = [
-  { value: 'mine', label: 'Mes projets' },
-  { value: 'impl', label: 'Implémentation' },
-  { value: 'all', label: 'Tous les projets' },
-]
 
 function productBadge(product: string): string {
   const config = PRODUCT_CONFIG[product]
@@ -152,6 +168,16 @@ function ProgressBar({ value }: { value: number }) {
   )
 }
 
+function OverviewStat({ label, value, detail }: { label: string; value: string | number; detail?: string }) {
+  return (
+    <div className="min-w-0 rounded-lg border border-[#e6e0eb] bg-white p-2 sm:p-3">
+      <p className="text-[10px] font-medium leading-4 text-[#696969] sm:text-xs">{label}</p>
+      <p className="mt-1 text-lg font-semibold tabular-nums text-[#1f1f1f] sm:text-2xl">{value}</p>
+      {detail && <p className="mt-1 hidden text-[11px] leading-4 text-[#696969] sm:block">{detail}</p>}
+    </div>
+  )
+}
+
 type KpiTone = 'neutral' | 'danger' | 'warning' | 'amber' | 'client'
 
 const KPI_TONES: Record<KpiTone, { value: string; icon: string; selected: string }> = {
@@ -226,12 +252,11 @@ function LoadingState() {
   return (
     <div className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-6 lg:px-8" aria-live="polite" aria-busy="true">
       <p className="sr-only">{t('Chargement des projets d’onboarding…')}</p>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        {Array.from({ length: 5 }).map((_, index) => (
-          <div key={index} className="h-[132px] animate-pulse rounded-xl border border-[#e2e2e2] bg-white p-4">
-            <div className="h-3 w-24 rounded bg-[#ededed]" />
-            <div className="mt-4 h-8 w-14 rounded bg-[#ededed]" />
-            <div className="mt-3 h-3 w-32 rounded bg-[#f2f2f2]" />
+      <div className="grid grid-cols-4 gap-2 xl:grid-cols-8">
+        {Array.from({ length: 8 }).map((_, index) => (
+          <div key={index} className="h-24 animate-pulse rounded-lg border border-[#e2e2e2] bg-white p-3">
+            <div className="h-3 w-16 rounded bg-[#ededed]" />
+            <div className="mt-4 h-7 w-12 rounded bg-[#ededed]" />
           </div>
         ))}
       </div>
@@ -252,8 +277,8 @@ export default function MesProjetsPage() {
   const [error, setError] = useState<string | null>(null)
   const [requestKey, setRequestKey] = useState(0)
 
-  const [scope, setScope] = useState<Scope>('mine')
-  const [ownerFilter, setOwnerFilter] = useState('all')
+  const [reportScope, setReportScope] = useState<ReportScope>('implementation')
+  const [reportMonth, setReportMonth] = useState(previousMonth)
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | 'all'>('all')
   const [riskFilter, setRiskFilter] = useState<RiskFilter>('all')
   const [clientTypologyFilter, setClientTypologyFilter] = useState<ClientTypologyFilter>('all')
@@ -285,42 +310,38 @@ export default function MesProjetsPage() {
     return () => controller.abort()
   }, [requestKey, t])
 
-  const baseProjects = useMemo(
-    () => projects.filter(project => !isExcludedOnboardingOwner(project.ownerShort)),
-    [projects],
-  )
-
-  const scopedProjects = useMemo(() => {
-    if (scope === 'mine') {
+  const reportOwners = useMemo(() => [...new Set(projects.map(project => project.ownerShort))]
+    .sort((a, b) => a.localeCompare(b, 'fr')), [projects])
+  const reportProjects = useMemo(() => {
+    if (reportScope === 'global') return projects
+    if (reportScope === 'implementation') {
+      return projects.filter(project => (IMPLEMENTATION_GROUP as readonly string[]).includes(project.ownerShort))
+    }
+    if (reportScope === 'mine') {
       if (!user?.email) return []
       const email = user.email.toLowerCase()
       const fullName = user.full_name?.trim() ?? ''
       const firstName = fullName.split(/\s+/)[0] ?? ''
       const emailName = user.email.split('@')[0]?.split('.')[0] ?? ''
       const identities = new Set([fullName, firstName, emailName].map(normalizePerson).filter(Boolean))
-
-      return baseProjects.filter(project =>
+      return projects.filter(project =>
         project.ownerEmail?.toLowerCase() === email
         || identities.has(normalizePerson(project.ownerName))
         || identities.has(normalizePerson(project.ownerShort))
       )
     }
-    if (scope === 'impl') {
-      return baseProjects.filter(project => (IMPLEMENTATION_GROUP as readonly string[]).includes(project.ownerShort ?? ''))
-    }
-    return baseProjects
-  }, [baseProjects, scope, user])
-
-  const owners = useMemo(
-    () => [...new Set(scopedProjects.map(project => project.ownerShort).filter((owner): owner is string => Boolean(owner)))]
-      .sort((a, b) => a.localeCompare(b, 'fr')),
-    [scopedProjects],
+    return projects.filter(project => project.ownerShort === reportScope.slice('owner:'.length))
+  }, [projects, reportScope, user])
+  const reportMetrics = useMemo(
+    () => getOnboardingOverviewMetrics(reportProjects, reportMonth),
+    [reportProjects, reportMonth],
   )
+  const implementationRows = useMemo(() => IMPLEMENTATION_GROUP.map(owner => ({
+    owner,
+    metrics: getOnboardingOverviewMetrics(projects.filter(project => project.ownerShort === owner), reportMonth),
+  })), [projects, reportMonth])
 
-  const portfolioProjects = useMemo(() => {
-    if (scope === 'mine' || ownerFilter === 'all') return scopedProjects
-    return scopedProjects.filter(project => project.ownerShort === ownerFilter)
-  }, [ownerFilter, scope, scopedProjects])
+  const portfolioProjects = reportProjects
 
   const metrics = useMemo(() => ({
     total: portfolioProjects.length,
@@ -359,16 +380,10 @@ export default function MesProjetsPage() {
       .sort(sortProjects)
   }, [clientTypologyFilter, overdueOnly, portfolioProjects, riskFilter, search, statusFilter])
 
-  const isLoading = loading || (scope === 'mine' && userLoading)
-  const hasListFilters = ownerFilter !== 'all' || statusFilter !== 'all' || riskFilter !== 'all' || clientTypologyFilter !== 'all' || overdueOnly || Boolean(search.trim())
-
-  function selectScope(nextScope: Scope) {
-    setScope(nextScope)
-    setOwnerFilter('all')
-  }
+  const isLoading = loading || (reportScope === 'mine' && userLoading)
+  const hasListFilters = statusFilter !== 'all' || riskFilter !== 'all' || clientTypologyFilter !== 'all' || overdueOnly || Boolean(search.trim())
 
   function resetListFilters() {
-    setOwnerFilter('all')
     setStatusFilter('all')
     setRiskFilter('all')
     setClientTypologyFilter('all')
@@ -430,10 +445,10 @@ export default function MesProjetsPage() {
               ? t('Chargement du portefeuille…')
               : error
                 ? t('Le portefeuille est momentanément indisponible.')
-                : `${countLabel(baseProjects.length, locale, 'projet', 'project')} · ${countLabel(new Set(baseProjects.map(project => project.hotelName)).size, locale, 'compte', 'account')}`}
+                : `${countLabel(projects.length, locale, 'projet', 'project')} ${t('dans Zoho Projects')}`}
           </p></div>
           <div className="inline-flex max-w-full self-start overflow-x-auto rounded-lg border border-[#ded8e8] bg-[#f7f5fa] p-1" aria-label={t('Affichage des projets')}>
-            <button type="button" aria-pressed="true" className="flex-none shrink-0 whitespace-nowrap rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-[#59319f] shadow-sm">{t('Liste')}</button>
+            <button type="button" aria-pressed="true" className="flex-none shrink-0 whitespace-nowrap rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-[#59319f] shadow-sm">{t('Vue d’ensemble')}</button>
             <button type="button" onClick={() => router.push('/onboarding/board')} aria-pressed="false" className="flex-none shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">Board</button>
             <button type="button" onClick={() => router.push('/onboarding/pilotage')} aria-pressed="false" className="flex-none shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Pilotage')}</button>
             <button type="button" onClick={() => router.push('/onboarding/clients')} aria-pressed="false" className="flex-none shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Clients')}</button>
@@ -460,25 +475,74 @@ export default function MesProjetsPage() {
         </main>
       ) : (
         <main className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-6 lg:px-8">
-          <section aria-labelledby="scope-heading">
-            <h2 id="scope-heading" className="sr-only">{t('Périmètre du portefeuille')}</h2>
-            <div className="inline-flex w-full rounded-xl border border-[#e2e2e2] bg-white p-1 sm:w-auto" role="group" aria-label={t('Périmètre du portefeuille')}>
-              {SCOPE_OPTIONS.map(option => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => selectScope(option.value)}
-                  aria-pressed={scope === option.value}
-                  className={`min-w-0 flex-1 rounded-lg px-3 py-2 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#59319f] sm:flex-none sm:px-4 ${
-                    scope === option.value
-                      ? 'bg-[#59319f] text-white shadow-sm'
-                      : 'text-[#696969] hover:bg-[#f7f5fa] hover:text-[#59319f]'
-                  }`}
-                >
-                  {t(option.label)}
-                </button>
-              ))}
+          <section className="sticky top-0 z-20 rounded-xl border border-[#ded8e8] bg-[#faf8fc] p-3 shadow-[0_4px_16px_rgba(0,0,0,0.1)] sm:p-4" aria-labelledby="overview-heading">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <h2 id="overview-heading" className="text-base font-semibold text-[#1f1f1f]">{t('Overview Onboarding')}</h2>
+                <p className="mt-1 text-xs text-[#696969]">{t('Statuts actuels')} · {monthLabel(reportMonth, locale)} : {t('démarrages, go-live et TTV')} · {t('Zoho Projects, cache 5 min')}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <label className="text-xs font-medium text-[#4a4a4a]">
+                  <span className="mb-1 block">{t('Périmètre')}</span>
+                  <select value={reportScope} onChange={event => setReportScope(event.target.value as ReportScope)} className="h-10 min-w-[190px] rounded-lg border border-[#d8d8d8] bg-white px-3 text-sm text-[#1a1a1a] focus:border-[#8c5bdb] focus:outline-none focus:ring-2 focus:ring-[#e8dbfa]">
+                    <option value="implementation">{t('Implémentation · Thuy, Dalia, Winli')}</option>
+                    <option value="global">{t('Global · tous les projets Zoho')}</option>
+                    <option value="mine">{t('Mes projets')}</option>
+                    {reportOwners.map(owner => <option key={owner} value={`owner:${owner}`}>{owner}</option>)}
+                  </select>
+                </label>
+                <label className="text-xs font-medium text-[#4a4a4a]">
+                  <span className="mb-1 block">{t('Mois des démarrages et go-live')}</span>
+                  <input type="month" value={reportMonth} onChange={event => { if (/^\d{4}-(0[1-9]|1[0-2])$/.test(event.target.value)) setReportMonth(event.target.value) }} className="h-10 rounded-lg border border-[#d8d8d8] bg-white px-3 text-sm text-[#1a1a1a] focus:border-[#8c5bdb] focus:outline-none focus:ring-2 focus:ring-[#e8dbfa]" />
+                </label>
+              </div>
             </div>
+
+            <div className="mt-3 grid grid-cols-4 gap-1.5 sm:gap-2 xl:grid-cols-8">
+              <OverviewStat label={t('Actifs')} value={reportMetrics.active} detail={t('In Progress + Pending')} />
+              <OverviewStat label={t('In Progress')} value={reportMetrics.inProgress} />
+              <OverviewStat label={t('Pending')} value={reportMetrics.pending} />
+              <OverviewStat label={t('Bloqués')} value={reportMetrics.blocked} />
+              <OverviewStat label="Standby" value={reportMetrics.standby} />
+              <OverviewStat label={t('Démarrages')} value={reportMetrics.starts} />
+              <OverviewStat label={t('Go-live')} value={reportMetrics.goLives} />
+              <OverviewStat label={t('TTV moyen')} value={compactTtvLabel(reportMetrics.averageTtvDays, locale)} detail={`${reportMetrics.ttvSamples}/${reportMetrics.goLives} ≤ 6 ${t('mois')}`} />
+            </div>
+          </section>
+
+          <section className="space-y-2" aria-label={t('Équipe implémentation · détail par onboarder')}>
+            <div className="overflow-x-auto rounded-xl border border-[#e6e0eb] bg-white">
+              <table className="w-full min-w-[840px] text-sm">
+                <caption className="px-4 py-3 text-left text-sm font-semibold text-[#1f1f1f]">{t('Équipe implémentation · détail par onboarder')}</caption>
+                <thead className="border-y border-[#ededed] bg-[#f7f7f7] text-xs text-[#696969]"><tr>
+                  <th className="px-3 py-2 text-left font-medium">{t('Onboarder')}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t('Actifs')}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t('In Progress')}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t('Pending')}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t('Bloqués')}</th>
+                  <th className="px-3 py-2 text-right font-medium">Standby</th>
+                  <th className="px-3 py-2 text-right font-medium">{t('Démarrages')}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t('Go-live')}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t('TTV moyen')}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t('Échantillon TTV')}</th>
+                </tr></thead>
+                <tbody className="divide-y divide-[#ededed]">
+                  {implementationRows.map(({ owner, metrics: row }) => <tr key={owner} className={reportScope === `owner:${owner}` ? 'bg-[#f7f3fc]' : ''}>
+                    <td className="px-3 py-2.5 font-medium text-[#1f1f1f]"><button type="button" aria-pressed={reportScope === `owner:${owner}`} onClick={() => setReportScope(`owner:${owner}`)} className="text-[#59319f] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#59319f]">{owner}</button></td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">{row.active}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">{row.inProgress}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">{row.pending}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">{row.blocked}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">{row.standby}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">{row.starts}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">{row.goLives}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">{ttvLabel(row.averageTtvDays, locale)}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">{row.ttvSamples}/{row.goLives}</td>
+                  </tr>)}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-xs leading-5 text-[#696969]">{t('Périmètre commun aux indicateurs et à la liste. Statuts et responsables actuels ; démarrages = start_date Zoho ; go-live = Live date dans le mois. TTV = start_date → Live date, projets de plus de six mois exclus de la moyenne. Un projet Zoho par produit, même pour un hôtel commun.')}</p>
           </section>
 
           <section aria-labelledby="kpi-heading">
@@ -553,7 +617,7 @@ export default function MesProjetsPage() {
               )}
             </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[minmax(260px,1.5fr)_repeat(4,minmax(140px,1fr))]">
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[minmax(260px,1.5fr)_repeat(3,minmax(140px,1fr))]">
               <label className="block">
                 <span className="mb-1.5 block text-xs font-medium text-[#4a4a4a]">{t('Recherche')}</span>
                 <div className="relative">
@@ -569,18 +633,6 @@ export default function MesProjetsPage() {
                     className="h-10 w-full rounded-lg border border-[#d8d8d8] bg-white pl-9 pr-3 text-sm text-[#1a1a1a] placeholder:text-[#9a9a9a] focus:border-[#8c5bdb] focus:outline-none focus:ring-2 focus:ring-[#e8dbfa]"
                   />
                 </div>
-              </label>
-
-              <label className={scope === 'mine' ? 'hidden' : 'block'}>
-                <span className="mb-1.5 block text-xs font-medium text-[#4a4a4a]">{t('Responsable')}</span>
-                <select
-                  value={ownerFilter}
-                  onChange={event => setOwnerFilter(event.target.value)}
-                  className="h-10 w-full rounded-lg border border-[#d8d8d8] bg-white px-3 text-sm text-[#1a1a1a] focus:border-[#8c5bdb] focus:outline-none focus:ring-2 focus:ring-[#e8dbfa]"
-                >
-                  <option value="all">{t('Tous les responsables')}</option>
-                  {owners.map(owner => <option key={owner} value={owner}>{owner}</option>)}
-                </select>
               </label>
 
               <label className="block">
@@ -654,7 +706,7 @@ export default function MesProjetsPage() {
               <div className="rounded-xl border border-[#e2e2e2] bg-white px-6 py-14 text-center shadow-sm">
                 <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[#f0eafb] text-lg text-[#59319f]" aria-hidden="true">⌕</div>
                 <h3 className="mt-4 text-sm font-semibold text-[#1f1f1f]">
-                  {scope === 'mine' && portfolioProjects.length === 0
+                  {reportScope === 'mine' && portfolioProjects.length === 0
                     ? t('Aucun projet ne vous est attribué')
                     : t('Aucun projet trouvé')}
                 </h3>

@@ -227,7 +227,7 @@ export default function OnboardingBoardPage() {
             {loading ? t('Chargement des projets…') : error ? t('Données indisponibles') : t('Les projets à faire avancer, organisés par statut.')}
           </p></div>
           <div className="inline-flex max-w-full self-start overflow-x-auto rounded-lg border border-[#ded8e8] bg-[#f7f5fa] p-1" aria-label={t('Affichage des projets')}>
-            <Link href="/onboarding" className="flex-none shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Liste')}</Link>
+            <Link href="/onboarding" className="flex-none shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Vue d’ensemble')}</Link>
             <span aria-current="page" className="flex-none shrink-0 whitespace-nowrap rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-[#59319f] shadow-sm">Board</span>
             <Link href="/onboarding/pilotage" className="flex-none shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Pilotage')}</Link>
             <Link href="/onboarding/clients" className="flex-none shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold text-[#696969] hover:text-[#59319f]">{t('Clients')}</Link>

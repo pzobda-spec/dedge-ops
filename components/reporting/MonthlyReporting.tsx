@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Legend, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { monthKey, shiftMonth, PHONE_BREAK_NOTE } from '@/lib/reporting/monthly'
 import type { channelMetrics, supportMetrics } from '@/lib/reporting/monthly'
-import type { readCoverage, readImplementation, readCaseMonthly } from '@/lib/reporting/source'
+import type { readCoverage, readCaseMonthly } from '@/lib/reporting/source'
 import { implementationSlideGroups, implementationSlideCopyLines } from '@/lib/reporting/implementationSlide'
 import type { supportLevelMetrics } from '@/lib/reporting/supportLevels'
 import { CRM_P1_FIRST_RESPONSE_PALIER, thresholdLabel } from '@/lib/reporting/slaProfiles'
@@ -16,7 +16,6 @@ type Monthly = {
   month: string
   support: ReturnType<typeof supportMetrics>
   year_ago: { month: string; support: ReturnType<typeof supportMetrics> }
-  implementation: { data: Awaited<ReturnType<typeof readImplementation>> | null; error: string | null }
   cases: { data: Awaited<ReturnType<typeof readCaseMonthly>> | null; error: string | null }
   coverage: Coverage
   unavailable: Record<string, string>
@@ -90,7 +89,7 @@ export default function MonthlyReporting() {
 
   async function copy() {
     if (!monthly) return
-    const s = monthly.support, p = monthly.implementation.data
+    const s = monthly.support
     const lines = [
       `Reporting mensuel — ${label(month)} — périmètre CRM / Support Zoho synchronisé (pas le global D-EDGE)`,
       `Couverture : ${monthly.coverage.certified ? 'mois dans les bornes déclarées du backfill ; exhaustivité non vérifiée' : 'exhaustivité non certifiée'}${monthly.coverage.partial_month ? ' ; mois en cours' : ''}. Synchronisation tickets : ${syncLabel(monthly.coverage.last_synced_at)}.`,
@@ -102,10 +101,9 @@ export default function MonthlyReporting() {
       `Conformité première réponse : ${number(s.first_response_compliance.rate_pct, ' %')} (cible ${s.first_response_compliance.target_pct} %) ; conformité résolution : ${number(s.resolution_compliance.rate_pct, ' %')} (cible ${s.resolution_compliance.target_pct} %).`,
       `Produits les plus sollicités : ${s.top_products.map(v => `${v.name} : ${v.count}`).join(' ; ') || '—'}.`,
       `Jours les plus chargés (Paris) : ${s.peak_days.map(v => `${v.name} : ${v.count}`).join(' ; ') || '—'}. Aucune cause incident ou release déduite.`,
-      `Zoho Projects : synchronisation ${syncLabel(p?.last_synced_at ?? null)}. Zoho Projects (current) : stock actuel, non historique.`,
-      ...implementationSlideCopyLines(p, monthly.cases.data),
+      ...implementationSlideCopyLines(monthly.cases.data),
       ...(monthly.cases.error ? [monthly.cases.error] : []),
-      'Started / Live (%) = Started ÷ Live × 100 ; Closed / opened (%) = Closed ÷ Opened × 100. Average age projets : démarrage à Live ; Cases : création à clôture des dossiers fermés dans le mois.',
+      'Closed / opened (%) = Closed ÷ Opened × 100. Average age Cases : création à clôture des dossiers fermés dans le mois.',
       ...(['welcome', 'setup'] as const).flatMap(type => monthly.cases?.data?.[type]?.warning ? [`${type} : ${monthly.cases.data[type].warning}`] : []),
       ...Object.values(monthly.unavailable), PHONE_BREAK_NOTE,
     ]
@@ -125,7 +123,7 @@ export default function MonthlyReporting() {
   const shaded = channels?.months.filter(row => row.key >= '2026-03') ?? []
   return <section aria-labelledby="monthly-report-title" className="space-y-5 border-b border-[#ded8e8] pb-8">
     <div className="flex flex-wrap items-end justify-between gap-3">
-      <div><h2 id="monthly-report-title" className="text-xl font-bold">Synthèse mensuelle pour les slides</h2><p className="mt-1 text-sm text-[#696969]">Support CRM, implémentation et portefeuille projets. Le périmètre global D-EDGE n’est pas disponible ici.</p></div>
+      <div><h2 id="monthly-report-title" className="text-xl font-bold">Synthèse mensuelle pour les slides</h2><p className="mt-1 text-sm text-[#696969]">Support CRM et Cases d’implémentation. Le périmètre global D-EDGE n’est pas disponible ici.</p></div>
       <div className="flex flex-wrap items-end gap-3">
         <label className="text-xs font-semibold">Mois du reporting<input aria-label="Mois du reporting" type="month" min="2000-01" max={monthKey(new Date())} value={month} onChange={event => { if (/^20\d{2}-(0[1-9]|1[0-2])$/.test(event.target.value)) setMonth(event.target.value) }} className="mt-1 block rounded-lg border border-[#ded8e8] bg-white px-3 py-2 text-sm" /></label>
         <button type="button" onClick={copy} disabled={!monthly || loading || levelsLoading} className="rounded-lg bg-[#59319f] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">Copier les données des slides</button>
@@ -188,24 +186,17 @@ export default function MonthlyReporting() {
       <section className={`${panel} space-y-4`} aria-labelledby="monthly-implementation-title">
         <h3 id="monthly-implementation-title" className="font-bold">Implémentation | CRM — {label(month)}</h3>
         <div className="grid gap-4 xl:grid-cols-2">
-          {implementationSlideGroups(monthly.implementation.data, monthly.cases.data).map((group, index) => <div key={group.title} className="rounded-lg border border-[#ded8e8] p-3">
+          {implementationSlideGroups(monthly.cases.data).map((group, index) => <div key={group.title} className="rounded-lg border border-[#ded8e8] p-3">
             <h4 className="mb-3 font-semibold">{group.title}</h4>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{group.metrics.map(metric => <Kpi key={metric.label} title={metric.label} value={metric.value} />)}</div>
-            <p className="mt-3 text-xs leading-5 text-[#696969]">{index < 2
-              ? `Source : Zoho Projects synchronisé · périmètre CRM · synchronisation : ${syncLabel(monthly.implementation.data?.last_synced_at ?? null)}.`
-              : `Source : agrégats Salesforce · total dédupliqué · synchronisation : ${syncLabel(monthly.cases.data?.[index === 2 ? 'welcome' : 'setup'].synced_at ?? null)}.`}</p>
+            <p className="mt-3 text-xs leading-5 text-[#696969]">{`Source : agrégats Salesforce · total dédupliqué · synchronisation : ${syncLabel(monthly.cases.data?.[index === 0 ? 'welcome' : 'setup'].synced_at ?? null)}.`}</p>
           </div>)}
         </div>
-        <p className="text-xs text-[#696969]" title="Started ÷ Live × 100 ; Closed ÷ Opened × 100">Started / Live (%) = Started ÷ Live × 100 ; Closed / opened (%) = Closed ÷ Opened × 100. Un dénominateur nul affiche « — ».</p>
-        <p className="text-xs text-[#696969]">Average age Zoho : moyenne des jours entre start_date (sinon created_at) et actual_go_live, pour les projets CRM passés Live pendant le mois. Couverture : {number(monthly.implementation.data?.crm_live_age_sample)} / {number(monthly.implementation.data?.crm_went_live)} projets Live. Average age Cases : moyenne des jours entre CreatedDate et ClosedDate des Cases fermés pendant le mois, hors Cancelled ; aucun Case fermé : « — ».</p>
-        <p className="text-xs text-[#696969]">Started reprend la date de démarrage Zoho Projects, qui peut être planifiée. Live reprend le champ Live date, sinon une transition observée. Les lignes Salesforce par produit sont indicatives et ne s’additionnent pas ; le total compte chaque Case une fois.</p>
-        {month !== shiftMonth(monthKey(new Date()), -1) && <p className={note}>Zoho Projects (current) : stock actuel, non historique.</p>}
-        {!monthly.implementation.data && <p role="alert" className={note}>{monthly.implementation.error}</p>}
+        <p className="text-xs text-[#696969]">Closed / opened (%) = Closed ÷ Opened × 100. Un dénominateur nul affiche « — ». Average age Cases : moyenne des jours entre CreatedDate et ClosedDate des Cases fermés pendant le mois, hors Cancelled ; aucun Case fermé : « — ».</p>
+        <p className="text-xs text-[#696969]">Les lignes Salesforce par produit sont indicatives et ne s’additionnent pas ; le total compte chaque Case une fois.</p>
         {monthly.cases.error && <p role="alert" className={note}>{monthly.cases.error}</p>}
         {(['welcome', 'setup'] as const).map(type => monthly.cases.data?.[type].warning && <p key={type} role="alert" className={note}>{type === 'welcome' ? 'Welcome cases' : 'Setup cases'} : {monthly.cases.data[type].warning}</p>)}
-        {monthly.implementation.data && !monthly.implementation.data.tracking_covers_month && <p className={note}>Le suivi des transitions Zoho ne couvre pas tout le mois sélectionné.</p>}
       </section>
-      <section className={`${panel} space-y-3`} aria-labelledby="monthly-projects-title"><h3 id="monthly-projects-title" className="font-bold">Projets — portefeuille actuel d’onboarding</h3><p className="text-xs leading-5 text-[#696969]">{monthly.unavailable.projects}</p>{monthly.implementation.data && <div className="flex flex-wrap gap-2">{monthly.implementation.data.current_statuses.map(item => <span key={item.name} className="rounded-lg bg-[#f7f3fc] px-3 py-2 text-sm">{item.name} : <strong>{item.count}</strong></span>)}</div>}</section>
       <section className={`${panel} space-y-3`} aria-labelledby="monthly-phone-title"><h3 id="monthly-phone-title" className="font-bold">Téléphonie — mesures réelles attendues dans la slide</h3><div className="grid gap-3 sm:grid-cols-3"><Kpi title="Appels entrants" value="—" /><Kpi title="Appels décrochés en moins de 30 s" value="—" /><Kpi title="Taux d’appels manqués" value="—" /></div><p className={note}>{monthly.unavailable.phone}</p>{selectedChannel && <p className="text-sm">Mesure disponible pour {label(month)} : <strong>{selectedChannel.phone} tickets Phone</strong>, soit {number(selectedChannel.phone_share_pct, ' %')} des tickets créés.</p>}</section>
     </>}
     <section className={`${panel} space-y-4`} aria-labelledby="channels-title">

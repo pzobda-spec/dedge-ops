@@ -59,6 +59,7 @@ test('routes Tickets et Reporting : mêmes bornes Paris et N-1 limité au même 
     const m = await (await monthly(new NextRequest('http://localhost/api/reporting/monthly?month=2026-08'))).json()
     const t = await (await tickets(new NextRequest('http://localhost/api/analytics/tickets?from=2026-08-01&to=2026-08-31'))).json()
     assert.equal(m.support.opened, 1)
+    assert.equal('implementation' in m, false)
     assert.equal(m.year_ago.support.opened, 1)
     assert.equal(t.total, m.support.opened)
     assert.equal(t.resolved, m.support.closed)
